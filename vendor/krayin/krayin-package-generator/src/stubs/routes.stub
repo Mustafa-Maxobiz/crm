@@ -1,0 +1,8 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+use $CONTROLLER_CLASS_NAME$;
+
+Route::prefix('$LOWER_NAME$')->group(function () {
+    Route::get('', [$CLASS_NAME$::class, 'index'])->name('admin.$LOWER_NAME$.index');
+});

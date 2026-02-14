@@ -1,0 +1,27 @@
+{
+    "name": "$LOWER_NAME$/$LOWER_NAME$",
+    "description": "$LOWER_NAME$",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Webkul",
+            "email": "example@webkul.com"
+        }
+    ],
+    "require": {
+    },
+    "autoload": {
+        "psr-4": {
+            "$PACKAGE$\\$PACKAGE$\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Webkul\\$PACKAGE$\\Providers\\$PACKAGE$ServiceProvider"
+            ],
+            "aliases": {}
+        }
+    },
+    "minimum-stability": "dev"
+}
