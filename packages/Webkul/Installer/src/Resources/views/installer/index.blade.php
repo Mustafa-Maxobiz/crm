@@ -29,7 +29,8 @@
 
         <link
             type="image/x-icon"
-            href="{{ vite()->asset('images/favicon.ico', 'installer') }}"
+            {{-- href="{{ vite()->asset('images/favicon.ico', 'installer') }}" --}}
+            href="{{ asset('admin/build/assets/icon.png', 'installer')) }}"
             rel="shortcut icon"
             sizes="16x16"
         />

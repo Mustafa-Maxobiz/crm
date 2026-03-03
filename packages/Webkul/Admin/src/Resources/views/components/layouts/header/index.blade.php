@@ -10,6 +10,7 @@
                     class="h-10"
                     src="{{ Storage::url($logo) }}"
                     alt="{{ config('app.name') }}"
+                    style="height: 1.5rem !important"
                 />
             @else
                 <img
@@ -80,7 +81,8 @@
             <x-slot:content class="mt-2 border-t-0 !p-0">
                 <div class="flex items-center gap-1.5 border border-x-0 border-b-gray-300 px-5 py-2.5 dark:border-gray-800">
                     <img
-                        src="{{ url('cache/logo.png') }}"
+                        {{-- src="{{ url('cache/logo.png') }}" --}}
+                        src="{{ asset('admin/build/assets/icon.png') }}"
                         width="24"
                         height="24"
                     />
