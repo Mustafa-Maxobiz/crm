@@ -29,6 +29,7 @@
                     <p class="p-4 text-xl font-bold text-gray-800 dark:text-white">
                         @lang('admin::app.users.login.title')
                     </p>
+                    
 
                     <div class="border-y p-4 dark:border-gray-800">
                         <!-- Email -->
