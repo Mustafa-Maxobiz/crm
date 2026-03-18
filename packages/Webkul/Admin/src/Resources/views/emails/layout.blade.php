@@ -13,7 +13,7 @@
         <div style="max-width: 640px; margin-left: auto; margin-right: auto;">
             <div style="padding: 30px;">
                 <!-- Email Header -->
-                <div style="margin-bottom: 45px;">
+                {{-- <div style="margin-bottom: 45px;">
                     <a href="{{ config('app.url') }}">
                         <img
                             src="{{ vite()->asset('images/logo.svg') }}"
@@ -21,7 +21,7 @@
                             style="height: 40px; width: 110px;"
                         />
                     </a>
-                </div>
+                </div> --}}
 
                 <!-- Email Content -->
                 {{ $slot }}

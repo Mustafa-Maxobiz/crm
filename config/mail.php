@@ -41,8 +41,8 @@ return [
             'encryption'  => env('MAIL_ENCRYPTION', 'tls'),
             'username'    => env('MAIL_USERNAME'),
             'password'    => env('MAIL_PASSWORD'),
-            'timeout'     => null,
-            'verify_peer' => false,
+            'timeout' => 60,
+            'local_domain' => 'crm.maxobiz.com',
         ],
 
         'ses' => [
