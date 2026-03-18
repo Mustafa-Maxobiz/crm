@@ -24,6 +24,7 @@
                 </div> --}}
 
                 <!-- Email Content -->
+                
                 {{ $slot }}
 
                 <!-- Email Footer -->
