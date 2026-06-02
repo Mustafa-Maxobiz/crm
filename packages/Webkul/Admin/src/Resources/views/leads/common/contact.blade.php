@@ -11,7 +11,7 @@
     >
         <!-- Person Search Lookup -->
         <x-admin::form.control-group>
-            <x-admin::form.control-group.label class="required">
+            <x-admin::form.control-group.label>
                 @lang('admin::app.leads.common.contact.name')
             </x-admin::form.control-group.label>
 
@@ -39,7 +39,7 @@
 
         <!-- Person Email -->
         <x-admin::form.control-group>
-            <x-admin::form.control-group.label class="required">
+            <x-admin::form.control-group.label>
                 @lang('admin::app.leads.common.contact.email')
             </x-admin::form.control-group.label>
 
@@ -47,7 +47,6 @@
 
             <v-email-component
                 :attribute="{'id': person?.id, 'code': 'person[emails]', 'name': 'Email'}"
-                validations="required"
                 :value="person.emails"
                 :is-disabled="person?.id ? true : false"
             ></v-email-component>
@@ -127,7 +126,7 @@
                 },
 
                 nameValidationRule() {
-                    return this.person.name ? '' : 'required';
+                    return '';
                 }
             },
 

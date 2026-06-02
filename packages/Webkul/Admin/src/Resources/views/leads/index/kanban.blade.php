@@ -324,6 +324,10 @@
                     applied: {
                         filters: {
                             columns: [],
+                        },
+                        sort: {
+                            by: 'created_at',
+                            order: 'desc',
                         }
                     },
 
@@ -364,6 +368,24 @@
                     }
 
                     return totalAmount;
+                },
+
+                /**
+                 * Returns the label for the current sort option.
+                 *
+                 * @return {string} The sort label.
+                 */
+                sortLabel() {
+                    const sortOptions = {
+                        'created_at_desc': '@lang('admin::app.leads.index.kanban.toolbar.sort.newest-first')',
+                        'created_at_asc': '@lang('admin::app.leads.index.kanban.toolbar.sort.oldest-first')',
+                        'lead_value_desc': '@lang('admin::app.leads.index.kanban.toolbar.sort.value-high-low')',
+                        'lead_value_asc': '@lang('admin::app.leads.index.kanban.toolbar.sort.value-low-high')',
+                        'title_asc': '@lang('admin::app.leads.index.kanban.toolbar.sort.title-az')',
+                        'title_desc': '@lang('admin::app.leads.index.kanban.toolbar.sort.title-za')',
+                    };
+
+                    return sortOptions[`${this.applied.sort.by}_${this.applied.sort.order}`] || '@lang('admin::app.leads.index.kanban.toolbar.sort.newest-first')';
                 }
             },
 
@@ -385,6 +407,11 @@
 
                         if (currentKanban) {
                             this.applied.filters = currentKanban.applied.filters;
+                            
+                            // Restore sort settings if available
+                            if (currentKanban.applied.sort) {
+                                this.applied.sort = currentKanban.applied.sort;
+                            }
 
                             this.get()
                                 .then(response => {
@@ -417,6 +444,8 @@
                         searchFields: '',
                         pipeline_id: "{{ request('pipeline_id') }}",
                         limit: 10,
+                        sort_by: this.applied.sort.by,
+                        sort_order: this.applied.sort.order,
                     };
 
                     this.applied.filters.columns.forEach((column) => {
@@ -493,6 +522,25 @@
                         ...(this.applied.filters.columns.filter((column) => column.index !== 'all')),
                         ...filters.columns,
                     ];
+
+                    this.get()
+                        .then(response => {
+                            for (let [sortOrder, data] of Object.entries(response.data)) {
+                                this.stageLeads[sortOrder] = data;
+                            }
+                        });
+                },
+
+                /**
+                 * Sorts the leads based on the selected sort option.
+                 *
+                 * @param {string} by - The field to sort by.
+                 * @param {string} order - The sort order (asc/desc).
+                 * @returns {void}
+                 */
+                sort(by, order) {
+                    this.applied.sort.by = by;
+                    this.applied.sort.order = order;
 
                     this.get()
                         .then(response => {

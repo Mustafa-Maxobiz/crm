@@ -207,7 +207,7 @@ class Installer extends Command
         $this->updateEnvVariable(
             'APP_NAME',
             'Please enter the application name',
-            env('APP_NAME', 'Krayin CRM')
+            env('APP_NAME', 'MaxoBiz CRM')
         );
 
         $this->updateEnvVariable(
@@ -363,11 +363,11 @@ class Installer extends Command
 
             $filePath = storage_path('installed');
 
-            File::put($filePath, 'Krayin is successfully installed');
+            File::put($filePath, 'MaxoBiz is successfully installed');
 
             $this->info('-----------------------------');
             $this->info('Congratulations!');
-            $this->info('The installation has been finished and you can now use Krayin.');
+            $this->info('The installation has been finished and you can now use MaxoBiz.');
             $this->info('Go to '.env('APP_URL').'/admin/dashboard'.' and authenticate with:');
             $this->info('Email: '.$adminEmail);
             $this->info('Password: '.$adminPassword);

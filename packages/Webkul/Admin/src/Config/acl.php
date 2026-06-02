@@ -274,7 +274,7 @@ return [
     ], [
         'key'   => 'settings.lead',
         'name'  => 'admin::app.acl.lead',
-        'route' => ['admin.settings.pipelines.index', 'admin.settings.sources.index', 'admin.settings.types.index'],
+        'route' => ['admin.settings.pipelines.index', 'admin.settings.sources.index', 'admin.settings.types.index', 'admin.settings.deleted_leads.index'],
         'sort'  => 2,
     ], [
         'key'   => 'settings.lead.pipelines',
@@ -336,6 +336,21 @@ return [
         'name'  => 'admin::app.acl.delete',
         'route' => 'admin.settings.types.delete',
         'sort'  => 3,
+    ], [
+        'key'   => 'settings.lead.deleted_leads',
+        'name'  => 'admin::app.acl.deleted-leads',
+        'route' => 'admin.settings.deleted_leads.index',
+        'sort'  => 4,
+    ], [
+        'key'   => 'settings.lead.deleted_leads.restore',
+        'name'  => 'admin::app.acl.restore',
+        'route' => 'admin.settings.deleted_leads.restore',
+        'sort'  => 1,
+    ], [
+        'key'   => 'settings.lead.deleted_leads.permanent_delete',
+        'name'  => 'admin::app.acl.permanent-delete',
+        'route' => 'admin.settings.deleted_leads.permanent_delete',
+        'sort'  => 2,
     ], [
         'key'   => 'settings.automation',
         'name'  => 'admin::app.acl.automation',

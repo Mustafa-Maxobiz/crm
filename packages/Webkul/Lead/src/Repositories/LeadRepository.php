@@ -118,17 +118,30 @@ class LeadRepository extends Repository
         if (isset($data['person'])) {
             if (! empty($data['person']['id'])) {
                 $person = $this->personRepository->findOrFail($data['person']['id']);
+                $data['person_id'] = $person->id;
             } else {
-                $person = $this->personRepository->create(array_merge($data['person'], [
-                    'entity_type' => 'persons',
-                ]));
+                // Check if person data has any meaningful values
+                $hasPersonData = $this->hasPersonData($data['person']);
+                
+                if ($hasPersonData) {
+                    $person = $this->personRepository->create(array_merge($data['person'], [
+                        'entity_type' => 'persons',
+                    ]));
+                    $data['person_id'] = $person->id;
+                } else {
+                    // No person data provided, set person_id to null
+                    $data['person_id'] = null;
+                }
             }
-
-            $data['person_id'] = $person->id;
         }
 
         if (empty($data['expected_close_date'])) {
             $data['expected_close_date'] = null;
+        }
+
+        // Convert empty lead_sub_source_id to null
+        if (isset($data['lead_sub_source_id']) && empty($data['lead_sub_source_id'])) {
+            $data['lead_sub_source_id'] = null;
         }
 
         $lead = parent::create(array_merge([
@@ -169,13 +182,21 @@ class LeadRepository extends Repository
         if (isset($data['person'])) {
             if (! empty($data['person']['id'])) {
                 $person = $this->personRepository->findOrFail($data['person']['id']);
+                $data['person_id'] = $person->id;
             } else {
-                $person = $this->personRepository->create(array_merge($data['person'], [
-                    'entity_type' => 'persons',
-                ]));
+                // Check if person data has any meaningful values
+                $hasPersonData = $this->hasPersonData($data['person']);
+                
+                if ($hasPersonData) {
+                    $person = $this->personRepository->create(array_merge($data['person'], [
+                        'entity_type' => 'persons',
+                    ]));
+                    $data['person_id'] = $person->id;
+                } else {
+                    // No person data provided, set person_id to null
+                    $data['person_id'] = null;
+                }
             }
-
-            $data['person_id'] = $person->id;
         }
 
         if (isset($data['lead_pipeline_stage_id'])) {
@@ -190,6 +211,11 @@ class LeadRepository extends Repository
 
         if (empty($data['expected_close_date'])) {
             $data['expected_close_date'] = null;
+        }
+
+        // Convert empty lead_sub_source_id to null
+        if (isset($data['lead_sub_source_id']) && empty($data['lead_sub_source_id'])) {
+            $data['lead_sub_source_id'] = null;
         }
 
         $lead = parent::update($data, $id);
@@ -250,5 +276,44 @@ class LeadRepository extends Repository
         }
 
         return $lead;
+    }
+
+    /**
+     * Check if person data has any meaningful values.
+     *
+     * @param  array  $personData
+     * @return bool
+     */
+    private function hasPersonData(array $personData): bool
+    {
+        // Check if name is provided and not empty
+        if (!empty($personData['name'])) {
+            return true;
+        }
+
+        // Check if any email has a value
+        if (isset($personData['emails']) && is_array($personData['emails'])) {
+            foreach ($personData['emails'] as $email) {
+                if (!empty($email['value'])) {
+                    return true;
+                }
+            }
+        }
+
+        // Check if any contact number has a value
+        if (isset($personData['contact_numbers']) && is_array($personData['contact_numbers'])) {
+            foreach ($personData['contact_numbers'] as $number) {
+                if (!empty($number['value'])) {
+                    return true;
+                }
+            }
+        }
+
+        // Check if job title is provided
+        if (!empty($personData['job_title'])) {
+            return true;
+        }
+
+        return false;
     }
 }

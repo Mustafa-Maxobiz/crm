@@ -14,7 +14,7 @@
                         ? vite()->asset('images/dark-logo.svg') 
                         : vite()->asset('images/logo.svg') 
                     }}"
-                    class="w-40 ltr:pr-16 rtl:pl-16"
+                    class="h-10 w-auto"
                 >
 
 				<div class="text-[38px] font-bold text-gray-800 dark:text-white">

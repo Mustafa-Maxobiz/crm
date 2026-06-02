@@ -94,6 +94,10 @@ class LeadController extends Controller
             $stages = $pipeline->stages;
         }
 
+        // Get sort parameters (default: newest first)
+        $sortBy = request()->query('sort_by', 'created_at');
+        $sortOrder = request()->query('sort_order', 'desc');
+
         foreach ($stages as $stage) {
             /**
              * We have to create a new instance of the lead repository every time, which is
@@ -110,6 +114,9 @@ class LeadController extends Controller
                 $query->whereIn('leads.user_id', $userIds);
             }
 
+            // Apply sorting
+            $query->orderBy($sortBy, $sortOrder);
+
             $stage->lead_value = (clone $query)->sum('lead_value');
 
             $data[$stage->sort_order] = (new StageResource($stage))->jsonSerialize();
@@ -119,6 +126,7 @@ class LeadController extends Controller
                     'tags',
                     'type',
                     'source',
+                    'subSource',
                     'user',
                     'person',
                     'person.organization',
@@ -730,5 +738,29 @@ class LeadController extends Controller
         }
 
         return $leads;
+    }
+
+    /**
+     * Mark follow-up as complete.
+     */
+    public function followupComplete(int $id): RedirectResponse
+    {
+        $lead = $this->leadRepository->findOrFail($id);
+
+        Event::dispatch('lead.update.before', $id);
+
+        // Increment follow-up count and update last follow-up date
+        $lead->followup_count = ($lead->followup_count ?? 0) + 1;
+        $lead->last_followup_date = Carbon::now();
+        $lead->next_followup_date = null;
+        
+        // Save without triggering attribute updates
+        $lead->saveQuietly();
+
+        Event::dispatch('lead.update.after', $lead);
+
+        session()->flash('success', trans('admin::app.leads.followup-complete-success'));
+
+        return redirect()->back();
     }
 }

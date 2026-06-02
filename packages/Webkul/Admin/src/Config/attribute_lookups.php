@@ -12,6 +12,12 @@ return [
         'repository'   => 'Webkul\Lead\Repositories\SourceRepository',
     ],
 
+    'lead_root_sources' => [
+        'name'         => 'Lead Root Sources',
+        'repository'   => 'Webkul\Lead\Repositories\SourceRepository',
+        'scope'        => 'roots',
+    ],
+
     'lead_types' => [
         'name'         => 'Lead Types',
         'repository'   => 'Webkul\Lead\Repositories\TypeRepository',

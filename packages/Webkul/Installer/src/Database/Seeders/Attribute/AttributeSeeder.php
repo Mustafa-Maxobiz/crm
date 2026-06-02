@@ -57,11 +57,25 @@ class AttributeSeeder extends Seeder
             ], [
                 'code'            => 'lead_value',
                 'name'            => trans('installer::app.seeders.attributes.leads.lead-value', [], $defaultLocale),
-                'type'            => 'price',
+                'type'            => 'text',
                 'entity_type'     => 'leads',
                 'lookup_type'     => null,
-                'validation'      => 'decimal',
+                'validation'      => 'numeric',
                 'sort_order'      => '3',
+                'is_required'     => '1',
+                'is_unique'       => '0',
+                'quick_add'       => '1',
+                'is_user_defined' => '0',
+                'created_at'      => $now,
+                'updated_at'      => $now,
+            ], [
+                'code'            => 'pricing_type',
+                'name'            => trans('installer::app.seeders.attributes.leads.pricing-type', [], $defaultLocale),
+                'type'            => 'select',
+                'entity_type'     => 'leads',
+                'lookup_type'     => null,
+                'validation'      => null,
+                'sort_order'      => '3.5',
                 'is_required'     => '1',
                 'is_unique'       => '0',
                 'quick_add'       => '1',
@@ -73,10 +87,52 @@ class AttributeSeeder extends Seeder
                 'name'            => trans('installer::app.seeders.attributes.leads.source', [], $defaultLocale),
                 'type'            => 'select',
                 'entity_type'     => 'leads',
-                'lookup_type'     => 'lead_sources',
+                'lookup_type'     => 'lead_root_sources',
                 'validation'      => null,
                 'sort_order'      => '4',
                 'is_required'     => '1',
+                'is_unique'       => '0',
+                'quick_add'       => '1',
+                'is_user_defined' => '0',
+                'created_at'      => $now,
+                'updated_at'      => $now,
+            ], [
+                'code'            => 'lead_sub_source_id',
+                'name'            => trans('installer::app.seeders.attributes.leads.sub-source', [], $defaultLocale),
+                'type'            => 'select',
+                'entity_type'     => 'leads',
+                'lookup_type'     => 'lead_sources',
+                'validation'      => null,
+                'sort_order'      => '4.05',
+                'is_required'     => '0',
+                'is_unique'       => '0',
+                'quick_add'       => '1',
+                'is_user_defined' => '0',
+                'created_at'      => $now,
+                'updated_at'      => $now,
+            ], [
+                'code'            => 'source_sub_type',
+                'name'            => trans('installer::app.seeders.attributes.leads.source-sub-type', [], $defaultLocale),
+                'type'            => 'select',
+                'entity_type'     => 'leads',
+                'lookup_type'     => null,
+                'validation'      => null,
+                'sort_order'      => '4.1',
+                'is_required'     => '0',
+                'is_unique'       => '0',
+                'quick_add'       => '1',
+                'is_user_defined' => '0',
+                'created_at'      => $now,
+                'updated_at'      => $now,
+            ], [
+                'code'            => 'source_link',
+                'name'            => trans('installer::app.seeders.attributes.leads.source-link', [], $defaultLocale),
+                'type'            => 'text',
+                'entity_type'     => 'leads',
+                'lookup_type'     => null,
+                'validation'      => 'url',
+                'sort_order'      => '4.2',
+                'is_required'     => '0',
                 'is_unique'       => '0',
                 'quick_add'       => '1',
                 'is_user_defined' => '0',
@@ -125,6 +181,20 @@ class AttributeSeeder extends Seeder
                 'created_at'      => $now,
                 'updated_at'      => $now,
             ], [
+                'code'            => 'next_followup_date',
+                'name'            => trans('installer::app.seeders.attributes.leads.next-followup-date', [], $defaultLocale),
+                'type'            => 'datetime',
+                'entity_type'     => 'leads',
+                'lookup_type'     => null,
+                'validation'      => null,
+                'sort_order'      => '8.5',
+                'is_required'     => '0',
+                'is_unique'       => '0',
+                'quick_add'       => '1',
+                'is_user_defined' => '0',
+                'created_at'      => $now,
+                'updated_at'      => $now,
+            ], [
                 'code'            => 'lead_pipeline_id',
                 'name'            => trans('installer::app.seeders.attributes.leads.pipeline', [], $defaultLocale),
                 'type'            => 'lookup',
@@ -165,7 +235,7 @@ class AttributeSeeder extends Seeder
                 'lookup_type'     => null,
                 'validation'      => null,
                 'sort_order'      => '1',
-                'is_required'     => '1',
+                'is_required'     => '0',
                 'is_unique'       => '0',
                 'quick_add'       => '1',
                 'is_user_defined' => '0',
@@ -179,7 +249,7 @@ class AttributeSeeder extends Seeder
                 'lookup_type'     => null,
                 'validation'      => null,
                 'sort_order'      => '2',
-                'is_required'     => '1',
+                'is_required'     => '0',
                 'is_unique'       => '1',
                 'quick_add'       => '1',
                 'is_user_defined' => '0',
@@ -641,5 +711,52 @@ class AttributeSeeder extends Seeder
                 'updated_at'      => $now,
             ],
         ]);
+
+        // Seed attribute options for pricing_type
+        $pricingTypeAttributeId = DB::table('attributes')
+            ->where('code', 'pricing_type')
+            ->where('entity_type', 'leads')
+            ->value('id');
+
+        if ($pricingTypeAttributeId) {
+            DB::table('attribute_options')->insert([
+                [
+                    'attribute_id' => $pricingTypeAttributeId,
+                    'name'         => trans('installer::app.seeders.attributes.leads.fixed-price', [], $defaultLocale),
+                    'sort_order'   => 1,
+                ],
+                [
+                    'attribute_id' => $pricingTypeAttributeId,
+                    'name'         => trans('installer::app.seeders.attributes.leads.hourly-rate', [], $defaultLocale),
+                    'sort_order'   => 2,
+                ],
+            ]);
+        }
+
+        // Seed attribute options for source_sub_type
+        $sourceSubTypeAttributeId = DB::table('attributes')
+            ->where('code', 'source_sub_type')
+            ->where('entity_type', 'leads')
+            ->value('id');
+
+        if ($sourceSubTypeAttributeId) {
+            DB::table('attribute_options')->insert([
+                [
+                    'attribute_id' => $sourceSubTypeAttributeId,
+                    'name'         => trans('installer::app.seeders.attributes.leads.invitation', [], $defaultLocale),
+                    'sort_order'   => 1,
+                ],
+                [
+                    'attribute_id' => $sourceSubTypeAttributeId,
+                    'name'         => trans('installer::app.seeders.attributes.leads.bid', [], $defaultLocale),
+                    'sort_order'   => 2,
+                ],
+                [
+                    'attribute_id' => $sourceSubTypeAttributeId,
+                    'name'         => trans('installer::app.seeders.attributes.leads.direct-client', [], $defaultLocale),
+                    'sort_order'   => 3,
+                ],
+            ]);
+        }
     }
 }

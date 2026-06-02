@@ -272,6 +272,12 @@ Breadcrumbs::for('settings.types.edit', function (BreadcrumbTrail $trail, $type)
     $trail->push(trans('admin::app.settings.types.edit-title'), route('admin.settings.types.edit', $type->id));
 });
 
+// Settings > Deleted Leads
+Breadcrumbs::for('settings.deleted_leads', function (BreadcrumbTrail $trail) {
+    $trail->parent('settings');
+    $trail->push(trans('admin::app.layouts.deleted-leads'), route('admin.settings.deleted_leads.index'));
+});
+
 // Settings > Email Templates
 Breadcrumbs::for('settings.email_templates', function (BreadcrumbTrail $trail) {
     $trail->parent('settings');

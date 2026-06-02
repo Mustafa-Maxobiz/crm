@@ -55,6 +55,9 @@ class LeadDataGrid extends DataGrid
                 'leads.status',
                 'leads.lead_value',
                 'leads.expected_close_date',
+                'leads.next_followup_date',
+                'leads.followup_count',
+                'leads.last_followup_date',
                 'lead_sources.name as lead_source_name',
                 'lead_types.name as lead_type_name',
                 'leads.created_at',
@@ -78,6 +81,7 @@ class LeadDataGrid extends DataGrid
             ->leftJoin('lead_tags', 'leads.id', '=', 'lead_tags.lead_id')
             ->leftJoin('tags', 'tags.id', '=', 'lead_tags.tag_id')
             ->groupBy('leads.id')
+            ->whereNull('leads.deleted_at')
             ->where('leads.lead_pipeline_id', $this->pipeline->id);
 
         if ($userIds = bouncer()->getAuthorizedUserIds()) {
@@ -98,6 +102,9 @@ class LeadDataGrid extends DataGrid
         $this->addFilter('stage', 'lead_pipeline_stages.id');
         $this->addFilter('tag_name', 'tags.name');
         $this->addFilter('expected_close_date', 'leads.expected_close_date');
+        $this->addFilter('next_followup_date', 'leads.next_followup_date');
+        $this->addFilter('followup_count', 'leads.followup_count');
+        $this->addFilter('last_followup_date', 'leads.last_followup_date');
         $this->addFilter('created_at', 'leads.created_at');
         $this->addFilter('rotten_lead', DB::raw('DATEDIFF(NOW(), '.$tablePrefix.'leads.created_at) >= '.$tablePrefix.'lead_pipelines.rotten_days'));
 
@@ -208,6 +215,10 @@ class LeadDataGrid extends DataGrid
                 ],
             ],
             'closure'    => function ($row) {
+                if (empty($row->person_id) || empty($row->person_name)) {
+                    return '-';
+                }
+
                 $route = route('admin.contacts.persons.view', $row->person_id);
 
                 return "<a class=\"text-brandColor transition-all hover:underline\" href='".$route."'>".$row->person_name.'</a>';
@@ -251,7 +262,7 @@ class LeadDataGrid extends DataGrid
 
         $this->addColumn([
             'index'           => 'expected_close_date',
-            'label'           => trans('admin::app.leads.index.datagrid.date-to'),
+            'label'           => trans('admin::app.leads.index.datagrid.expected-close-date'),
             'type'            => 'date',
             'searchable'      => false,
             'sortable'        => true,
@@ -263,6 +274,50 @@ class LeadDataGrid extends DataGrid
                 }
 
                 return $row->expected_close_date;
+            },
+        ]);
+
+        $this->addColumn([
+            'index'           => 'next_followup_date',
+            'label'           => trans('admin::app.leads.index.datagrid.next-followup-date'),
+            'type'            => 'date',
+            'searchable'      => false,
+            'sortable'        => true,
+            'filterable'      => true,
+            'filterable_type' => 'date_range',
+            'closure'         => function ($row) {
+                if (! $row->next_followup_date) {
+                    return '--';
+                }
+
+                return $row->next_followup_date;
+            },
+        ]);
+
+        $this->addColumn([
+            'index'      => 'followup_count',
+            'label'      => trans('admin::app.leads.index.datagrid.followup-count'),
+            'type'       => 'integer',
+            'searchable' => false,
+            'sortable'   => true,
+            'filterable' => true,
+            'closure'    => fn ($row) => $row->followup_count ?? 0,
+        ]);
+
+        $this->addColumn([
+            'index'           => 'last_followup_date',
+            'label'           => trans('admin::app.leads.index.datagrid.last-followup-date'),
+            'type'            => 'date',
+            'searchable'      => false,
+            'sortable'        => true,
+            'filterable'      => true,
+            'filterable_type' => 'date_range',
+            'closure'         => function ($row) {
+                if (! $row->last_followup_date) {
+                    return '--';
+                }
+
+                return $row->last_followup_date;
             },
         ]);
 

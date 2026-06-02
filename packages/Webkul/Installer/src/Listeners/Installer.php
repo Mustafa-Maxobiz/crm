@@ -22,7 +22,7 @@ class Installer
     public function __construct(protected UserRepository $userRepository) {}
 
     /**
-     * After Krayin is successfully installed
+     * After MaxoBiz is successfully installed
      *
      * @return void
      */

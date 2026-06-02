@@ -143,7 +143,20 @@ class AttributeRepository extends Repository
             return $userRepository->where('users.name', 'like', '%'.urldecode($query).'%')->get();
         }
 
-        return app($lookup['repository'])->findWhere([
+        // Handle scope if specified (e.g., 'roots' for root sources only)
+        $repository = app($lookup['repository']);
+        
+        if (isset($lookup['scope'])) {
+            // Apply scope and get results directly from query builder
+            $queryBuilder = $repository->getModel()->newQuery()->{$lookup['scope']}();
+            
+            return $queryBuilder
+                ->where($lookup['label_column'] ?? 'name', 'like', '%'.urldecode($query).'%')
+                ->select($columns)
+                ->get();
+        }
+
+        return $repository->findWhere([
             [$lookup['label_column'] ?? 'name', 'like', '%'.urldecode($query).'%'],
         ], $columns);
     }

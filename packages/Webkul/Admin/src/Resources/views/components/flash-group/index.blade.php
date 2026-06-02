@@ -8,13 +8,14 @@
         <transition-group
             tag='div'
             name="flash-group"
-            enter-from-class="ltr:translate-y-full rtl:-translate-y-full"
-            enter-active-class="transform transition duration-300 ease-[cubic-bezier(.4,0,.2,1)]"
-            enter-to-class="ltr:translate-y-0 rtl:-translate-y-0"
-            leave-from-class="ltr:translate-y-0 rtl:-translate-y-0"
-            leave-active-class="transform transition duration-300 ease-[cubic-bezier(.4,0,.2,1)]"
-            leave-to-class="ltr:translate-y-full rtl:-translate-y-full"
-            class='fixed bottom-5 left-1/2 z-[10003] grid -translate-x-1/2 justify-items-end gap-2.5'
+            enter-from-class="translate-x-full opacity-0"
+            enter-active-class="transform transition duration-300 ease-out"
+            enter-to-class="translate-x-0 opacity-100"
+            leave-from-class="translate-x-0 opacity-100"
+            leave-active-class="transform transition duration-300 ease-in"
+            leave-to-class="translate-x-full opacity-0"
+            class='fixed z-[10003] flex flex-col items-end gap-2.5'
+            style="top: 20px; right: 20px; left: auto; max-width: 400px;"
         >
             <x-admin::flash-group.item />
         </transition-group>

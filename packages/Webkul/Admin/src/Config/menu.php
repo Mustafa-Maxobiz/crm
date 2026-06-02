@@ -199,6 +199,13 @@ return [
         'sort'       => 3,
         'icon-class' => 'icon-settings-type',
     ], [
+        'key'        => 'settings.lead.deleted_leads',
+        'name'       => 'admin::app.layouts.deleted-leads',
+        'info'       => 'admin::app.layouts.deleted-leads-info',
+        'route'      => 'admin.settings.deleted_leads.index',
+        'sort'       => 4,
+        'icon-class' => 'icon-delete',
+    ], [
         'key'        => 'settings.warehouse',
         'name'       => 'admin::app.layouts.warehouse',
         'info'       => 'admin::app.layouts.warehouses-info',

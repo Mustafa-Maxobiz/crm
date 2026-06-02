@@ -17,6 +17,8 @@ use Webkul\Admin\Http\Requests\MassDestroyRequest;
 use Webkul\Admin\Http\Requests\MassUpdateRequest;
 use Webkul\Admin\Http\Resources\ActivityResource;
 use Webkul\Attribute\Repositories\AttributeRepository;
+use Webkul\Email\Repositories\EmailRepository;
+use Webkul\Lead\Repositories\LeadRepository;
 
 class ActivityController extends Controller
 {
@@ -29,6 +31,8 @@ class ActivityController extends Controller
         protected ActivityRepository $activityRepository,
         protected FileRepository $fileRepository,
         protected AttributeRepository $attributeRepository,
+        protected LeadRepository $leadRepository,
+        protected EmailRepository $emailRepository,
     ) {}
 
     /**
@@ -60,6 +64,63 @@ class ActivityController extends Controller
 
         return response()->json([
             'activities' => $activities,
+        ]);
+    }
+
+    /**
+     * Returns due and overdue follow-up notifications directly from leads.
+     */
+    public function notifications(): JsonResponse
+    {
+        $query = $this->dueFollowupNotificationQuery();
+
+        $count = (clone $query)->count('leads.id');
+
+        $notifications = $query
+            ->with(['person'])
+            ->orderBy('leads.next_followup_date')
+            ->get()
+            ->map(function ($lead) {
+                return [
+                    'id'            => $lead->id,
+                    'title'         => 'Follow-up: '.$lead->title,
+                    'type'          => 'followup',
+                    'comment'       => $lead->followup_notes,
+                    'schedule_from' => Carbon::parse($lead->next_followup_date)->toIso8601String(),
+                    'schedule_to'   => null,
+                    'lead_title'    => $lead->title,
+                    'person_name'   => $lead->person?->name,
+                    'edit_url'      => route('admin.leads.view', $lead->id),
+                ];
+            });
+
+        return response()->json([
+            'count'                 => $count,
+            'unread_messages_count' => $this->unreadMessagesCount(),
+            'notifications'         => $notifications,
+        ]);
+    }
+
+    /**
+     * Mark a due follow-up notification as done.
+     */
+    public function markNotificationAsDone(int $id): JsonResponse
+    {
+        $lead = $this->dueFollowupNotificationQuery()
+            ->where('leads.id', $id)
+            ->firstOrFail();
+
+        Event::dispatch('lead.update.before', $lead->id);
+
+        $lead->followup_count = ($lead->followup_count ?? 0) + 1;
+        $lead->last_followup_date = Carbon::now();
+        $lead->next_followup_date = null;
+        $lead->saveQuietly();
+
+        Event::dispatch('lead.update.after', $lead);
+
+        return response()->json([
+            'message' => trans('admin::app.activities.notifications.marked-done'),
         ]);
     }
 
@@ -119,6 +180,53 @@ class ActivityController extends Controller
         session()->flash('success', trans('admin::app.activities.create-success'));
 
         return redirect()->back();
+    }
+
+    /**
+     * Base query for pending follow-up notifications shown in the header.
+     */
+    protected function dueFollowupNotificationQuery()
+    {
+        $userIds = bouncer()->getAuthorizedUserIds();
+
+        $query = $this->leadRepository
+            ->getModel()
+            ->newQuery()
+            ->select('leads.*')
+            ->whereNotNull('leads.next_followup_date')
+            ->where('leads.next_followup_date', '<=', Carbon::now());
+
+        if (! is_null($userIds)) {
+            $query->where(function ($query) use ($userIds) {
+                $query->whereIn('leads.user_id', $userIds);
+            });
+        }
+
+        return $query;
+    }
+
+    /**
+     * Count unread inbox messages for the bell unread indicator.
+     */
+    protected function unreadMessagesCount(): int
+    {
+        $query = $this->emailRepository
+            ->getModel()
+            ->newQuery()
+            ->where('is_read', 0)
+            ->whereNull('parent_id')
+            ->where('folders', 'like', '%"inbox"%');
+
+        if (! is_null($userIds = bouncer()->getAuthorizedUserIds())) {
+            $query->where(function ($query) use ($userIds) {
+                $query->whereNull('lead_id')
+                    ->orWhereHas('lead', function ($leadQuery) use ($userIds) {
+                        $leadQuery->whereIn('user_id', $userIds);
+                    });
+            });
+        }
+
+        return $query->count();
     }
 
     /**

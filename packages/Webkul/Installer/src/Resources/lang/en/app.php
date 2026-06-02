@@ -6,9 +6,19 @@ return [
             'leads' => [
                 'description'         => 'Description',
                 'expected-close-date' => 'Expected Close Date',
+                'next-followup-date'  => 'Next Follow-up Date',
                 'lead-value'          => 'Lead Value',
+                'pricing-type'        => 'Pricing Type',
+                'fixed-price'         => 'Fixed Price',
+                'hourly-rate'         => 'Hourly Rate',
+                'source-sub-type'     => 'Source Sub-Type',
+                'source-link'         => 'Source Link',
+                'invitation'          => 'Invitation',
+                'bid'                 => 'Bid',
+                'direct-client'       => 'Direct Client',
                 'sales-owner'         => 'Sales Owner',
                 'source'              => 'Source',
+                'sub-source'          => 'Sub Source',
                 'title'               => 'Title',
                 'type'                => 'Type',
                 'pipeline'            => 'Pipeline',
@@ -90,11 +100,17 @@ return [
             ],
 
             'source' => [
-                'direct'   => 'Direct',
-                'email'    => 'Email',
-                'phone'    => 'Phone',
-                'web'      => 'Web',
-                'web-form' => 'Web Form',
+                'direct'        => 'Direct',
+                'email'         => 'Email',
+                'phone'         => 'Phone',
+                'web'           => 'Web',
+                'web-form'      => 'Web Form',
+                'upwork'        => 'Upwork',
+                'fiverr'        => 'Fiverr',
+                'freelancer'    => 'Freelancer',
+                'invitation'    => 'Invitation',
+                'bid'           => 'Bid',
+                'direct-client' => 'Direct Client',
             ],
 
             'type' => [
@@ -120,7 +136,7 @@ return [
         'index' => [
             'create-administrator' => [
                 'admin'            => 'Admin',
-                'krayin'           => 'Krayin',
+                'krayin'           => 'MaxoBiz',
                 'confirm-password' => 'Confirm Password',
                 'email'            => 'Email',
                 'email-address'    => 'admin@example.com',
@@ -135,7 +151,7 @@ return [
                 'application-name'            => 'Application Name',
                 'argentine-peso'              => 'Argentine Peso (ARS)',
                 'australian-dollar'           => 'Australian Dollar (AUD)',
-                'krayin'                      => 'Krayin',
+                'krayin'                      => 'MaxoBiz',
                 'bangladeshi-taka'            => 'Bangladeshi Taka (BDT)',
                 'brazilian-real'              => 'Brazilian Real (BRL)',
                 'british-pound-sterling'      => 'British Pound Sterling (GBP)',
@@ -218,24 +234,24 @@ return [
             ],
 
             'installation-processing' => [
-                'krayin'       => 'Installation Krayin',
+                'krayin'       => 'Installation MaxoBiz',
                 'krayin-info'  => 'Creating the database tables, this can take a few moments',
                 'title'        => 'Installation',
             ],
 
             'installation-completed' => [
                 'admin-panel'                => 'Admin Panel',
-                'krayin-forums'              => 'Krayin Forum',
+                'krayin-forums'              => 'MaxoBiz Forum',
                 'customer-panel'             => 'Customer Panel',
-                'explore-krayin-extensions'  => 'Explore Krayin Extension',
+                'explore-krayin-extensions'  => 'Explore MaxoBiz Extension',
                 'title'                      => 'Installation Completed',
-                'title-info'                 => 'Krayin is Successfully installed on your system.',
+                'title-info'                 => 'MaxoBiz is Successfully installed on your system.',
             ],
 
             'ready-for-installation' => [
                 'create-databsae-table'   => 'Create the database table',
                 'install'                 => 'Installation',
-                'install-info'            => 'Krayin For Installation',
+                'install-info'            => 'MaxoBiz For Installation',
                 'install-info-button'     => 'Click the button below to',
                 'populate-database-table' => 'Populate the database tables',
                 'start-installation'      => 'Start Installation',
@@ -246,8 +262,8 @@ return [
                 'locale'        => 'Locale',
                 'main'          => 'Start',
                 'select-locale' => 'Select Locale',
-                'title'         => 'Your Krayin install',
-                'welcome-title' => 'Welcome to Krayin',
+                'title'         => 'Your MaxoBiz install',
+                'welcome-title' => 'Welcome to MaxoBiz',
             ],
 
             'server-requirements' => [
@@ -274,16 +290,16 @@ return [
             ],
 
             'back'                     => 'Back',
-            'krayin'                   => 'Krayin',
+            'krayin'                   => 'MaxoBiz',
             'krayin-info'              => 'a Community Project by',
-            'krayin-logo'              => 'Krayin Logo',
+            'krayin-logo'              => 'MaxoBiz Logo',
             'continue'                 => 'Continue',
-            'installation-description' => 'Krayin installation typically involves several steps. Here\'s a general outline of the installation process for Krayin',
+            'installation-description' => 'MaxoBiz installation typically involves several steps. Here\'s a general outline of the installation process for MaxoBiz',
             'installation-info'        => 'We are happy to see you here!',
             'installation-title'       => 'Welcome to Installation',
             'installation-wizard'      => 'Installation Wizard language',
-            'title'                    => 'Krayin Installer',
-            'webkul'                   => 'Webkul',
+            'title'                    => 'MaxoBiz Installer',
+            'webkul'                   => 'MaxoBiz',
         ],
     ],
 ];

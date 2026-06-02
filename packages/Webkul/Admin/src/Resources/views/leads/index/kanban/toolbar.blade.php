@@ -16,6 +16,13 @@
 
         {!! view_render_event('admin.leads.index.kanban.toolbar.filter.after') !!}
 
+        {!! view_render_event('admin.leads.index.kanban.toolbar.sort.before') !!}
+
+        <!-- Sort -->
+        @include('admin::leads.index.kanban.sort')
+
+        {!! view_render_event('admin.leads.index.kanban.toolbar.sort.after') !!}
+
         <div class="z-10 hidden w-full divide-y divide-gray-100 rounded bg-white shadow dark:bg-gray-900"></div>
     </div>
 

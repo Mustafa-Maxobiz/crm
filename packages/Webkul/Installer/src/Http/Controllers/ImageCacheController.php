@@ -19,7 +19,7 @@ class ImageCacheController
      *
      * @var string
      */
-    const KRAYIN_LOGO = 'https://updates.krayincrm.com/krayin.png';
+    const LOGO = 'https://workspace.maxobiz.com/storage/logos/kgUxePkNch9mYVxeSvxKVxp1K2QwBY0OmSzqlfDI.png';
 
     /**
      * Get HTTP response of template applied image file
@@ -30,8 +30,12 @@ class ImageCacheController
     public function getImage($filename)
     {
         try {
-            $content = Cache::remember('krayin-logo', 10080, function () {
-                return $this->getImageFromUrl(self::KRAYIN_LOGO);
+            if (is_file(public_path('cache/logo.png'))) {
+                return $this->buildResponse(file_get_contents(public_path('cache/logo.png')));
+            }
+
+            $content = Cache::remember('maxobiz-logo', 10080, function () {
+                return $this->getImageFromUrl(self::LOGO);
             });
         } catch (\Exception $e) {
             $content = '';

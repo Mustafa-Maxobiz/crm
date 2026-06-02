@@ -330,7 +330,7 @@ return [
         ],
         'layouts' => [
             'powered-by' => [
-                'description' => ':webkul tarafından geliştirilen açık kaynaklı bir proje olan :krayin tarafından desteklenmektedir.',
+                'description' => ':krayin tarafından desteklenmektedir.',
             ],
             'header' => [
                 'mega-search' => [

@@ -122,7 +122,7 @@
                             <!-- Lead Details Title and Description -->
                             <x-admin::attributes
                                 :custom-attributes="app('Webkul\Attribute\Repositories\AttributeRepository')->findWhere([
-                                    ['code', 'NOTIN', ['lead_value', 'lead_type_id', 'lead_source_id', 'expected_close_date', 'user_id', 'lead_pipeline_id', 'lead_pipeline_stage_id']],
+                                    ['code', 'NOTIN', ['lead_value', 'pricing_type', 'lead_type_id', 'lead_source_id', 'lead_sub_source_id', 'source_sub_type', 'source_link', 'expected_close_date', 'next_followup_date', 'user_id', 'lead_pipeline_id', 'lead_pipeline_stage_id']],
                                     'entity_type' => 'leads',
                                     'quick_add'   => 1
                                 ])"
@@ -137,25 +137,77 @@
                             <!-- Lead Details Other input fields -->
                             <div class="flex gap-4 max-sm:flex-wrap">
                                 <div class="w-full">
+                                    <!-- Lead Value and Pricing Type -->
                                     <x-admin::attributes
                                         :custom-attributes="app('Webkul\Attribute\Repositories\AttributeRepository')->findWhere([
-                                            ['code', 'IN', ['lead_value', 'lead_type_id', 'lead_source_id']],
+                                            ['code', 'IN', ['lead_value', 'pricing_type']],
                                             'entity_type' => 'leads',
                                             'quick_add'   => 1
                                         ])"
-                                        :custom-validations="[
-                                            'expected_close_date' => [
-                                                'date_format:yyyy-MM-dd',
-                                                'after:' .  \Carbon\Carbon::yesterday()->format('Y-m-d')
-                                            ],
-                                        ]"
+                                    />
+                                    
+                                    <!-- Lead Source -->
+                                    <x-admin::attributes
+                                        :custom-attributes="app('Webkul\Attribute\Repositories\AttributeRepository')->findWhere([
+                                            ['code', 'IN', ['lead_source_id']],
+                                            'entity_type' => 'leads',
+                                            'quick_add'   => 1
+                                        ])"
+                                        ::key="sourceKey"
+                                        @on-change="handleSourceChange"
+                                    />
+                                    
+                                    <!-- Sub-Source (conditional - only if parent source has sub-sources) -->
+                                    <div v-show="showSubSourceDropdown && availableSubSources.length > 0">
+                                        <x-admin::form.control-group>
+                                            <x-admin::form.control-group.label>
+                                                Sub-Source
+                                            </x-admin::form.control-group.label>
+
+                                            <x-admin::form.control-group.control
+                                                type="select"
+                                                name="lead_sub_source_id"
+                                                v-model="selectedSubSource"
+                                                :label="'Sub-Source'"
+                                            >
+                                                <option value="">Select Sub-Source</option>
+                                                <option 
+                                                    v-for="subSource in availableSubSources" 
+                                                    :key="subSource.id" 
+                                                    :value="subSource.id"
+                                                >
+                                                    @{{ subSource.name }}
+                                                </option>
+                                            </x-admin::form.control-group.control>
+
+                                            <x-admin::form.control-group.error control-name="lead_sub_source_id" />
+                                        </x-admin::form.control-group>
+                                    </div>
+                                    
+                                    <!-- Source Link -->
+                                    <x-admin::attributes
+                                        :custom-attributes="app('Webkul\Attribute\Repositories\AttributeRepository')->findWhere([
+                                            ['code', 'IN', ['source_link']],
+                                            'entity_type' => 'leads',
+                                            'quick_add'   => 1
+                                        ])"
                                     />
                                 </div>
 
                                 <div class="w-full">
+                                    <!-- Lead Type -->
                                     <x-admin::attributes
                                         :custom-attributes="app('Webkul\Attribute\Repositories\AttributeRepository')->findWhere([
-                                            ['code', 'IN', ['expected_close_date', 'user_id']],
+                                            ['code', 'IN', ['lead_type_id']],
+                                            'entity_type' => 'leads',
+                                            'quick_add'   => 1
+                                        ])"
+                                    />
+                                    
+                                    <!-- Sales Owner, Expected Close Date, Next Follow-up Date -->
+                                    <x-admin::attributes
+                                        :custom-attributes="app('Webkul\Attribute\Repositories\AttributeRepository')->findWhere([
+                                            ['code', 'IN', ['user_id', 'expected_close_date', 'next_followup_date']],
                                             'entity_type' => 'leads',
                                             'quick_add'   => 1
                                         ])"
@@ -239,7 +291,21 @@
                             { id: 'contact-person', label: '@lang('admin::app.leads.create.contact-person')' },
                             { id: 'products', label: '@lang('admin::app.leads.create.products')' }
                         ],
+                        
+                        showSubSourceDropdown: false,
+                        availableSubSources: [],
+                        selectedSubSource: '',
+                        sourceKey: 0,
                     };
+                },
+                
+                mounted() {
+                    // Listen for source changes
+                    document.addEventListener('change', (e) => {
+                        if (e.target.name === 'lead_source_id') {
+                            this.handleSourceChange(e);
+                        }
+                    });
                 },
 
                 methods: {
@@ -255,6 +321,42 @@
 
                         if (section) {
                             section.scrollIntoView({ behavior: 'smooth' });
+                        }
+                    },
+                    
+                    /**
+                     * Handle source change event.
+                     *
+                     * @param {Event} event
+                     *
+                     * @returns {void}
+                     */
+                    handleSourceChange(event) {
+                        const sourceId = parseInt(event.target.value);
+                        
+                        console.log('Source changed to:', sourceId);
+                        
+                        if (sourceId) {
+                            // Fetch sub-sources for the selected source
+                            console.log('Fetching sub-sources from:', `/admin/settings/api/sources/${sourceId}/sub-sources`);
+                            
+                            this.$axios.get(`/admin/settings/api/sources/${sourceId}/sub-sources`)
+                                .then(response => {
+                                    console.log('Sub-sources response:', response.data);
+                                    this.availableSubSources = response.data.sub_sources || [];
+                                    this.showSubSourceDropdown = this.availableSubSources.length > 0;
+                                    this.selectedSubSource = '';
+                                    console.log('Show dropdown:', this.showSubSourceDropdown, 'Available:', this.availableSubSources);
+                                })
+                                .catch(error => {
+                                    console.error('Error fetching sub-sources:', error);
+                                    this.availableSubSources = [];
+                                    this.showSubSourceDropdown = false;
+                                });
+                        } else {
+                            this.availableSubSources = [];
+                            this.showSubSourceDropdown = false;
+                            this.selectedSubSource = '';
                         }
                     },
                 },

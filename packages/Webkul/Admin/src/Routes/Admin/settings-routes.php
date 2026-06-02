@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use Webkul\Admin\Http\Controllers\Settings\AttributeController;
 use Webkul\Admin\Http\Controllers\Settings\DataTransfer\ImportController;
+use Webkul\Admin\Http\Controllers\Settings\DeletedLeadController;
 use Webkul\Admin\Http\Controllers\Settings\EmailTemplateController;
 use Webkul\Admin\Http\Controllers\Settings\GroupController;
 use Webkul\Admin\Http\Controllers\Settings\LocationController;
@@ -63,6 +64,17 @@ Route::prefix('settings')->group(function () {
         Route::put('edit/{id}', 'update')->name('admin.settings.types.update');
 
         Route::delete('{id}', 'destroy')->name('admin.settings.types.delete');
+    });
+
+    /**
+     * Deleted Lead routes.
+     */
+    Route::controller(DeletedLeadController::class)->prefix('deleted-leads')->group(function () {
+        Route::get('', 'index')->name('admin.settings.deleted_leads.index');
+
+        Route::post('{id}/restore', 'restore')->name('admin.settings.deleted_leads.restore');
+
+        Route::delete('{id}/permanent-delete', 'permanentDelete')->name('admin.settings.deleted_leads.permanent_delete');
     });
 
     /**
@@ -205,6 +217,13 @@ Route::prefix('settings')->group(function () {
         Route::put('edit/{id}', 'update')->name('admin.settings.sources.update');
 
         Route::delete('{id}', 'destroy')->name('admin.settings.sources.delete');
+    });
+
+    /**
+     * API Routes for Sources
+     */
+    Route::prefix('api/sources')->controller(SourceController::class)->group(function () {
+        Route::get('{id}/sub-sources', 'getSubSources')->name('admin.api.sources.sub_sources');
     });
 
     /**

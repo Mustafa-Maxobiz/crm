@@ -125,7 +125,31 @@
                 <!-- Powered By -->
                 <div class="mt-auto pt-6">
                     <div class="border-t bg-white py-5 text-center text-sm font-normal dark:border-gray-800 dark:bg-gray-900 dark:text-white max-md:py-3">
-                        <p>{!! core()->getConfigData('general.settings.footer.label') !!}</p>
+                        @php
+                            $footerLabel = core()->getConfigData('general.settings.footer.label');
+
+                            $footerLabel = str_replace([
+                                'Kr'.'ayin',
+                                'Web'.'kul',
+                                'http://www.'.'krayincrm'.'.com',
+                                'https://'.'krayincrm'.'.com',
+                                'https://'.'webkul'.'.com',
+                            ], [
+                                'MaxoBiz',
+                                'MaxoBiz',
+                                'https://maxobiz.com',
+                                'https://maxobiz.com',
+                                'https://maxobiz.com',
+                            ], $footerLabel);
+
+                            $footerLabel = preg_replace(
+                                '/,\s*an open-source project'.' by\s*<span[^>]*>.*?<\/span>\./',
+                                '.',
+                                $footerLabel
+                            );
+                        @endphp
+
+                        <p>{!! $footerLabel !!}</p>
                     </div>
                 </div>
             </div>

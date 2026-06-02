@@ -256,7 +256,7 @@
                         <p class="mb-6 w-full place-self-end text-left">
                             <a
                                 class="bg-white text-brandColor underline"
-                                href="https://krayincrm.com/"
+                                href="https://maxobiz.com/"
                                 target="_blank"
                             >
                                 @lang('installer::app.installer.index.krayin')
@@ -266,7 +266,7 @@
 
                             <a
                                 class="bg-white text-brandColor underline"
-                                href="https://webkul.com/"
+                                href="https://maxobiz.com/"
                                 target="_blank"
                             >
                                 @lang('installer::app.installer.index.webkul')
@@ -728,7 +728,7 @@
                                     <x-installer::form.control-group.control
                                         type="text"
                                         name="app_name"
-                                        ::value="envData.app_name ?? 'Krayin'"
+                                        ::value="envData.app_name ?? 'MaxoBiz'"
                                         rules="required"
                                         :label="trans('installer::app.installer.index.environment-configuration.application-name')"
                                         :placeholder="trans('installer::app.installer.index.environment-configuration.krayin')"
@@ -1020,14 +1020,14 @@
 
                     <div class="flex items-center justify-between px-4 py-2.5">
                         <a
-                            href="https://forums.krayincrm.com/"
+                            href="https://maxobiz.com/"
                             class="cursor-pointer text-xs font-semibold text-brandColor"
                         >
                             @lang('installer::app.installer.index.installation-completed.krayin-forums')
                         </a>
 
                         <a
-                            href="https://krayincrm.com/extensions/"
+                            href="https://maxobiz.com/"
                             class="cursor-pointer rounded-md border border-brandColor bg-white px-3 py-1.5 font-semibold text-brandColor hover:opacity-90"
                         >
                             @lang('installer::app.installer.index.installation-completed.explore-krayin-extensions')
@@ -1096,7 +1096,7 @@
 
                                         this.envData = { ...this.envData, ...params };
                                     } else {
-                                        setErrors({ 'db_connection': ["Krayin currently supports MySQL only."] });
+                                        setErrors({ 'db_connection': ["MaxoBiz currently supports MySQL only."] });
                                     }
                                 },
 

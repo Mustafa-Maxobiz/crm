@@ -12,7 +12,7 @@
         id="v-flash-item-template"
     >
         <div
-            class="flex w-max items-start justify-between gap-2 rounded-lg bg-white p-3 shadow-[0px_10px_20px_0px_rgba(0,0,0,0.12)] dark:bg-gray-950"
+            class="flex min-w-[350px] max-w-[400px] items-start justify-between gap-2 rounded-lg bg-white p-3 shadow-[0px_10px_20px_0px_rgba(0,0,0,0.12)] dark:bg-gray-950"
             :style="typeStyles[flash.type]['container']"
             @mouseenter="pauseTimer"
             @mouseleave="resumeTimer"

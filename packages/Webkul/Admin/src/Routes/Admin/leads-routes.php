@@ -40,6 +40,8 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
 
     Route::put('product/{lead_id}', 'addProduct')->name('admin.leads.product.add');
 
+    Route::post('followup/complete/{id}', 'followupComplete')->name('admin.leads.followup.complete');
+
     Route::get('kanban/look-up', [LeadController::class, 'kanbanLookup'])->name('admin.leads.kanban.look_up');
 
     Route::controller(ActivityController::class)->prefix('{id}/activities')->group(function () {

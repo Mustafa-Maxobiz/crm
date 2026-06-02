@@ -14,10 +14,26 @@ class SourceDataGrid extends DataGrid
     public function prepareQueryBuilder(): Builder
     {
         $queryBuilder = DB::table('lead_sources')
-            ->addSelect(
+            ->leftJoin('lead_source_parents', 'lead_sources.id', '=', 'lead_source_parents.parent_source_id')
+            ->leftJoin('lead_sources as sub_sources', 'lead_source_parents.source_id', '=', 'sub_sources.id')
+            ->select(
                 'lead_sources.id',
-                'lead_sources.name'
-            );
+                'lead_sources.name',
+                'lead_sources.parent_id',
+                DB::raw('GROUP_CONCAT(sub_sources.name SEPARATOR ", ") as sub_source_names')
+            )
+            ->groupBy('lead_sources.id', 'lead_sources.name', 'lead_sources.parent_id')
+            ->orderBy('lead_sources.parent_id')
+            ->orderBy('lead_sources.sort_order');
+
+        // Only filter out sub-sources if 'all' parameter is not set
+        if (!request()->has('all')) {
+            $queryBuilder->whereNotExists(function ($query) {
+                $query->select(DB::raw(1))
+                      ->from('lead_source_parents')
+                      ->whereColumn('lead_source_parents.source_id', 'lead_sources.id');
+            });
+        }
 
         $this->addFilter('id', 'lead_sources.id');
 
@@ -43,6 +59,16 @@ class SourceDataGrid extends DataGrid
             'searchable' => true,
             'filterable' => true,
             'sortable'   => true,
+        ]);
+
+        $this->addColumn([
+            'index'      => 'sub_source_names',
+            'label'      => trans('admin::app.settings.sources.index.datagrid.sub-sources'),
+            'type'       => 'string',
+            'searchable' => false,
+            'filterable' => false,
+            'sortable'   => false,
+            'closure'    => fn ($row) => $row->sub_source_names ?? '-',
         ]);
     }
 

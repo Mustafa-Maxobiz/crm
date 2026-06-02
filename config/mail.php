@@ -106,7 +106,7 @@ return [
     |
     */
 
-    'domain' => env('MAIL_DOMAIN', 'webkul.com'),
+    'domain' => env('MAIL_DOMAIN', 'maxobiz.com'),
 
     /*
     |--------------------------------------------------------------------------

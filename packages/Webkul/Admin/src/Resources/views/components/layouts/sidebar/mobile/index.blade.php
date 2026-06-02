@@ -17,7 +17,7 @@
             </x-slot>
 
             <x-slot:header>
-                @if ($logo = core()->getConfigData('general.design.admin_logo.logo_image'))
+                @if ($logo = core()->getConfigData('general.general.admin_logo.logo_image'))
                     <img
                         class="h-10"
                         src="{{ Storage::url($logo) }}"
@@ -25,7 +25,7 @@
                     />
                 @else
                     <img
-                        class="h-10"
+                        class="h-10 max-w-[180px] object-contain"
                         src="{{ request()->cookie('dark_mode') ? vite()->asset('images/dark-logo.svg') : vite()->asset('images/logo.svg') }}"
                         id="logo-image"
                         alt="{{ config('app.name') }}"

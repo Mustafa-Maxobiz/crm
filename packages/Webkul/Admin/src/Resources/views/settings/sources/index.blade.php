@@ -81,6 +81,9 @@
                             <!-- Sources Name -->
                             <p class="break-words">@{{ record.name }}</p>
 
+                            <!-- Sub-Sources -->
+                            <p class="break-words">@{{ record.sub_source_names || '-' }}</p>
+
                             <!-- Actions -->
                             <div class="flex justify-end">
                                 <a @click="selectedType=true; editModal(record.actions.find(action => action.index === 'edit')?.url)">
@@ -215,6 +218,62 @@
                             </x-admin::form.control-group>
 
                             {!! view_render_event('admin.settings.sources.index.form.name.after') !!}
+
+                            {!! view_render_event('admin.settings.sources.index.form.subtypes.before') !!}
+
+                            <!-- Sub-Sources Management -->
+                            <x-admin::form.control-group>
+                                <x-admin::form.control-group.label>
+                                    @lang('admin::app.settings.sources.index.create.sub-sources')
+                                </x-admin::form.control-group.label>
+
+                                <!-- Selected Sub-Sources Display -->
+                                <div v-if="selectedSubSources.length > 0" class="mb-3 flex flex-wrap gap-2">
+                                    <span 
+                                        v-for="(subSource, index) in selectedSubSources" 
+                                        :key="index"
+                                        class="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1.5 text-sm text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                                    >
+                                        <span>@{{ subSource }}</span>
+                                        <button 
+                                            type="button"
+                                            @click="removeSubSource(index)"
+                                            class="flex h-4 w-4 items-center justify-center rounded-full hover:bg-blue-200 dark:hover:bg-blue-800"
+                                            title="Remove"
+                                        >
+                                            <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                            </svg>
+                                        </button>
+                                    </span>
+                                </div>
+
+                                <!-- Add New Sub-Source -->
+                                <div class="flex gap-2">
+                                    <input
+                                        type="text"
+                                        v-model="newSubSource"
+                                        :placeholder="'{{ trans('admin::app.settings.sources.index.create.sub-source-name') }}'"
+                                        class="flex-1 rounded border border-gray-200 px-3 py-2 text-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+                                        @keyup.enter="addNewSubSource"
+                                    />
+                                    
+                                    <button
+                                        type="button"
+                                        @click="addNewSubSource"
+                                        class="secondary-button"
+                                    >
+                                        <i class="icon-add text-md"></i>
+                                        @lang('admin::app.settings.sources.index.create.add-btn')
+                                    </button>
+                                </div>
+
+                                <p class="mt-1 text-xs text-gray-600 dark:text-gray-300">
+                                    @lang('admin::app.settings.sources.index.create.sub-sources-info')
+                                </p>
+                            </x-admin::form.control-group>
+
+                            {!! view_render_event('admin.settings.sources.index.form.subtypes.after') !!}
                         </x-slot>
 
                         <!-- Modal Footer -->
@@ -248,7 +307,21 @@
                         isProcessing: false,
                         
                         selectedType: false,
+                        
+                        newSubSource: '',
+                        
+                        selectedSubSources: [],
+                        
+                        availableSubSources: [],
+                        
+                        subSourcesPage: 1,
+                        
+                        subSourcesPerPage: 10,
                     };
+                },
+                
+                mounted() {
+                    this.fetchAvailableSubSources();
                 },
         
                 computed: {
@@ -265,23 +338,86 @@
 
                         return count;
                     },
+                    
+                    subSourcesValue() {
+                        return this.selectedSubSources.join(', ');
+                    },
+                    
+                    paginatedSubSources() {
+                        const start = (this.subSourcesPage - 1) * this.subSourcesPerPage;
+                        const end = start + this.subSourcesPerPage;
+                        return this.availableSubSources.slice(start, end);
+                    },
+                    
+                    totalSubSourcesPages() {
+                        return Math.ceil(this.availableSubSources.length / this.subSourcesPerPage);
+                    },
                 },
 
                 methods: {
+                    fetchAvailableSubSources() {
+                        // Fetch all sources including sub-sources
+                        this.$axios.get("{{ route('admin.settings.sources.index') }}", {
+                            params: {
+                                'pagination': 0,
+                                'all': 1  // Get all including sub-sources
+                            }
+                        })
+                            .then(response => {
+                                console.log('Available sources response:', response.data);
+                                
+                                if (response.data && response.data.records) {
+                                    // Get all sources from the response
+                                    this.availableSubSources = response.data.records;
+                                    console.log('Available sub-sources:', this.availableSubSources);
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error fetching sub-sources:', error);
+                            });
+                    },
+                    
+                    addNewSubSource() {
+                        if (this.newSubSource.trim() && !this.selectedSubSources.includes(this.newSubSource.trim())) {
+                            this.selectedSubSources.push(this.newSubSource.trim());
+                            this.newSubSource = '';
+                        }
+                    },
+                    
+                    selectExistingSubSource(name) {
+                        if (!this.selectedSubSources.includes(name)) {
+                            this.selectedSubSources.push(name);
+                        }
+                    },
+                    
+                    removeSubSource(index) {
+                        this.selectedSubSources.splice(index, 1);
+                    },
+                    
                     openModal() {
                         this.selectedType = false;
+                        this.selectedSubSources = [];
+                        this.newSubSource = '';
+                        this.subSourcesPage = 1;
                         
                         this.$refs.sourceUpdateAndCreateModal.toggle();
                     },
                     
                     updateOrCreate(params, {resetForm, setErrors}) {
                         this.isProcessing = true;
-
-                        this.$axios.post(params.id ? `{{ route('admin.settings.sources.update', '') }}/${params.id}` : "{{ route('admin.settings.sources.store') }}", {
+                        
+                        // Manually add sub_sources to params
+                        const formData = {
                             ...params,
+                            sub_sources: this.subSourcesValue,
                             _method: params.id ? 'put' : 'post'
-                        },
+                        };
+                        
+                        console.log('Sending data:', formData);
 
+                        this.$axios.post(
+                            params.id ? `{{ route('admin.settings.sources.update', '') }}/${params.id}` : "{{ route('admin.settings.sources.store') }}", 
+                            formData
                         ).then(response => {
                             this.isProcessing = false;
 
@@ -290,12 +426,20 @@
                             this.$emitter.emit('add-flash', { type: 'success', message: response.data.message });
 
                             this.$refs.datagrid.get();
+                            
+                            this.fetchAvailableSubSources();
 
                             resetForm();
+                            
+                            this.selectedSubSources = [];
+                            this.newSubSource = '';
                         }).catch(error => {
                             this.isProcessing = false;
+                            
+                            console.error('Error creating source:', error);
+                            console.error('Error response:', error.response);
 
-                            if (error.response.status === 422) {
+                            if (error.response && error.response.status === 422) {
                                 setErrors(error.response.data.errors);
                             }
                         });
@@ -304,11 +448,27 @@
                     editModal(url) {
                         this.$axios.get(url)
                             .then(response => {
+                                console.log('Edit response:', response.data.data);
+                                
                                 this.$refs.modalForm.setValues(response.data.data);
+                                
+                                // Set selected sub-sources from response
+                                if (response.data.data.sub_sources) {
+                                    this.selectedSubSources = response.data.data.sub_sources
+                                        .split(',')
+                                        .map(s => s.trim())
+                                        .filter(s => s);
+                                    
+                                    console.log('Selected sub-sources:', this.selectedSubSources);
+                                } else {
+                                    this.selectedSubSources = [];
+                                }
                                 
                                 this.$refs.sourceUpdateAndCreateModal.toggle();
                             })
-                            .catch(error => {});
+                            .catch(error => {
+                                console.error('Error loading source:', error);
+                            });
                     },
                 },
             });

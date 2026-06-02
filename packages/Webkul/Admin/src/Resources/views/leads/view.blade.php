@@ -90,6 +90,9 @@
             <!-- Lead Attributes -->
             @include ('admin::leads.view.attributes')
 
+            <!-- Follow-up Tracking -->
+            @include ('admin::leads.view.followup')
+
             <!-- Contact Person -->
             @include ('admin::leads.view.person')
         </div>

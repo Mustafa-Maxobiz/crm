@@ -265,6 +265,8 @@
 
                             this.$emitter.emit('on-activity-added', response.data.data);
 
+                            this.$emitter.emit('activity-created');
+
                             this.$refs.activityModal.close();
                         })
                         .catch (error => {

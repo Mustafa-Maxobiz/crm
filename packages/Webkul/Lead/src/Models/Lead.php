@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Webkul\Activity\Models\ActivityProxy;
 use Webkul\Activity\Traits\LogsActivity;
 use Webkul\Attribute\Traits\CustomAttribute;
@@ -19,7 +20,7 @@ use Webkul\User\Models\UserProxy;
 
 class Lead extends Model implements LeadContract
 {
-    use CustomAttribute, LogsActivity;
+    use CustomAttribute, LogsActivity, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -33,10 +34,17 @@ class Lead extends Model implements LeadContract
         'status',
         'lost_reason',
         'expected_close_date',
+        'next_followup_date',
+        'followup_count',
+        'last_followup_date',
+        'followup_notes',
         'closed_at',
         'user_id',
         'person_id',
         'lead_source_id',
+        'lead_sub_source_id',
+        'source_sub_type',
+        'source_link',
         'lead_type_id',
         'lead_pipeline_id',
         'lead_pipeline_stage_id',
@@ -49,7 +57,10 @@ class Lead extends Model implements LeadContract
      */
     protected $casts = [
         'closed_at'           => 'datetime:D M d, Y H:i A',
+        'deleted_at'          => 'datetime:D M d, Y H:i A',
         'expected_close_date' => 'date:D M d, Y',
+        'next_followup_date'  => 'datetime:D M d, Y H:i A',
+        'last_followup_date'  => 'datetime:D M d, Y H:i A',
     ];
 
     /**
@@ -91,6 +102,14 @@ class Lead extends Model implements LeadContract
     public function source(): BelongsTo
     {
         return $this->belongsTo(SourceProxy::modelClass(), 'lead_source_id');
+    }
+
+    /**
+     * Get the sub-source that owns the lead.
+     */
+    public function subSource(): BelongsTo
+    {
+        return $this->belongsTo(SourceProxy::modelClass(), 'lead_sub_source_id');
     }
 
     /**
@@ -169,5 +188,39 @@ class Lead extends Model implements LeadContract
         $rottenDate = $this->created_at->addDays($this->pipeline->rotten_days);
 
         return $rottenDate->diffInDays(Carbon::now(), false);
+    }
+
+    /**
+     * Check if follow-up is due
+     */
+    public function isFollowupDue()
+    {
+        if (! $this->next_followup_date) {
+            return false;
+        }
+
+        return Carbon::parse($this->next_followup_date)->isPast();
+    }
+
+    /**
+     * Check if follow-up is today
+     */
+    public function isFollowupToday()
+    {
+        if (! $this->next_followup_date) {
+            return false;
+        }
+
+        return Carbon::parse($this->next_followup_date)->isToday();
+    }
+
+    /**
+     * Increment follow-up counter
+     */
+    public function incrementFollowupCount()
+    {
+        $this->followup_count = ($this->followup_count ?? 0) + 1;
+        $this->last_followup_date = Carbon::now();
+        $this->saveQuietly();
     }
 }
