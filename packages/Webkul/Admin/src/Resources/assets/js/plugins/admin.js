@@ -86,6 +86,10 @@ export default {
             formatDate: (dateString, format, timezone) => {
                 const date = new Date(dateString);
 
+                if (Number.isNaN(date.getTime())) {
+                    return "";
+                }
+
                 const options = { timeZone: timezone };
 
                 const formatter = new Intl.DateTimeFormat("en-US", {

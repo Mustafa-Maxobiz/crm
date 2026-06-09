@@ -326,7 +326,7 @@
                 },
 
                 handleOutsideClick(event) {
-                    if (! this.$refs.notificationDropdown.contains(event.target)) {
+                    if (! this.$refs.notificationDropdown?.contains(event.target)) {
                         this.isOpen = false;
                     }
                 },
@@ -345,7 +345,9 @@
 
                             this.unreadMessagesCount = response.data.unread_messages_count;
 
-                            this.notifications = response.data.notifications;
+                            this.notifications = Array.isArray(response.data.notifications)
+                                ? response.data.notifications
+                                : [];
                         });
                 },
 

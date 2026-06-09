@@ -154,7 +154,7 @@ class Importer extends AbstractImporter
             'organization_id'         => 'required|exists:organizations,id',
             'user_id'                 => 'required|exists:users,id',
             'contact_numbers'         => 'required|array',
-            'contact_numbers.*.value' => 'required|numeric',
+            'contact_numbers.*.value' => 'required',
             'contact_numbers.*.label' => 'required|in:home,work',
             'emails'                  => 'required|array',
             'emails.*.value'          => 'required|email',

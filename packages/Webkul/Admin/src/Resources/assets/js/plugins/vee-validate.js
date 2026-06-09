@@ -44,24 +44,10 @@ export default {
         Object.entries(all).forEach(([name, rule]) => defineRule(name, rule));
 
         /**
-         * This regular expression allows phone numbers with the following conditions:
-         * - The phone number can start with an optional "+" sign.
-         * - After the "+" sign, there should be one or more digits.
-         *
-         * This validation is sufficient for global-level phone number validation. If
-         * someone wants to customize it, they can override this rule.
+         * Phone numbers are intentionally pattern-free because CRM users often store
+         * country codes, spaces, extensions, labels, and other local dialing notes.
          */
-        defineRule("phone", (value) => {
-            if (! value || ! value.length) {
-                return true;
-            }
-
-            if (! /^\+?\d+$/.test(value)) {
-                return false;
-            }
-
-            return true;
-        });
+        defineRule("phone", () => true);
                 
         defineRule("address", (value) => {
             if (!value || !value.length) {
