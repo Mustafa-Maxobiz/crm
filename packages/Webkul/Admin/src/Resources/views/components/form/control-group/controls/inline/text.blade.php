@@ -1,10 +1,12 @@
 @props([
     'allowEdit' => true,
+    'allowCopy' => false,
 ])
 
 <v-inline-text-edit
     {{ $attributes }}
     :allow-edit="{{ $allowEdit ? 'true' : 'false' }}"
+    :allow-copy="{{ $allowCopy ? 'true' : 'false' }}"
 >
     <div class="group w-full max-w-full hover:rounded-sm">
         <div class="rounded-xs flex h-[34px] items-center pl-2.5 text-left">
@@ -33,7 +35,7 @@
                 />
 
                 <div
-                    class="group relative h-[18px] !w-full pl-2.5"
+                    class="group relative h-[18px] min-w-0 flex-1 pl-2.5"
                     :style="{ 'text-align': position }"
                 >
                     <span class="cursor-pointer truncate rounded">
@@ -66,6 +68,15 @@
                         <div class="-mt-2 ml-4 h-3 w-3 rotate-45 bg-black dark:bg-white"></div>
                     </div>
                 </div>
+
+                <button
+                    type="button"
+                    class="primary-button mr-1 px-2 py-1 text-xs"
+                    v-if="allowCopy && copyValue"
+                    @click.stop="copyToClipboard"
+                >
+                    @{{ hasCopied ? 'Copied' : 'Copy' }}
+                </button>
 
                 <template v-if="allowEdit">
                     <i
@@ -157,6 +168,11 @@
                     default: true,
                 },
 
+                allowCopy: {
+                    type: Boolean,
+                    default: false,
+                },
+
                 errors: {
                     type: Object,
                     default: {},
@@ -186,6 +202,8 @@
 
                     isDirty: false,
 
+                    hasCopied: false,
+
                     isRTL: document.documentElement.dir === 'rtl',
                 };
             },
@@ -201,6 +219,12 @@
                 },
             },
 
+            computed: {
+                copyValue() {
+                    return (this.inputValue ?? '').toString();
+                },
+            },
+
             methods: {
                 /**
                  * Toggle the input.
@@ -211,6 +235,62 @@
                     this.isEditing = true;
 
                     this.$nextTick(() => this.$refs.input.focus());
+                },
+
+                /**
+                 * Copy the current field value.
+                 *
+                 * @return {void}
+                 */
+                async copyToClipboard() {
+                    if (! this.copyValue) {
+                        return;
+                    }
+
+                    try {
+                        if (navigator.clipboard?.writeText) {
+                            await navigator.clipboard.writeText(this.copyValue);
+                        } else {
+                            this.copyWithFallback(this.copyValue);
+                        }
+
+                        this.hasCopied = true;
+
+                        setTimeout(() => {
+                            this.hasCopied = false;
+                        }, 1500);
+                    } catch (error) {
+                        this.copyWithFallback(this.copyValue);
+                    }
+                },
+
+                /**
+                 * Copy using a temporary textarea for older browsers.
+                 *
+                 * @param {String} value
+                 * @return {void}
+                 */
+                copyWithFallback(value) {
+                    const textarea = document.createElement('textarea');
+
+                    textarea.value = value;
+                    textarea.setAttribute('readonly', '');
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+
+                    document.body.appendChild(textarea);
+
+                    textarea.select();
+
+                    document.execCommand('copy');
+
+                    document.body.removeChild(textarea);
+
+                    this.hasCopied = true;
+
+                    setTimeout(() => {
+                        this.hasCopied = false;
+                    }, 1500);
                 },
 
                 /**

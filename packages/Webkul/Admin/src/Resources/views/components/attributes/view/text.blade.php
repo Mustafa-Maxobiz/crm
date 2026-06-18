@@ -10,4 +10,5 @@
     ::errors="errors"
     :url="$url"
     :allow-edit="$allowEdit"
+    :allow-copy="$attribute->code === 'source_link'"
 />

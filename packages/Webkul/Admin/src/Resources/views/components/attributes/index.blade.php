@@ -1,6 +1,7 @@
 @foreach ($customAttributes as $attribute)
     @php
         $validations = [];
+        $value = isset($entity) ? $entity[$attribute->code] : null;
 
         if ($attribute->is_required) {
             $validations[] = 'required';
@@ -13,6 +14,14 @@
         $validations[] = $attribute->validation;
 
         $validations = implode('|', array_filter($validations));
+
+        if (
+            $attribute->code === 'lead_value'
+            && is_numeric($value)
+            && str_contains((string) $value, '.')
+        ) {
+            $value = rtrim(rtrim((string) $value, '0'), '.');
+        }
     @endphp
 
     <x-admin::form.control-group class="mb-2.5 w-full">
@@ -31,7 +40,7 @@
             <x-admin::attributes.edit.index
                 :attribute="$attribute"
                 :validations="$validations"
-                :value="isset($entity) ? $entity[$attribute->code] : null"
+                :value="$value"
             />
         @endif
 
