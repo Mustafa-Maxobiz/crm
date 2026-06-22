@@ -6,6 +6,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\View\View;
@@ -745,19 +746,66 @@ class LeadController extends Controller
      */
     public function followupComplete(int $id): RedirectResponse
     {
-        $lead = $this->leadRepository->findOrFail($id);
+        $data = request()->validate([
+            'current_followup_date'  => ['required', 'date'],
+            'schedule_next_followup' => ['required', 'boolean'],
+            'next_followup_date'     => ['required_if:schedule_next_followup,1', 'nullable', 'date', 'after:now'],
+        ]);
 
-        Event::dispatch('lead.update.before', $id);
+        $lead = DB::transaction(function () use ($id, $data) {
+            $lead = $this->leadRepository
+                ->getModel()
+                ->newQuery()
+                ->lockForUpdate()
+                ->findOrFail($id);
 
-        // Increment follow-up count and update last follow-up date
-        $lead->followup_count = ($lead->followup_count ?? 0) + 1;
-        $lead->last_followup_date = Carbon::now();
-        $lead->next_followup_date = null;
-        
-        // Save without triggering attribute updates
-        $lead->saveQuietly();
+            if (! $lead->next_followup_date) {
+                return $lead;
+            }
 
-        Event::dispatch('lead.update.after', $lead);
+            if (! Carbon::parse($lead->next_followup_date)->equalTo(Carbon::parse($data['current_followup_date']))) {
+                return $lead;
+            }
+
+            Event::dispatch('lead.update.before', $id);
+
+            $nextFollowupDate = request()->boolean('schedule_next_followup')
+                ? Carbon::parse($data['next_followup_date'])
+                : null;
+            $completedAt = Carbon::now();
+
+            $lead->newQuery()
+                ->whereKey($lead->getKey())
+                ->update([
+                    'followup_count'     => ($lead->followup_count ?? 0) + 1,
+                    'last_followup_date' => $completedAt,
+                    'next_followup_date' => $nextFollowupDate,
+                ]);
+
+            if ($followupAttribute = DB::table('attributes')
+                ->where('entity_type', 'leads')
+                ->where('code', 'next_followup_date')
+                ->first()
+            ) {
+                DB::table('attribute_values')->updateOrInsert(
+                    [
+                        'entity_type'  => 'leads',
+                        'entity_id'    => $lead->getKey(),
+                        'attribute_id' => $followupAttribute->id,
+                    ],
+                    [
+                        'datetime_value' => $nextFollowupDate,
+                        'unique_id'      => $lead->getKey().'|'.$followupAttribute->id,
+                    ]
+                );
+            }
+
+            $lead->refresh();
+
+            Event::dispatch('lead.update.after', $lead);
+
+            return $lead;
+        });
 
         session()->flash('success', trans('admin::app.leads.followup-complete-success'));
 

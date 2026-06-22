@@ -4,6 +4,7 @@ namespace Webkul\Admin\Http\Controllers\Activity;
 
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
@@ -106,18 +107,62 @@ class ActivityController extends Controller
      */
     public function markNotificationAsDone(int $id): JsonResponse
     {
-        $lead = $this->dueFollowupNotificationQuery()
-            ->where('leads.id', $id)
-            ->firstOrFail();
+        DB::transaction(function () use ($id) {
+            $userIds = bouncer()->getAuthorizedUserIds();
 
-        Event::dispatch('lead.update.before', $lead->id);
+            $query = $this->leadRepository
+                ->getModel()
+                ->newQuery()
+                ->where('leads.id', $id)
+                ->lockForUpdate();
 
-        $lead->followup_count = ($lead->followup_count ?? 0) + 1;
-        $lead->last_followup_date = Carbon::now();
-        $lead->next_followup_date = null;
-        $lead->saveQuietly();
+            if (! is_null($userIds)) {
+                $query->whereIn('leads.user_id', $userIds);
+            }
 
-        Event::dispatch('lead.update.after', $lead);
+            $lead = $query->firstOrFail();
+
+            if (
+                ! $lead->next_followup_date
+                || Carbon::parse($lead->next_followup_date)->isFuture()
+            ) {
+                return;
+            }
+
+            Event::dispatch('lead.update.before', $lead->id);
+
+            $completedAt = Carbon::now();
+
+            $lead->newQuery()
+                ->whereKey($lead->getKey())
+                ->update([
+                    'followup_count'     => ($lead->followup_count ?? 0) + 1,
+                    'last_followup_date' => $completedAt,
+                    'next_followup_date' => null,
+                ]);
+
+            if ($followupAttribute = DB::table('attributes')
+                ->where('entity_type', 'leads')
+                ->where('code', 'next_followup_date')
+                ->first()
+            ) {
+                DB::table('attribute_values')->updateOrInsert(
+                    [
+                        'entity_type'  => 'leads',
+                        'entity_id'    => $lead->getKey(),
+                        'attribute_id' => $followupAttribute->id,
+                    ],
+                    [
+                        'datetime_value' => null,
+                        'unique_id'      => $lead->getKey().'|'.$followupAttribute->id,
+                    ]
+                );
+            }
+
+            $lead->refresh();
+
+            Event::dispatch('lead.update.after', $lead);
+        });
 
         return response()->json([
             'message' => trans('admin::app.activities.notifications.marked-done'),
