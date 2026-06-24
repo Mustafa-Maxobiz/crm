@@ -4,6 +4,7 @@ namespace Webkul\Attribute\Repositories;
 
 use Illuminate\Container\Container;
 use Illuminate\Support\Str;
+use Webkul\Lead\Services\SourceAccessService;
 use Webkul\Core\Eloquent\Repository;
 
 class AttributeRepository extends Repository
@@ -145,11 +146,34 @@ class AttributeRepository extends Repository
 
         // Handle scope if specified (e.g., 'roots' for root sources only)
         $repository = app($lookup['repository']);
-        
+
         if (isset($lookup['scope'])) {
-            // Apply scope and get results directly from query builder
             $queryBuilder = $repository->getModel()->newQuery()->{$lookup['scope']}();
-            
+
+            $this->applySourceScopeToQuery($queryBuilder);
+
+            return $queryBuilder
+                ->where($lookup['label_column'] ?? 'name', 'like', '%'.urldecode($query).'%')
+                ->select($columns)
+                ->get();
+        }
+
+        if (Str::contains($lookup['repository'], 'SourceRepository')) {
+            $queryBuilder = $repository->getModel()->newQuery();
+
+            $this->applySourceScopeToQuery($queryBuilder);
+
+            return $queryBuilder
+                ->where($lookup['label_column'] ?? 'name', 'like', '%'.urldecode($query).'%')
+                ->select($columns)
+                ->get();
+        }
+
+        if (Str::contains($lookup['repository'], 'OrganizationRepository')) {
+            $queryBuilder = $repository->getModel()->newQuery();
+
+            $this->applyOrganizationScopeToQuery($queryBuilder);
+
             return $queryBuilder
                 ->where($lookup['label_column'] ?? 'name', 'like', '%'.urldecode($query).'%')
                 ->select($columns)
@@ -187,6 +211,24 @@ class AttributeRepository extends Repository
             );
         } else {
             return app($lookup['repository'])->find($entityId, $columns);
+        }
+    }
+
+    protected function applySourceScopeToQuery($queryBuilder): void
+    {
+        $rootIds = app(SourceAccessService::class)->getEffectiveRootSourceIds();
+
+        if ($rootIds !== null) {
+            $queryBuilder->whereIn('lead_sources.id', $rootIds);
+        }
+    }
+
+    protected function applyOrganizationScopeToQuery($queryBuilder): void
+    {
+        $organizationIds = app(SourceAccessService::class)->getEffectiveOrganizationIds();
+
+        if ($organizationIds !== null) {
+            $queryBuilder->whereIn('organizations.id', $organizationIds);
         }
     }
 }

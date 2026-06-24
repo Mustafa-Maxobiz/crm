@@ -32,6 +32,26 @@ return [
         'route' => ['admin.leads.delete', 'admin.leads.mass_delete'],
         'sort'  => 4,
     ], [
+        'key'   => 'meta_leads',
+        'name'  => 'admin::app.acl.meta-leads',
+        'route' => 'admin.meta_leads.index',
+        'sort'  => 3,
+    ], [
+        'key'   => 'meta_leads.view',
+        'name'  => 'admin::app.acl.view',
+        'route' => 'admin.meta_leads.view',
+        'sort'  => 1,
+    ], [
+        'key'   => 'meta_leads.edit',
+        'name'  => 'admin::app.acl.edit',
+        'route' => ['admin.meta_leads.mass_update', 'admin.meta_leads.update_status'],
+        'sort'  => 2,
+    ], [
+        'key'   => 'meta_leads.delete',
+        'name'  => 'admin::app.acl.delete',
+        'route' => ['admin.meta_leads.delete', 'admin.meta_leads.mass_delete'],
+        'sort'  => 3,
+    ], [
         'key'   => 'quotes',
         'name'  => 'admin::app.acl.quotes',
         'route' => 'admin.quotes.index',

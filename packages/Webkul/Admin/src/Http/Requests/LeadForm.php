@@ -7,6 +7,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Webkul\Attribute\Repositories\AttributeRepository;
 use Webkul\Attribute\Repositories\AttributeValueRepository;
 use Webkul\Core\Contracts\Validations\Decimal;
+use Webkul\Lead\Services\SourceAccessService;
 
 class LeadForm extends FormRequest
 {
@@ -22,7 +23,8 @@ class LeadForm extends FormRequest
      */
     public function __construct(
         protected AttributeRepository $attributeRepository,
-        protected AttributeValueRepository $attributeValueRepository
+        protected AttributeValueRepository $attributeValueRepository,
+        protected SourceAccessService $sourceAccessService,
     ) {}
 
     /**
@@ -141,6 +143,29 @@ class LeadForm extends FormRequest
             'products.*.price'      => 'required_with:products.*.product_id',
             'products.*.quantity'   => 'required_with:products.*.product_id',
         ];
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            if ($sourceId = request('lead_source_id')) {
+                if (! $this->sourceAccessService->canAccessSourceId((int) $sourceId)) {
+                    $validator->errors()->add('lead_source_id', trans('admin::app.leads.source-access-denied'));
+                }
+            }
+
+            if ($subSourceId = request('lead_sub_source_id')) {
+                if (! $this->sourceAccessService->canAccessSourceId((int) $subSourceId)) {
+                    $validator->errors()->add('lead_sub_source_id', trans('admin::app.leads.source-access-denied'));
+                }
+            }
+
+            $organizationId = request('person.organization_id') ?? request()->input('person.organization_id');
+
+            if ($organizationId && ! $this->sourceAccessService->canAccessOrganizationId((int) $organizationId)) {
+                $validator->errors()->add('person.organization_id', trans('admin::app.leads.company-access-denied'));
+            }
+        });
     }
 
     /**

@@ -53,6 +53,8 @@ class AccountController extends Controller
             return redirect()->back();
         }
 
+        unset($data['current_password'], $data['password_confirmation']);
+
         if (isset($data['role_id']) || isset($data['view_permission'])) {
             session()->flash('warning', trans('admin::app.user.account.permission-denied'));
 
@@ -69,18 +71,20 @@ class AccountController extends Controller
             $data['password'] = bcrypt($data['password']);
         }
 
-        if (request()->hasFile('image')) {
-            $data['image'] = current(request()->file('image'))->store('admins/'.$user->id);
-        } else {
-            if (! isset($data['image'])) {
-                if (! empty($data['image'])) {
-                    Storage::delete($user->image);
-                }
-
-                $data['image'] = null;
-            } else {
-                $data['image'] = $user->image;
+        if ($uploadedImage = $this->resolveUploadedImage()) {
+            if ($user->image) {
+                Storage::delete($user->image);
             }
+
+            $data['image'] = $uploadedImage->store('admins/'.$user->id);
+        } elseif (! request()->has('image')) {
+            if ($user->image) {
+                Storage::delete($user->image);
+            }
+
+            $data['image'] = null;
+        } else {
+            unset($data['image']);
         }
 
         $user->update($data);
@@ -92,5 +96,25 @@ class AccountController extends Controller
         session()->flash('success', trans('admin::app.account.edit.update-success'));
 
         return back();
+    }
+
+    /**
+     * Resolve the first valid uploaded profile image from the request.
+     */
+    protected function resolveUploadedImage()
+    {
+        $files = request()->file('image', []);
+
+        if (! is_array($files)) {
+            $files = [$files];
+        }
+
+        foreach ($files as $file) {
+            if ($file && $file->isValid()) {
+                return $file;
+            }
+        }
+
+        return null;
     }
 }

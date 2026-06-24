@@ -40,7 +40,7 @@
 
     @isset($footer)
         <template v-slot:footer>
-            <div {{ $content->attributes->merge(['class' => 'flex justify-end px-4 py-2.5']) }}>
+            <div {{ $footer->attributes->merge(['class' => 'flex flex-shrink-0 justify-end border-t border-gray-200 px-4 py-3 dark:border-gray-800']) }}>
                 {{ $footer }}
             </div>
         </template>
@@ -85,24 +85,28 @@
                 :leave-to-class="enterFromLeaveToClasses"
             >
                 <div
-                    class="fixed inset-0 z-[10003] transform overflow-y-auto transition"
+                    class="fixed inset-0 z-[10003] transform overflow-hidden transition"
                     v-if="isOpen"
                 >
-                    <div class="flex min-h-full items-center justify-center max-md:p-4">
+                    <div class="flex h-full items-center justify-center p-4">
                         <div
-                            class="box-shadow z-[999] w-full overflow-hidden rounded-lg bg-white dark:bg-gray-900 sm:absolute"
-                            :class="[finalPositionClass, sizeClass]"
+                            class="box-shadow z-[999] flex max-h-full w-full flex-col overflow-hidden rounded-lg bg-white dark:bg-gray-900"
+                            :class="sizeClass"
                         >
                             <!-- Header Slot -->
-                            <slot
-                                name="header"
-                                :toggle="toggle"
-                                :isOpen="isOpen"
-                            >
-                            </slot>
+                            <div class="flex-shrink-0">
+                                <slot
+                                    name="header"
+                                    :toggle="toggle"
+                                    :isOpen="isOpen"
+                                >
+                                </slot>
+                            </div>
 
                             <!-- Content Slot -->
-                            <slot name="content"></slot>
+                            <div class="min-h-0 flex-1 overflow-y-auto">
+                                <slot name="content"></slot>
+                            </div>
                             
                             <!-- Footer Slot -->
                             <slot name="footer"></slot>

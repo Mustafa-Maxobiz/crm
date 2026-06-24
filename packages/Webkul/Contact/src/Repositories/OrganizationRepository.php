@@ -116,4 +116,17 @@ class OrganizationRepository extends Repository
             $organization->delete();
         });
     }
+
+    public function getDropdownOptions(): array
+    {
+        $query = $this->getModel()->newQuery()->orderBy('name');
+
+        $organizationIds = app(\Webkul\Lead\Services\SourceAccessService::class)->getEffectiveOrganizationIds();
+
+        if ($organizationIds !== null) {
+            $query->whereIn('id', $organizationIds);
+        }
+
+        return $query->get(['name as label', 'id as value'])->toArray();
+    }
 }

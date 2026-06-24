@@ -75,11 +75,22 @@
                             :image="element"
                             :width="width"
                             :height="height"
+                            :allow-multiple="allowMultiple"
                             @onRemove="remove($event)"
+                            @onFileUpdated="assignFileToSubmitInput"
                         >
                         </v-media-image-item>
                     </template>
                 </draggable>
+
+                <input
+                    v-if="! allowMultiple"
+                    type="file"
+                    class="hidden"
+                    :name="name + '[]'"
+                    ref="submitFileInput"
+                    accept="image/*"
+                />
 
                 <!-- Placeholders -->
                 <template v-if="showPlaceholders && ! images.length">
@@ -131,7 +142,7 @@
 
                     <input
                         type="file"
-                        :name="name + '[]'"
+                        :name="allowMultiple ? name + '[]' : undefined"
                         class="hidden"
                         accept="image/*"
                         :id="$.uid + '_imageInput_' + index"
@@ -219,6 +230,36 @@
             },
 
             methods: {
+                assignFileToSubmitInput(file) {
+                    if (this.allowMultiple) {
+                        return;
+                    }
+
+                    const input = this.$refs.submitFileInput;
+
+                    if (! input || ! file) {
+                        return;
+                    }
+
+                    const dataTransfer = new DataTransfer();
+
+                    dataTransfer.items.add(file);
+
+                    input.files = dataTransfer.files;
+                },
+
+                clearSubmitFileInput() {
+                    if (this.allowMultiple) {
+                        return;
+                    }
+
+                    const input = this.$refs.submitFileInput;
+
+                    if (input) {
+                        input.value = '';
+                    }
+                },
+
                 add() {
                     let imageInput = this.$refs[this.$.uid + '_imageInput'];
 
@@ -237,19 +278,26 @@
                         return;
                     }
 
-                    imageInput.files.forEach((file, index) => {
+                    Array.from(imageInput.files).forEach((file) => {
                         this.images.push({
                             id: 'image_' + this.images.length,
                             url: '',
-                            file: file
+                            file: file,
+                            is_new: 1,
                         });
+
+                        this.assignFileToSubmitInput(file);
                     });
+
+                    imageInput.value = '';
                 },
 
                 remove(image) {
                     let index = this.images.indexOf(image);
 
                     this.images.splice(index, 1);
+
+                    this.clearSubmitFileInput();
                 },
 
                 getBase64ToFile(base64, filename) {
@@ -271,7 +319,9 @@
         app.component('v-media-image-item', {
             template: '#v-media-image-item-template',
 
-            props: ['index', 'image', 'name', 'width', 'height'],
+            props: ['index', 'image', 'name', 'width', 'height', 'allowMultiple'],
+
+            emits: ['onRemove', 'onFileUpdated'],
 
             mounted() {
                 if (this.image.file instanceof File) {
@@ -312,11 +362,17 @@
                 setFile(file) {
                     this.image.is_new = 1;
 
-                    const dataTransfer = new DataTransfer();
+                    if (this.allowMultiple) {
+                        const dataTransfer = new DataTransfer();
 
-                    dataTransfer.items.add(file);
+                        dataTransfer.items.add(file);
 
-                    this.$refs[this.$.uid + '_imageInput_' + this.index].files = dataTransfer.files;
+                        this.$refs[this.$.uid + '_imageInput_' + this.index].files = dataTransfer.files;
+
+                        return;
+                    }
+
+                    this.$emit('onFileUpdated', file);
                 },
 
                 readFile(file) {

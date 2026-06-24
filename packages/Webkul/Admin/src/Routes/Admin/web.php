@@ -11,6 +11,11 @@ require 'auth-routes.php';
 require 'leads-routes.php';
 
 /**
+ * Meta Leads routes.
+ */
+require 'meta-leads-routes.php';
+
+/**
  * Email routes.
  */
 require 'mail-routes.php';

@@ -192,6 +192,10 @@ class SourceController extends Controller
      */
     public function getSubSources(int $id): JsonResponse
     {
+        if (! app(\Webkul\Lead\Services\SourceAccessService::class)->canAccessSourceId($id)) {
+            return new JsonResponse(['sub_sources' => []], 403);
+        }
+
         $source = $this->sourceRepository->findOrFail($id);
         
         // Load child sources (sub-sources)

@@ -88,6 +88,8 @@ class LeadDataGrid extends DataGrid
             $queryBuilder->whereIn('leads.user_id', $userIds);
         }
 
+        app(\Webkul\Lead\Services\SourceAccessService::class)->applyLeadTableScope($queryBuilder);
+
         if (! is_null(request()->input('rotten_lead.in'))) {
             $queryBuilder->havingRaw($tablePrefix.'rotten_lead = '.request()->input('rotten_lead.in'));
         }
@@ -157,7 +159,7 @@ class LeadDataGrid extends DataGrid
             'sortable'           => true,
             'filterable'         => true,
             'filterable_type'    => 'dropdown',
-            'filterable_options' => $this->sourceRepository->all(['name as label', 'id as value'])->toArray(),
+            'filterable_options' => $this->sourceRepository->getRootDropdownOptions(),
         ]);
 
         $this->addColumn([

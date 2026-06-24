@@ -8,20 +8,18 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\View\View;
 use Webkul\Admin\DataGrids\Settings\RoleDataGrid;
 use Webkul\Admin\Http\Controllers\Controller;
+use Webkul\Contact\Repositories\OrganizationRepository;
+use Webkul\Lead\Repositories\SourceRepository;
 use Webkul\User\Repositories\RoleRepository;
 
 class RoleController extends Controller
 {
-    /**
-     * Create a new controller instance.
-     *
-     * @return void
-     */
-    public function __construct(protected RoleRepository $roleRepository) {}
+    public function __construct(
+        protected RoleRepository $roleRepository,
+        protected SourceRepository $sourceRepository,
+        protected OrganizationRepository $organizationRepository,
+    ) {}
 
-    /**
-     * Display a listing of the resource.
-     */
     public function index(): View|JsonResponse
     {
         if (request()->ajax()) {
@@ -31,17 +29,11 @@ class RoleController extends Controller
         return view('admin::settings.roles.index');
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
     public function create(): View
     {
-        return view('admin::settings.roles.create');
+        return view('admin::settings.roles.create', $this->getAssignmentFormData());
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(): RedirectResponse
     {
         $this->validate(request(), [
@@ -67,6 +59,8 @@ class RoleController extends Controller
 
         $role = $this->roleRepository->create($data);
 
+        $this->syncRoleAssignments($role);
+
         Event::dispatch('settings.role.create.after', $role);
 
         session()->flash('success', trans('admin::app.settings.roles.index.create-success'));
@@ -74,19 +68,17 @@ class RoleController extends Controller
         return redirect()->route('admin.settings.roles.index');
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
     public function edit(int $id): View
     {
-        $role = $this->roleRepository->findOrFail($id);
+        $role = $this->roleRepository->with(['sources', 'organizations'])->findOrFail($id);
 
-        return view('admin::settings.roles.edit', compact('role'));
+        return view('admin::settings.roles.edit', array_merge($this->getAssignmentFormData(), [
+            'role'                    => $role,
+            'assignedSourceIds'       => $role->sources->pluck('id')->all(),
+            'assignedOrganizationIds' => $role->organizations->pluck('id')->all(),
+        ]));
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(int $id): RedirectResponse
     {
         $this->validate(request(), [
@@ -108,6 +100,8 @@ class RoleController extends Controller
 
         $role = $this->roleRepository->update($data, $id);
 
+        $this->syncRoleAssignments($role);
+
         Event::dispatch('settings.role.update.after', $role);
 
         session()->flash('success', trans('admin::app.settings.roles.index.update-success'));
@@ -115,9 +109,6 @@ class RoleController extends Controller
         return redirect()->back();
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy(int $id): JsonResponse
     {
         $response = [
@@ -164,5 +155,19 @@ class RoleController extends Controller
         }
 
         return response()->json($response, $response['responseCode']);
+    }
+
+    protected function getAssignmentFormData(): array
+    {
+        return [
+            'sources'       => $this->sourceRepository->getModel()->roots()->orderBy('sort_order')->get(['id', 'name']),
+            'organizations' => $this->organizationRepository->getModel()->orderBy('name')->get(['id', 'name']),
+        ];
+    }
+
+    protected function syncRoleAssignments($role): void
+    {
+        $role->sources()->sync(request()->input('source_ids', []));
+        $role->organizations()->sync(request()->input('organization_ids', []));
     }
 }
