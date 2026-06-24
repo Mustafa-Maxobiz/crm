@@ -112,6 +112,18 @@
                             <!-- Users Email -->
                             <p class="truncate">@{{ record.email }}</p>
 
+                            <!-- Lead Sources -->
+                            <p
+                                class="truncate text-sm"
+                                v-html="record.assigned_sources"
+                            ></p>
+
+                            <!-- Companies -->
+                            <p
+                                class="truncate text-sm"
+                                v-html="record.assigned_organizations"
+                            ></p>
+
                             <!-- Users Status -->
                             <span
                                 :class="record.status == 1 ? 'label-active' : 'label-inactive'"
@@ -220,6 +232,7 @@
 
                     <x-admin::modal
                         ref="userUpdateAndCreateModal"
+                        size="large"
                         @toggle="handleToggle"
                     >
                         <!-- Modal Header -->
@@ -234,7 +247,8 @@
                         </x-slot>
 
                         <!-- Modal Content -->
-                        <x-slot:content>
+                        <x-slot:content class="!border-b-0 !p-0">
+                            <div class="px-4 py-2.5">
                             <x-admin::form.control-group.control
                                 type="hidden"
                                 name="id"
@@ -296,15 +310,25 @@
                                         @lang('admin::app.settings.users.index.create.password')
                                     </x-admin::form.control-group.label>
 
-                                    <x-admin::form.control-group.control
-                                        type="password"
-                                        id="password"
-                                        name="password"
-                                        ::rules="user.id ? '' : 'required|min:6'"
-                                        :label="trans('admin::app.settings.users.index.create.password')"
-                                        :placeholder="trans('admin::app.settings.users.index.create.password')"
-                                        ref="password"
-                                    />
+                                    <div class="relative">
+                                        <x-admin::form.control-group.control
+                                            type="password"
+                                            id="user_password"
+                                            name="password"
+                                            ::rules="user.id ? '' : 'required|min:6'"
+                                            :label="trans('admin::app.settings.users.index.create.password')"
+                                            :placeholder="trans('admin::app.settings.users.index.create.password')"
+                                            ref="password"
+                                            class="w-full ltr:pr-10 rtl:pl-10"
+                                        />
+
+                                        <span
+                                            class="icon-eye-hide absolute top-1/2 -translate-y-1/2 cursor-pointer text-2xl ltr:right-3 rtl:left-3"
+                                            @click="togglePasswordVisibility('user_password', $event)"
+                                            role="presentation"
+                                            tabindex="0"
+                                        ></span>
+                                    </div>
 
                                     <x-admin::form.control-group.error control-name="password" />
                                 </x-admin::form.control-group>
@@ -315,14 +339,24 @@
                                         @lang('admin::app.settings.users.index.create.confirm-password')
                                     </x-admin::form.control-group.label>
 
-                                    <x-admin::form.control-group.control
-                                        type="password"
-                                        id="confirm_password"
-                                        name="confirm_password"
-                                        ::rules="values.password ? 'confirmed:@password' : ''"
-                                        :label="trans('admin::app.settings.users.index.create.password')"
-                                        :placeholder="trans('admin::app.settings.users.index.create.confirm-password')"
-                                    />
+                                    <div class="relative">
+                                        <x-admin::form.control-group.control
+                                            type="password"
+                                            id="user_confirm_password"
+                                            name="confirm_password"
+                                            ::rules="values.password ? 'confirmed:@password' : ''"
+                                            :label="trans('admin::app.settings.users.index.create.password')"
+                                            :placeholder="trans('admin::app.settings.users.index.create.confirm-password')"
+                                            class="w-full ltr:pr-10 rtl:pl-10"
+                                        />
+
+                                        <span
+                                            class="icon-eye-hide absolute top-1/2 -translate-y-1/2 cursor-pointer text-2xl ltr:right-3 rtl:left-3"
+                                            @click="togglePasswordVisibility('user_confirm_password', $event)"
+                                            role="presentation"
+                                            tabindex="0"
+                                        ></span>
+                                    </div>
 
                                     <x-admin::form.control-group.error control-name="confirm_password" />
                                 </x-admin::form.control-group>
@@ -430,6 +464,84 @@
 
                             {!! view_render_event('admin.settings.users.index.form.role_id.after') !!}
 
+                            <x-admin::form.control-group>
+                                <x-admin::form.control-group.label>
+                                    @lang('admin::app.settings.users.index.create.lead-sources')
+                                </x-admin::form.control-group.label>
+
+                                <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">
+                                    @lang('admin::app.settings.users.index.create.lead-sources-help')
+
+                                    <span v-if="selectedRoleHasSources" class="mt-1 block">
+                                        @lang('admin::app.settings.users.index.create.lead-sources-role-pool')
+                                    </span>
+                                </p>
+
+                                <p
+                                    v-if="! availableUserSources.length"
+                                    class="mb-3 text-xs text-amber-600 dark:text-amber-400"
+                                >
+                                    @lang('admin::app.settings.users.index.create.lead-sources-empty-role')
+                                </p>
+
+                                <div class="grid max-h-48 gap-2 overflow-y-auto sm:grid-cols-2">
+                                    <label
+                                        v-for="source in availableUserSources"
+                                        :key="source.id"
+                                        class="flex items-center gap-2 rounded border border-gray-200 px-3 py-2 text-sm dark:border-gray-700"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            name="source_ids[]"
+                                            :value="source.id"
+                                            v-model="user.source_ids"
+                                            class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                                        />
+
+                                        <span class="dark:text-white">@{{ source.name }}</span>
+                                    </label>
+                                </div>
+                            </x-admin::form.control-group>
+
+                            <x-admin::form.control-group>
+                                <x-admin::form.control-group.label>
+                                    @lang('admin::app.settings.users.index.create.companies')
+                                </x-admin::form.control-group.label>
+
+                                <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">
+                                    @lang('admin::app.settings.users.index.create.companies-help')
+
+                                    <span v-if="selectedRoleHasOrganizations" class="mt-1 block">
+                                        @lang('admin::app.settings.users.index.create.companies-role-pool')
+                                    </span>
+                                </p>
+
+                                <p
+                                    v-if="! availableUserOrganizations.length"
+                                    class="mb-3 text-xs text-amber-600 dark:text-amber-400"
+                                >
+                                    @lang('admin::app.settings.users.index.create.companies-empty-role')
+                                </p>
+
+                                <div class="grid max-h-48 gap-2 overflow-y-auto sm:grid-cols-2">
+                                    <label
+                                        v-for="organization in availableUserOrganizations"
+                                        :key="organization.id"
+                                        class="flex items-center gap-2 rounded border border-gray-200 px-3 py-2 text-sm dark:border-gray-700"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            name="organization_ids[]"
+                                            :value="organization.id"
+                                            v-model="user.organization_ids"
+                                            class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                                        />
+
+                                        <span class="dark:text-white">@{{ organization.name }}</span>
+                                    </label>
+                                </div>
+                            </x-admin::form.control-group>
+
                             {!! view_render_event('admin.settings.users.index.form.status.before') !!}
 
                             <!-- Status -->
@@ -454,6 +566,7 @@
                             </x-admin::form.control-group>
 
                             {!! view_render_event('admin.settings.users.index.form.status.after') !!}
+                            </div>
                         </x-slot>
 
                         <!-- Modal Footer -->
@@ -490,8 +603,14 @@
 
                         groups:  @json($groups),
 
+                        sources: @json($sources),
+
+                        organizations: @json($organizations),
+
                         user: {
                             view_permission: 'global',
+                            source_ids: [],
+                            organization_ids: [],
                         },
                     };
                 },
@@ -514,6 +633,44 @@
                     selectedType() {
                         return this.user.id ? 'edit' : 'create';
                     },
+
+                    selectedRole() {
+                        return this.roles.find(role => role.id == this.user.role_id);
+                    },
+
+                    selectedRoleHasSources() {
+                        return (this.selectedRole?.source_ids || []).length > 0;
+                    },
+
+                    selectedRoleHasOrganizations() {
+                        return (this.selectedRole?.organization_ids || []).length > 0;
+                    },
+
+                    availableUserSources() {
+                        const roleSourceIds = this.selectedRole?.source_ids || [];
+
+                        if (! roleSourceIds.length) {
+                            return this.sources;
+                        }
+
+                        return this.sources.filter(source => roleSourceIds.includes(source.id));
+                    },
+
+                    availableUserOrganizations() {
+                        const roleOrganizationIds = this.selectedRole?.organization_ids || [];
+
+                        if (! roleOrganizationIds.length) {
+                            return this.organizations;
+                        }
+
+                        return this.organizations.filter(organization => roleOrganizationIds.includes(organization.id));
+                    },
+                },
+
+                watch: {
+                    'user.role_id'() {
+                        this.pruneUserAssignments();
+                    },
                 },
 
                 mounted() {
@@ -523,6 +680,48 @@
                 },
 
                 methods: {
+                    resetPasswordFields() {
+                        this.$nextTick(() => {
+                            ['user_password', 'user_confirm_password'].forEach((fieldId) => {
+                                const input = document.getElementById(fieldId);
+
+                                if (! input) {
+                                    return;
+                                }
+
+                                input.type = 'password';
+
+                                const icon = input.parentElement?.querySelector('span.icon-eye, span.icon-eye-hide');
+
+                                if (icon) {
+                                    icon.classList.add('icon-eye-hide');
+                                    icon.classList.remove('icon-eye');
+                                }
+                            });
+                        });
+                    },
+
+                    togglePasswordVisibility(fieldId, event) {
+                        const input = document.getElementById(fieldId);
+
+                        if (! input) {
+                            return;
+                        }
+
+                        input.type = input.type === 'password' ? 'text' : 'password';
+
+                        event.currentTarget.classList.toggle('icon-eye');
+                        event.currentTarget.classList.toggle('icon-eye-hide');
+                    },
+
+                    pruneUserAssignments() {
+                        const allowedSourceIds = this.availableUserSources.map(source => source.id);
+                        const allowedOrganizationIds = this.availableUserOrganizations.map(organization => organization.id);
+
+                        this.user.source_ids = (this.user.source_ids || []).filter(id => allowedSourceIds.includes(id));
+                        this.user.organization_ids = (this.user.organization_ids || []).filter(id => allowedOrganizationIds.includes(id));
+                    },
+
                     handleToggle(state) {
                         if (state.isActive) {
                             return;
@@ -538,9 +737,13 @@
                     openModal() {
                         this.user = {
                             groups: [],
+                            source_ids: [],
+                            organization_ids: [],
                         };
 
                         this.$refs.userUpdateAndCreateModal.toggle();
+
+                        this.resetPasswordFields();
                     },
 
                     updateOrCreate(params, {resetForm, setErrors}) {
@@ -581,7 +784,14 @@
 
                                 this.user.groups = this.user.groups.map(group => group.id);
 
+                                this.user.source_ids = (this.user.sources || []).map(source => source.id);
+                                this.user.organization_ids = (this.user.organizations || []).map(organization => organization.id);
+
+                                this.pruneUserAssignments();
+
                                 this.$refs.userUpdateAndCreateModal.toggle();
+
+                                this.resetPasswordFields();
                             })
                             .catch(error => {});
                     },

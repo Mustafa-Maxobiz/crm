@@ -3,7 +3,12 @@
 namespace Webkul\Lead\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Webkul\Lead\Contracts\Source as SourceContract;
+use Webkul\User\Models\RoleProxy;
+use Webkul\User\Models\UserProxy;
 
 class Source extends Model implements SourceContract
 {
@@ -89,5 +94,15 @@ class Source extends Model implements SourceContract
     public function leads()
     {
         return $this->hasMany(LeadProxy::modelClass(), 'lead_source_id', 'id');
+    }
+
+    public function roles(): BelongsToMany
+    {
+        return $this->belongsToMany(RoleProxy::modelClass(), 'role_source', 'lead_source_id', 'role_id');
+    }
+
+    public function users(): BelongsToMany
+    {
+        return $this->belongsToMany(UserProxy::modelClass(), 'user_source', 'lead_source_id', 'user_id');
     }
 }

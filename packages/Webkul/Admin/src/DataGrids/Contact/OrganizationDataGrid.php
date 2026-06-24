@@ -21,7 +21,7 @@ class OrganizationDataGrid extends DataGrid
      */
     public function prepareQueryBuilder(): Builder
     {
-        return DB::table('organizations')
+        $queryBuilder = DB::table('organizations')
             ->addSelect(
                 'organizations.id',
                 'organizations.name',
@@ -33,9 +33,21 @@ class OrganizationDataGrid extends DataGrid
             $queryBuilder->whereIn('organizations.user_id', $userIds);
         }
 
+        $organizationIds = app(\Webkul\Lead\Services\SourceAccessService::class)->getEffectiveOrganizationIds();
+
+        if ($organizationIds !== null) {
+            if (empty($organizationIds)) {
+                $queryBuilder->whereRaw('0 = 1');
+            } else {
+                $queryBuilder->whereIn('organizations.id', $organizationIds);
+            }
+        }
+
         $this->addFilter('id', 'organizations.id');
 
         $this->addFilter('organization', 'organizations.name');
+
+        return $queryBuilder;
     }
 
     /**

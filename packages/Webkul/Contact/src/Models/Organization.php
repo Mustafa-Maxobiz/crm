@@ -3,8 +3,11 @@
 namespace Webkul\Contact\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Webkul\Attribute\Traits\CustomAttribute;
 use Webkul\Contact\Contracts\Organization as OrganizationContract;
+use Webkul\User\Models\RoleProxy;
 use Webkul\User\Models\UserProxy;
 
 class Organization extends Model implements OrganizationContract
@@ -42,5 +45,15 @@ class Organization extends Model implements OrganizationContract
     public function user()
     {
         return $this->belongsTo(UserProxy::modelClass());
+    }
+
+    public function roles(): BelongsToMany
+    {
+        return $this->belongsToMany(RoleProxy::modelClass(), 'role_organization', 'organization_id', 'role_id');
+    }
+
+    public function users(): BelongsToMany
+    {
+        return $this->belongsToMany(UserProxy::modelClass(), 'user_organization', 'organization_id', 'user_id');
     }
 }

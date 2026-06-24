@@ -15,6 +15,9 @@ use Webkul\Admin\Http\Requests\MassDestroyRequest;
 use Webkul\Admin\Http\Requests\MassUpdateRequest;
 use Webkul\Admin\Http\Resources\UserResource;
 use Webkul\Admin\Notifications\User\Create as UserCreatedNotification;
+use Webkul\Contact\Repositories\OrganizationRepository;
+use Webkul\Lead\Repositories\SourceRepository;
+use Webkul\Lead\Services\SourceAccessService;
 use Webkul\User\Repositories\GroupRepository;
 use Webkul\User\Repositories\RoleRepository;
 use Webkul\User\Repositories\UserRepository;
@@ -29,7 +32,10 @@ class UserController extends Controller
     public function __construct(
         protected UserRepository $userRepository,
         protected GroupRepository $groupRepository,
-        protected RoleRepository $roleRepository
+        protected RoleRepository $roleRepository,
+        protected SourceRepository $sourceRepository,
+        protected OrganizationRepository $organizationRepository,
+        protected SourceAccessService $sourceAccessService,
     ) {}
 
     /**
@@ -41,11 +47,23 @@ class UserController extends Controller
             return datagrid(UserDataGrid::class)->process();
         }
 
-        $roles = $this->roleRepository->all();
+        $roles = $this->roleRepository
+            ->with(['sources:id', 'organizations:id'])
+            ->get(['id', 'name'])
+            ->map(fn ($role) => [
+                'id'                => $role->id,
+                'name'              => $role->name,
+                'source_ids'        => $role->sources->pluck('id')->values()->all(),
+                'organization_ids'  => $role->organizations->pluck('id')->values()->all(),
+            ]);
 
         $groups = $this->groupRepository->all();
 
-        return view('admin::settings.users.index', compact('roles', 'groups'));
+        $sources = $this->sourceRepository->getModel()->roots()->orderBy('sort_order')->get(['id', 'name']);
+
+        $organizations = $this->organizationRepository->getModel()->orderBy('name')->get(['id', 'name']);
+
+        return view('admin::settings.users.index', compact('roles', 'groups', 'sources', 'organizations'));
     }
 
     /**
@@ -63,6 +81,16 @@ class UserController extends Controller
             'view_permission'  => 'string|in:global,group,individual',
         ]);
 
+        $assignmentValidation = $this->validateUserAssignments(
+            (int) request('role_id'),
+            request()->input('source_ids', []),
+            request()->input('organization_ids', [])
+        );
+
+        if ($assignmentValidation instanceof JsonResponse) {
+            return $assignmentValidation;
+        }
+
         $data = request()->all();
 
         if (
@@ -77,6 +105,9 @@ class UserController extends Controller
         $admin = $this->userRepository->create($data);
 
         $admin->groups()->sync($data['groups'] ?? []);
+
+        $admin->sources()->sync($assignmentValidation['source_ids']);
+        $admin->organizations()->sync($assignmentValidation['organization_ids']);
 
         try {
             Mail::queue(new UserCreatedNotification($admin));
@@ -97,7 +128,7 @@ class UserController extends Controller
      */
     public function edit(int $id): View|JsonResponse
     {
-        $admin = $this->userRepository->with(['role', 'groups'])->findOrFail($id);
+        $admin = $this->userRepository->with(['role', 'groups', 'sources', 'organizations'])->findOrFail($id);
 
         return new JsonResponse([
             'data'   => $admin,
@@ -119,6 +150,16 @@ class UserController extends Controller
             'view_permission'  => 'required|string|in:global,group,individual',
         ]);
 
+        $assignmentValidation = $this->validateUserAssignments(
+            (int) request('role_id'),
+            request()->input('source_ids', []),
+            request()->input('organization_ids', [])
+        );
+
+        if ($assignmentValidation instanceof JsonResponse) {
+            return $assignmentValidation;
+        }
+
         $data = request()->all();
 
         if (empty($data['password'])) {
@@ -138,6 +179,9 @@ class UserController extends Controller
         $admin = $this->userRepository->update($data, $id);
 
         $admin->groups()->sync($data['groups'] ?? []);
+
+        $admin->sources()->sync($assignmentValidation['source_ids']);
+        $admin->organizations()->sync($assignmentValidation['organization_ids']);
 
         Event::dispatch('settings.user.update.after', $admin);
 
@@ -256,5 +300,36 @@ class UserController extends Controller
         return response()->json([
             'message' => trans('admin::app.settings.users.index.mass-delete-success'),
         ]);
+    }
+
+    /**
+     * @param  array<int|string>  $sourceIds
+     * @param  array<int|string>  $organizationIds
+     * @return array{source_ids: array<int>, organization_ids: array<int>}|JsonResponse
+     */
+    protected function validateUserAssignments(int $roleId, array $sourceIds, array $organizationIds): array|JsonResponse
+    {
+        if (! $this->sourceAccessService->userSourcesValidForRole($roleId, $sourceIds)) {
+            return new JsonResponse([
+                'message' => trans('admin::app.settings.users.index.create.source-role-mismatch'),
+                'errors'  => [
+                    'source_ids' => [trans('admin::app.settings.users.index.create.source-role-mismatch')],
+                ],
+            ], 422);
+        }
+
+        if (! $this->sourceAccessService->userOrganizationsValidForRole($roleId, $organizationIds)) {
+            return new JsonResponse([
+                'message' => trans('admin::app.settings.users.index.create.company-role-mismatch'),
+                'errors'  => [
+                    'organization_ids' => [trans('admin::app.settings.users.index.create.company-role-mismatch')],
+                ],
+            ], 422);
+        }
+
+        return [
+            'source_ids'        => $this->sourceAccessService->filterUserSourceIdsForRole($roleId, $sourceIds),
+            'organization_ids'  => $this->sourceAccessService->filterUserOrganizationIdsForRole($roleId, $organizationIds),
+        ];
     }
 }

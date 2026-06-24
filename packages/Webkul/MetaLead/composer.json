@@ -1,0 +1,25 @@
+{
+    "name": "krayin/laravel-meta-lead",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "MaxoBiz",
+            "email": "dev@maxobiz.com"
+        }
+    ],
+    "require": {},
+    "autoload": {
+        "psr-4": {
+            "Webkul\\MetaLead\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Webkul\\MetaLead\\Providers\\MetaLeadServiceProvider"
+            ],
+            "aliases": {}
+        }
+    },
+    "minimum-stability": "dev"
+}

@@ -28,6 +28,7 @@ use Webkul\Lead\Repositories\SourceRepository;
 use Webkul\Lead\Repositories\StageRepository;
 use Webkul\Lead\Repositories\TypeRepository;
 use Webkul\Lead\Services\MagicAIService;
+use Webkul\Lead\Services\SourceAccessService;
 use Webkul\Tag\Repositories\TagRepository;
 use Webkul\User\Repositories\UserRepository;
 
@@ -52,7 +53,8 @@ class LeadController extends Controller
         protected StageRepository $stageRepository,
         protected LeadRepository $leadRepository,
         protected ProductRepository $productRepository,
-        protected PersonRepository $personRepository
+        protected PersonRepository $personRepository,
+        protected SourceAccessService $sourceAccessService,
     ) {
         request()->request->add(['entity_type' => 'leads']);
     }
@@ -114,6 +116,8 @@ class LeadController extends Controller
             if ($userIds = bouncer()->getAuthorizedUserIds()) {
                 $query->whereIn('leads.user_id', $userIds);
             }
+
+            $this->sourceAccessService->applyLeadQueryScope($query);
 
             // Apply sorting
             $query->orderBy($sortBy, $sortOrder);
@@ -215,9 +219,19 @@ class LeadController extends Controller
     /**
      * Show the form for editing the specified resource.
      */
-    public function edit(int $id): View
+    public function edit(int $id): View|RedirectResponse
     {
         $lead = $this->leadRepository->findOrFail($id);
+
+        $userIds = bouncer()->getAuthorizedUserIds();
+
+        if ($userIds && ! in_array($lead->user_id, $userIds)) {
+            return redirect()->route('admin.leads.index');
+        }
+
+        if (! $this->sourceAccessService->canAccessLead($lead)) {
+            return redirect()->route('admin.leads.index');
+        }
 
         return view('admin::leads.edit', compact('lead'));
     }
@@ -235,6 +249,10 @@ class LeadController extends Controller
             $userIds
             && ! in_array($lead->user_id, $userIds)
         ) {
+            return redirect()->route('admin.leads.index');
+        }
+
+        if (! $this->sourceAccessService->canAccessLead($lead)) {
             return redirect()->route('admin.leads.index');
         }
 
@@ -347,15 +365,18 @@ class LeadController extends Controller
      */
     public function search(): AnonymousResourceCollection
     {
-        if ($userIds = bouncer()->getAuthorizedUserIds()) {
-            $results = $this->leadRepository
-                ->pushCriteria(app(RequestCriteria::class))
-                ->findWhereIn('user_id', $userIds);
-        } else {
-            $results = $this->leadRepository
-                ->pushCriteria(app(RequestCriteria::class))
-                ->all();
-        }
+        $userIds = bouncer()->getAuthorizedUserIds();
+
+        $results = $this->leadRepository
+            ->pushCriteria(app(RequestCriteria::class))
+            ->scopeQuery(function ($query) use ($userIds) {
+                if ($userIds) {
+                    $query->whereIn('user_id', $userIds);
+                }
+
+                return $this->sourceAccessService->applyLeadQueryScope($query);
+            })
+            ->all();
 
         return LeadResource::collection($results);
     }
@@ -606,7 +627,7 @@ class LeadController extends Controller
                 'search_field'          => 'in',
                 'filterable'            => true,
                 'filterable_type'       => 'dropdown',
-                'filterable_options'    => $this->sourceRepository->all(['name as label', 'id as value'])->toArray(),
+                'filterable_options'    => $this->sourceRepository->getRootDropdownOptions(),
                 'allow_multiple_values' => true,
                 'sortable'              => true,
                 'visibility'            => true,

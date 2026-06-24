@@ -24,6 +24,17 @@ return [
     ],
 
     /**
+     * Meta Leads.
+     */
+    [
+        'key'        => 'meta_leads',
+        'name'       => 'admin::app.layouts.meta-leads',
+        'route'      => 'admin.meta_leads.index',
+        'sort'       => 3,
+        'icon-class' => 'icon-leads',
+    ],
+
+    /**
      * Quotes.
      */
     [

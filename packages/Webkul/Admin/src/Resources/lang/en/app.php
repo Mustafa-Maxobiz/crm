@@ -38,6 +38,7 @@ return [
         'print'            => 'Print',
         'delete'           => 'Delete',
         'deleted-leads'    => 'Deleted Leads',
+        'meta-leads'       => 'Meta Leads',
         'export'           => 'Export',
         'mass-delete'      => 'Mass Delete',
         'permanent-delete' => 'Permanent Delete',
@@ -750,6 +751,10 @@ return [
     'settings' => [
         'title' => 'Settings',
 
+        'access-scope' => [
+            'no-companies' => 'No companies configured yet.',
+        ],
+
         'groups' => [
             'index' => [
                 'create-btn'                     => 'Create Group',
@@ -804,6 +809,8 @@ return [
                     'id'              => 'ID',
                     'name'            => 'Name',
                     'permission-type' => 'Permission Type',
+                    'assigned-sources'=> 'Lead Sources',
+                    'assigned-companies'=> 'Companies',
                 ],
             ],
 
@@ -818,6 +825,10 @@ return [
                 'permissions'    => 'Permissions',
                 'save-btn'       => 'Save Role',
                 'title'          => 'Create Role',
+                'lead-sources'   => 'Lead Sources',
+                'lead-sources-help' => 'Default sources for users in this role. Users without their own source assignment will inherit these. User-specific sources must be chosen from this list.',
+                'companies'      => 'Companies',
+                'companies-help' => 'Default companies for users in this role. Users without their own company assignment will inherit these. User-specific companies must be chosen from this list.',
             ],
 
             'edit' => [
@@ -831,6 +842,10 @@ return [
                 'permissions'    => 'Permissions',
                 'save-btn'       => 'Save Role',
                 'title'          => 'Edit Role',
+                'lead-sources'   => 'Lead Sources',
+                'lead-sources-help' => 'Default sources for users in this role. Users without their own source assignment will inherit these. User-specific sources must be chosen from this list.',
+                'companies'      => 'Companies',
+                'companies-help' => 'Default companies for users in this role. Users without their own company assignment will inherit these. User-specific companies must be chosen from this list.',
             ],
         ],
 
@@ -894,6 +909,7 @@ return [
                 'delete-success'                 => 'Source deleted successfully.',
                 'update-success'                 => 'Source updated successfully.',
                 'delete-failed-associated-leads' => 'Source cannot be deleted because it is associated with existing leads. Please detach or update those leads before deletion.',
+                'no-sources'                     => 'No lead sources configured yet.',
 
                 'datagrid' => [
                     'delete'      => 'Delete',
@@ -1277,6 +1293,10 @@ return [
                     'status'        => 'Status',
                     'update-status' => 'Update Status',
                     'users'         => 'Users',
+                    'assigned-sources' => 'Lead Sources',
+                    'assigned-companies' => 'Companies',
+                    'inherited'     => 'Inherited',
+                    'custom'        => 'Custom',
                 ],
 
                 'create' => [
@@ -1295,6 +1315,16 @@ return [
                     'title'                    => 'Create User',
                     'view-permission'          => 'View Permission',
                     'select-at-lest-one-group' => 'Select at least one group',
+                    'lead-sources'             => 'Lead Sources',
+                    'lead-sources-help'        => 'Assign specific sources for this user. Leave empty to inherit from the user\'s role. Leads are visible only when both source and company match.',
+                    'lead-sources-role-pool'   => 'Only sources assigned to the selected role can be chosen for this user.',
+                    'lead-sources-empty-role'  => 'This role has no sources yet. Assign sources on the role first, or leave user sources empty to inherit later.',
+                    'source-role-mismatch'     => 'One or more selected sources are not allowed for this user\'s role.',
+                    'companies'                => 'Companies',
+                    'companies-help'           => 'Assign specific companies for this user. Leave empty to inherit from the user\'s role. Leads are visible only when both source and company match.',
+                    'companies-role-pool'      => 'Only companies assigned to the selected role can be chosen for this user.',
+                    'companies-empty-role'     => 'This role has no companies yet. Assign companies on the role first, or leave user companies empty to inherit later.',
+                    'company-role-mismatch'    => 'One or more selected companies are not allowed for this user\'s role.',
                 ],
 
                 'edit' => [
@@ -1939,6 +1969,8 @@ return [
 
     'leads' => [
         'create-success'            => 'Lead created successfully.',
+        'source-access-denied'      => 'You do not have access to the selected lead source.',
+        'company-access-denied'     => 'You do not have access to the selected company.',
         'update-success'            => 'Leads updated successfully.',
         'update-failed'             => 'Leads can not be deleted.',
         'destroy-success'           => 'Lead deleted successfully.',
@@ -2343,6 +2375,7 @@ return [
         'app-version'          => 'Version: :version',
         'dashboard'            => 'Dashboard',
         'leads'                => 'Leads',
+        'meta-leads'           => 'Meta Leads',
         'quotes'               => 'Quotes',
         'quote'                => 'Quote',
         'mail'                 => [
@@ -2502,5 +2535,65 @@ return [
         'no-records' => 'Nothing to export',
         'xls'        => 'XLS',
         'xlsx'       => 'XLSX',
+    ],
+
+    'meta-leads' => [
+        'statuses' => [
+            'new'       => 'New',
+            'contacted' => 'Contacted',
+            'converted' => 'Converted',
+            'lost'      => 'Lost',
+        ],
+
+        'index' => [
+            'title'                  => 'Meta Leads',
+            'subtitle'               => 'Leads captured automatically from Facebook and Instagram Lead Ads.',
+            'update-status-success'    => 'Status updated successfully.',
+            'update-status-error'      => 'Unable to update status.',
+            'delete-success'           => 'Meta lead deleted successfully.',
+            'delete-failed'            => 'Unable to delete meta lead.',
+
+            'datagrid' => [
+                'id'            => 'ID',
+                'name'          => 'Name',
+                'phone'         => 'Phone Number',
+                'email'         => 'Email',
+                'campaign'      => 'Campaign',
+                'form-name'     => 'Form Name',
+                'status'        => 'Status',
+                'received-date' => 'Received Date',
+                'assigned-users'=> 'Assigned Users',
+                'view-lead'     => 'View CRM Lead',
+                'view'            => 'View Details',
+                'delete'          => 'Delete',
+                'mass-delete'     => 'Delete',
+                'set-status'    => 'Mark as :status',
+                'update-status' => 'Update Status',
+            ],
+        ],
+
+        'view' => [
+            'title'               => ':name',
+            'untitled'            => 'Meta Lead',
+            'subtitle'            => 'Full details captured from Meta Lead Ads.',
+            'contact-info'        => 'Contact Information',
+            'meta-info'           => 'Meta Information',
+            'leadgen-id'          => 'Meta Lead ID',
+            'crm-lead'            => 'CRM Lead',
+            'duplicate'           => 'Duplicate',
+            'yes'                 => 'Yes',
+            'no'                  => 'No',
+            'open-crm-lead'       => 'Open CRM Lead',
+            'update-status'       => 'Update Status',
+            'save-status'         => 'Save Status',
+            'assigned-users'      => 'Assigned Users',
+            'assigned-users-help' => 'Select which users can view and work on this meta lead. Only admins can change assignments.',
+            'no-assigned-users'   => 'No users assigned yet. Only admins can see this lead until users are assigned.',
+            'assign-users'        => 'Save User Access',
+            'assign-users-success'=> 'User access updated successfully.',
+            'delete'              => 'Delete Meta Lead',
+            'delete-confirm'      => 'Are you sure you want to delete this meta lead? The linked CRM lead will not be deleted.',
+            'fetch-failed-notice' => 'This lead was received via webhook but full data could not be fetched from Meta. This usually happens with Meta\'s Test button. Submit a real test lead using the Lead Ads Testing Tool to see complete data.',
+        ],
     ],
 ];

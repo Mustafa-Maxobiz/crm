@@ -4,6 +4,7 @@ namespace Webkul\Admin\Http\Controllers\User;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cookie;
 use Illuminate\View\View;
 use Webkul\Admin\Http\Controllers\Controller;
 use Webkul\Core\Menu\MenuItem;
@@ -46,6 +47,8 @@ class SessionController extends Controller
             return redirect()->back();
         }
 
+        request()->session()->regenerate();
+
         if (auth()->guard('user')->user()->status == 0) {
             session()->flash('warning', trans('admin::app.users.activate-warning'));
 
@@ -67,16 +70,42 @@ class SessionController extends Controller
                 return redirect()->route('admin.session.create');
             }
 
-            return redirect()->to($availableNextMenu->getUrl());
+            return $this->redirectAfterLogin($availableNextMenu->getUrl());
         }
 
         $hasAccessToIntendedUrl = $this->canAccessIntendedUrl($menus, redirect()->getIntendedUrl());
 
         if ($hasAccessToIntendedUrl) {
-            return redirect()->intended(route('admin.dashboard.index'));
+            return $this->redirectAfterLogin(redirect()->getIntendedUrl() ?? route('admin.dashboard.index'));
         }
 
-        return redirect()->to($availableNextMenu->getUrl());
+        return $this->redirectAfterLogin($availableNextMenu->getUrl());
+    }
+
+    /**
+     * Redirect after a successful login and clear stale browser cookies.
+     */
+    protected function redirectAfterLogin(string $url): RedirectResponse
+    {
+        return $this->clearLoginCookies(redirect()->to($url));
+    }
+
+    /**
+     * Forget cookies from previous sessions while keeping the new session cookie.
+     */
+    protected function clearLoginCookies(RedirectResponse $response): RedirectResponse
+    {
+        $sessionCookie = config('session.cookie');
+
+        foreach (array_keys(request()->cookies->all()) as $name) {
+            if ($name === $sessionCookie) {
+                continue;
+            }
+
+            $response = $response->withCookie(Cookie::forget($name));
+        }
+
+        return $response;
     }
 
     /**

@@ -6,6 +6,9 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Webkul\Lead\Models\SourceProxy;
+use Webkul\Contact\Models\OrganizationProxy;
 use Webkul\User\Contracts\User as UserContract;
 
 class User extends Authenticatable implements UserContract
@@ -85,6 +88,16 @@ class User extends Authenticatable implements UserContract
     public function groups()
     {
         return $this->belongsToMany(GroupProxy::modelClass(), 'user_groups');
+    }
+
+    public function sources(): BelongsToMany
+    {
+        return $this->belongsToMany(SourceProxy::modelClass(), 'user_source', 'user_id', 'lead_source_id');
+    }
+
+    public function organizations(): BelongsToMany
+    {
+        return $this->belongsToMany(OrganizationProxy::modelClass(), 'user_organization', 'user_id', 'organization_id');
     }
 
     /**
