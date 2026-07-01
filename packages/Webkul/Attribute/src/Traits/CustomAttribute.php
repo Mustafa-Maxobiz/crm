@@ -44,6 +44,10 @@ trait CustomAttribute
      */
     public function getAttribute($key)
     {
+        if ($this->relationLoaded($key)) {
+            return $this->getRelationValue($key);
+        }
+
         if (! method_exists(static::class, $key) && ! isset($this->attributes[$key])) {
             if (isset($this->id)) {
                 $this->attributes[$key] = '';

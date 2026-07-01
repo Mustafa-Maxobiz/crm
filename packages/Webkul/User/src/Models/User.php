@@ -97,7 +97,20 @@ class User extends Authenticatable implements UserContract
 
     public function organizations(): BelongsToMany
     {
-        return $this->belongsToMany(OrganizationProxy::modelClass(), 'user_organization', 'user_id', 'organization_id');
+        return $this->belongsToMany(OrganizationProxy::modelClass(), 'user_organization', 'user_id', 'organization_id')
+            ->select(
+                'organizations.id',
+                'organizations.name',
+                'organizations.address',
+                'organizations.created_at',
+                'organizations.updated_at',
+                'organizations.user_id',
+                'user_organization.id as pivot_id',
+                'user_organization.user_id as pivot_user_id',
+                'user_organization.organization_id as pivot_organization_id',
+                'user_organization.created_at as pivot_created_at',
+                'user_organization.updated_at as pivot_updated_at',
+            );
     }
 
     /**

@@ -32,7 +32,7 @@
 
     @isset($content)
         <template v-slot:content>
-            <div {{ $content->attributes->merge(['class' => 'border-b px-4 py-2.5 dark:border-gray-800']) }}>
+            <div {{ $content->attributes->merge(['class' => 'min-h-0 border-b px-4 py-2.5 dark:border-gray-800']) }}>
                 {{ $content }}
             </div>
         </template>
@@ -85,30 +85,31 @@
                 :leave-to-class="enterFromLeaveToClasses"
             >
                 <div
-                    class="fixed inset-0 z-[10003] transform overflow-hidden transition"
+                    class="fixed inset-0 z-[10003] flex items-center justify-center overflow-hidden p-4 transition"
                     v-if="isOpen"
                 >
-                    <div class="flex h-full items-center justify-center p-4">
-                        <div
-                            class="box-shadow z-[999] flex max-h-full w-full flex-col overflow-hidden rounded-lg bg-white dark:bg-gray-900"
-                            :class="sizeClass"
-                        >
-                            <!-- Header Slot -->
-                            <div class="flex-shrink-0">
-                                <slot
-                                    name="header"
-                                    :toggle="toggle"
-                                    :isOpen="isOpen"
-                                >
-                                </slot>
-                            </div>
+                    <div
+                        class="box-shadow z-[999] flex max-h-full w-full flex-col overflow-hidden rounded-lg bg-white dark:bg-gray-900"
+                        :class="sizeClass"
+                        :style="{ maxHeight: 'calc(100vh - 2rem)' }"
+                    >
+                        <!-- Header Slot -->
+                        <div class="flex-shrink-0">
+                            <slot
+                                name="header"
+                                :toggle="toggle"
+                                :isOpen="isOpen"
+                            >
+                            </slot>
+                        </div>
 
-                            <!-- Content Slot -->
-                            <div class="min-h-0 flex-1 overflow-y-auto">
-                                <slot name="content"></slot>
-                            </div>
-                            
-                            <!-- Footer Slot -->
+                        <!-- Content Slot -->
+                        <div class="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+                            <slot name="content"></slot>
+                        </div>
+                        
+                        <!-- Footer Slot -->
+                        <div class="flex-shrink-0">
                             <slot name="footer"></slot>
                         </div>
                     </div>
