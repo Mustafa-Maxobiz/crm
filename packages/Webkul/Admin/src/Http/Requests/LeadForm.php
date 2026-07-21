@@ -137,6 +137,7 @@ class LeadForm extends FormRequest
 
         return [
             ...$this->rules,
+            'schedule_followup'            => ['nullable', 'boolean'],
             'next_followup_date'           => ['nullable', 'date'],
             'tags'                         => ['nullable', 'array'],
             'tags.*'                       => ['nullable', 'string', 'max:100'],

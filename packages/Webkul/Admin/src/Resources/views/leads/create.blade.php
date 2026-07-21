@@ -204,10 +204,10 @@
                                         ])"
                                     />
                                     
-                                    <!-- Sales Owner, Expected Close Date, Next Follow-up Date -->
+                                    <!-- Sales Owner and Expected Close Date -->
                                     <x-admin::attributes
                                         :custom-attributes="app('Webkul\Attribute\Repositories\AttributeRepository')->findWhere([
-                                            ['code', 'IN', ['user_id', 'expected_close_date', 'next_followup_date']],
+                                            ['code', 'IN', ['user_id', 'expected_close_date']],
                                             'entity_type' => 'leads',
                                             'quick_add'   => 1
                                         ])"
@@ -219,24 +219,54 @@
                                         ]"
                                     />
 
+                                    <input
+                                        type="hidden"
+                                        name="schedule_followup"
+                                        value="0"
+                                    />
+
                                     <x-admin::form.control-group>
+                                        <label class="flex cursor-pointer items-start gap-2 rounded border border-gray-200 p-3 text-sm dark:border-gray-800">
+                                            <input
+                                                type="checkbox"
+                                                name="schedule_followup"
+                                                value="1"
+                                                v-model="scheduleFollowup"
+                                                class="mt-1 rounded border-gray-300 text-brandColor focus:ring-brandColor dark:border-gray-600 dark:bg-gray-900"
+                                            />
+
+                                            <span class="flex flex-col gap-1">
+                                                <span class="font-medium text-gray-800 dark:text-white">
+                                                    @lang('admin::app.leads.create.schedule-followup')
+                                                </span>
+
+                                                <span class="text-xs text-gray-500 dark:text-gray-400">
+                                                    @lang('admin::app.leads.create.schedule-followup-help')
+                                                </span>
+                                            </span>
+                                        </label>
+                                    </x-admin::form.control-group>
+
+                                    <x-admin::form.control-group v-show="scheduleFollowup">
                                         <x-admin::form.control-group.label>
-                                            @lang('admin::app.leads.index.datagrid.tags')
+                                            @lang('admin::app.leads.create.next-followup-date')
                                         </x-admin::form.control-group.label>
 
                                         <x-admin::form.control-group.control
-                                            type="tags"
-                                            name="tags"
-                                            :label="trans('admin::app.leads.index.datagrid.tags')"
-                                            :placeholder="trans('admin::app.components.tags.index.placeholder')"
-                                            :data="old('tags') ?: []"
-                                            input-rules="max:100"
-                                            :allow-duplicates="false"
-                                            suggestions-endpoint="{{ route('admin.settings.tags.search') }}"
+                                            type="datetime"
+                                            name="next_followup_date"
+                                            :label="trans('admin::app.leads.create.next-followup-date')"
+                                            :placeholder="trans('admin::app.leads.create.next-followup-date')"
+                                            ::disabled="! scheduleFollowup"
                                         />
 
-                                        <x-admin::form.control-group.error control-name="tags" />
+                                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                            @lang('admin::app.leads.create.next-followup-date-help')
+                                        </p>
+
+                                        <x-admin::form.control-group.error control-name="next_followup_date" />
                                     </x-admin::form.control-group>
+
                                 </div>
                             </div>
 
@@ -314,6 +344,7 @@
                         showSubSourceDropdown: false,
                         availableSubSources: [],
                         selectedSubSource: '',
+                        scheduleFollowup: false,
                         sourceKey: 0,
                     };
                 },
