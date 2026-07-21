@@ -212,13 +212,13 @@
 
                                     <x-admin::form.control-group>
                                         <x-admin::form.control-group.label>
-                                            @lang('admin::app.leads.index.datagrid.tags')
+                                            Tags
                                         </x-admin::form.control-group.label>
 
                                         <x-admin::form.control-group.control
                                             type="tags"
                                             name="tags"
-                                            :label="trans('admin::app.leads.index.datagrid.tags')"
+                                            label="Tags"
                                             :placeholder="trans('admin::app.components.tags.index.placeholder')"
                                             :data="old('tags') ?: $lead->tags->pluck('name')->values()->all()"
                                             input-rules="max:100"

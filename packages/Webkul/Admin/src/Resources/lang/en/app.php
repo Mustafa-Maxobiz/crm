@@ -2174,14 +2174,18 @@ return [
         ],
 
         'create' => [
-            'title'          => 'Create Lead',
-            'save-btn'       => 'Save',
-            'details'        => 'Details',
-            'details-info'   => 'Put The Basic Information of the Lead',
-            'contact-person' => 'Contact Person',
-            'contact-info'   => 'Information About the Contact Person',
-            'products'       => 'Products',
-            'products-info'  => 'Information About the Products',
+            'title'                   => 'Create Lead',
+            'save-btn'                => 'Save',
+            'details'                 => 'Details',
+            'details-info'            => 'Put The Basic Information of the Lead',
+            'contact-person'          => 'Contact Person',
+            'contact-info'            => 'Information About the Contact Person',
+            'products'                => 'Products',
+            'products-info'           => 'Information About the Products',
+            'schedule-followup'       => 'Schedule follow-up',
+            'schedule-followup-help'  => 'Enable this to create the next follow-up. Leave the date empty to use the automatic schedule.',
+            'next-followup-date'      => 'Next Follow-up Date',
+            'next-followup-date-help' => 'Optional. If blank, the CRM will calculate the next follow-up automatically.',
         ],
 
         'edit' => [

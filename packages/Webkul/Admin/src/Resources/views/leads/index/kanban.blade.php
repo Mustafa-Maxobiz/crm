@@ -442,6 +442,8 @@
                     let params = {
                         search: '',
                         searchFields: '',
+                        searchJoin: 'and',
+                        lead_search: '',
                         pipeline_id: "{{ request('pipeline_id') }}",
                         limit: 10,
                         sort_by: this.applied.sort.by,
@@ -456,9 +458,7 @@
 
                             const searchValue = column.value.join(',');
 
-                            params['search'] += `title:${searchValue};description:${searchValue};person.name:${searchValue};user.name:${searchValue};source.name:${searchValue};source_link:${searchValue};`;
-                            params['searchFields'] += `title:like;description:like;person.name:like;user.name:like;source.name:like;source_link:like;`;
-                            params['searchJoin'] = 'or';
+                            params['lead_search'] = searchValue;
 
                             return;
                         }
@@ -490,7 +490,11 @@
                             return response;
                         })
                         .catch(error => {
-                            console.log(error)
+                            console.log(error);
+
+                            this.isLoading = false;
+
+                            return { data: this.stageLeads || {} };
                         });
                 },
 

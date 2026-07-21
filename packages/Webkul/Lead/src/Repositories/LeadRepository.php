@@ -144,12 +144,18 @@ class LeadRepository extends Repository
             $data['expected_close_date'] = null;
         }
 
-        $hasManualFollowup = ! empty($data['next_followup_date']);
+        $shouldScheduleFollowup = array_key_exists('schedule_followup', $data)
+            ? filter_var($data['schedule_followup'], FILTER_VALIDATE_BOOLEAN)
+            : true;
 
-        if (! $hasManualFollowup) {
+        if (! $shouldScheduleFollowup) {
+            $data['next_followup_date'] = null;
+        } elseif (empty($data['next_followup_date'])) {
             $data['next_followup_date'] = $this->followupScheduleService
                 ->calculateNext(null, Carbon::now(), 0);
         }
+
+        unset($data['schedule_followup']);
 
         // Convert empty lead_sub_source_id to null
         if (isset($data['lead_sub_source_id']) && empty($data['lead_sub_source_id'])) {

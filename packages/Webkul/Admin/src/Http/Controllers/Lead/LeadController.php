@@ -127,6 +127,8 @@ class LeadController extends Controller
 
             $this->sourceAccessService->applyLeadQueryScope($query);
 
+            $this->applyKanbanSearch($query, request()->query('lead_search'));
+
             // Apply sorting
             $query->orderBy($sortBy, $sortOrder);
 
@@ -161,6 +163,49 @@ class LeadController extends Controller
         }
 
         return response()->json($data);
+    }
+
+    /**
+     * Apply one grouped kanban search so filters stay strict and search matches
+     * only leads containing the entered term in visible lead-related fields.
+     */
+    protected function applyKanbanSearch(mixed $query, mixed $search): void
+    {
+        $search = trim((string) $search);
+
+        if ($search === '') {
+            return;
+        }
+
+        $query->where(function ($query) use ($search) {
+            $query
+                ->where('title', 'like', "%{$search}%")
+                ->orWhere('description', 'like', "%{$search}%")
+                ->orWhere('source_link', 'like', "%{$search}%")
+                ->orWhere('lead_value', 'like', "%{$search}%")
+                ->orWhereHas('person', function ($query) use ($search) {
+                    $query
+                        ->where('name', 'like', "%{$search}%")
+                        ->orWhereHas('organization', function ($query) use ($search) {
+                            $query->where('name', 'like', "%{$search}%");
+                        });
+                })
+                ->orWhereHas('user', function ($query) use ($search) {
+                    $query->where('name', 'like', "%{$search}%");
+                })
+                ->orWhereHas('source', function ($query) use ($search) {
+                    $query->where('name', 'like', "%{$search}%");
+                })
+                ->orWhereHas('subSource', function ($query) use ($search) {
+                    $query->where('name', 'like', "%{$search}%");
+                })
+                ->orWhereHas('type', function ($query) use ($search) {
+                    $query->where('name', 'like', "%{$search}%");
+                })
+                ->orWhereHas('tags', function ($query) use ($search) {
+                    $query->where('name', 'like', "%{$search}%");
+                });
+        });
     }
 
     /**
