@@ -82,7 +82,7 @@ class AccessTestHelpers
             'title'              => $options['title'] ?? 'Test Lead',
             'lead_source_id'     => $options['lead_source_id'] ?? null,
             'lead_sub_source_id' => $options['lead_sub_source_id'] ?? null,
-            'person_id'          => $options['person_id'] ?? null,
+            'person_id'          => $options['person_id'] ?? (array_key_exists('organization_id', $options) ? 1 : null),
         ]);
 
         if (array_key_exists('organization_id', $options)) {

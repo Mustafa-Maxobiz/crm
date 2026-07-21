@@ -3,6 +3,7 @@
         :attribute='@json($attribute)'
         :validations="'{{ $validations }}'"
         :data='@json(old($attribute->code) ?: $value)'
+        :is-disabled="false"
     >
         <!-- Addresses Shimmer -->    
         <x-admin::shimmer.common.address />
@@ -25,6 +26,7 @@
                         ::value="data ? data['address'] : ''"
                         :label="trans('admin::app.common.custom-attributes.address')"
                         ::rules="attribute.is_required ? 'required|' + validations : validations"
+                        ::disabled="isDisabled"
                     />
 
                     <x-admin::form.control-group.error ::name="attribute['code'] + '[address]'" />
@@ -42,6 +44,7 @@
                         ::rules="attribute.is_required ? 'required|' + validations : validations"
                         :label="trans('admin::app.common.custom-attributes.country')"
                         v-model="country"
+                        ::disabled="isDisabled"
                     >
                         <option value="">@lang('admin::app.common.custom-attributes.select-country')</option>
                         
@@ -64,6 +67,7 @@
                             v-model="state"
                             :label="trans('admin::app.common.custom-attributes.state')"
                             ::rules="attribute.is_required ? 'required|' + validations : validations"
+                            ::disabled="isDisabled"
                         >
                             <option value="">@lang('admin::app.common.custom-attributes.select-state')</option>
                             
@@ -90,6 +94,7 @@
                             :label="trans('admin::app.common.custom-attributes.state')"
                             ::rules="attribute.is_required ? 'required|' + validations : validations"
                             v-model="state"
+                            ::disabled="isDisabled"
                         >
                         </x-admin::form.control-group.control>
                         
@@ -108,6 +113,7 @@
                         :placeholder="trans('admin::app.common.custom-attributes.city')"
                         :label="trans('admin::app.common.custom-attributes.city')"
                         ::rules="attribute.is_required ? 'required|' + validations : validations"
+                        ::disabled="isDisabled"
                     />
 
                     <x-admin::form.control-group.error ::name="attribute['code'] + '[city]'"/>
@@ -124,6 +130,7 @@
                         :placeholder="trans('admin::app.common.custom-attributes.postcode')"
                         :label="trans('admin::app.common.custom-attributes.postcode')"
                         ::rules="attribute.is_required ? 'required|postcode' : 'postcode'"
+                        ::disabled="isDisabled"
                     />
 
                     <x-admin::form.control-group.error ::name="attribute['code'] + '[postcode]'" />
@@ -138,7 +145,7 @@
         app.component('v-address-component', {
             template: '#v-address-component-template',
 
-            props: ['attribute', 'data', 'validations'],
+            props: ['attribute', 'data', 'validations', 'isDisabled'],
 
             data() {
                 return {
@@ -148,6 +155,16 @@
 
                     countryStates: @json(core()->groupedStatesByCountries()),
                 };
+            },
+
+            watch: {
+                data: {
+                    handler(value) {
+                        this.country = value?.country || '';
+                        this.state = value?.state || '';
+                    },
+                    deep: true,
+                },
             },
             
             methods: {

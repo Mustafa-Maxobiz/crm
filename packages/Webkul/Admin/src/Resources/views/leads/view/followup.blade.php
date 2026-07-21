@@ -4,6 +4,10 @@
     $currentFollowupDate = $lead->next_followup_date
         ? \Carbon\Carbon::parse($lead->next_followup_date)->format('Y-m-d H:i:s')
         : null;
+
+    $followupScheduleService = app(\Webkul\Lead\Services\FollowupScheduleService::class);
+    $autoNextPreview = $followupScheduleService->calculateNext($lead);
+    $autoPhaseLabel = $followupScheduleService->describeNextPhase($lead);
 @endphp
 
 <div class="flex w-full flex-col gap-4 border-b border-gray-200 p-4 dark:border-gray-800">
@@ -11,7 +15,7 @@
         <x-slot:header class="!p-0">
             <div class="flex w-full items-center justify-between gap-4 font-semibold dark:text-white">
                 <div class="flex items-center gap-2">
-                    <h4>Follow-up Tracking</h4>
+                    <h4>@lang('admin::app.leads.view.followup.title')</h4>
                     @if ($lead->followup_count > 0)
                         <span class="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-800 dark:bg-blue-900 dark:text-blue-200">
                             {{ $lead->followup_count }} {{ $lead->followup_count === 1 ? 'attempt' : 'attempts' }}
@@ -19,11 +23,11 @@
                     @endif
                     @if ($lead->isFollowupDue())
                         <span class="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-800 dark:bg-red-900 dark:text-red-200">
-                            Overdue
+                            @lang('admin::app.leads.view.followup.overdue')
                         </span>
                     @elseif ($lead->isFollowupToday())
                         <span class="rounded-full bg-yellow-100 px-2 py-1 text-xs font-semibold text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-                            Due Today
+                            @lang('admin::app.leads.view.followup.due-today')
                         </span>
                     @endif
                 </div>
@@ -32,31 +36,55 @@
 
         <x-slot:content class="mt-4 !px-0 !pb-0">
             <div class="flex flex-col gap-4">
+                <div class="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-300">
+                    <p class="font-medium text-gray-800 dark:text-gray-100">
+                        @lang('admin::app.leads.view.followup.auto-title')
+                    </p>
+                    <p class="mt-1">
+                        @lang('admin::app.leads.view.followup.auto-description')
+                    </p>
+                    <p class="mt-1 text-gray-700 dark:text-gray-200">
+                        {{ $followupScheduleService->scheduleSummary() }}
+                    </p>
+                    @if ($autoNextPreview)
+                        <p class="mt-2">
+                            <span class="font-medium">{{ $autoPhaseLabel }}</span>
+                            —
+                            @lang('admin::app.leads.view.followup.auto-next'):
+                            {{ $autoNextPreview->format('M d, Y h:i A') }}
+                        </p>
+                    @else
+                        <p class="mt-2 font-medium text-red-600 dark:text-red-400">
+                            {{ $autoPhaseLabel }}
+                        </p>
+                    @endif
+                </div>
+
                 <!-- Follow-up Stats -->
                 <div class="grid grid-cols-3 gap-4">
                     <div class="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-                        <p class="text-sm text-gray-600 dark:text-gray-400">Total Attempts</p>
+                        <p class="text-sm text-gray-600 dark:text-gray-400">@lang('admin::app.leads.view.followup.total-attempts')</p>
                         <p class="text-2xl font-bold dark:text-white">{{ $lead->followup_count }}</p>
                     </div>
                     
                     <div class="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-                        <p class="text-sm text-gray-600 dark:text-gray-400">Next Follow-up</p>
+                        <p class="text-sm text-gray-600 dark:text-gray-400">@lang('admin::app.leads.view.followup.next')</p>
                         <p class="text-lg font-semibold dark:text-white">
                             @if ($lead->next_followup_date)
-                                {{ \Carbon\Carbon::parse($lead->next_followup_date)->format('M d, Y') }}
+                                {{ \Carbon\Carbon::parse($lead->next_followup_date)->format('M d, Y h:i A') }}
                             @else
-                                <span class="text-gray-400">Not set</span>
+                                <span class="text-gray-400">@lang('admin::app.leads.view.followup.not-set')</span>
                             @endif
                         </p>
                     </div>
                     
                     <div class="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-                        <p class="text-sm text-gray-600 dark:text-gray-400">Last Follow-up</p>
+                        <p class="text-sm text-gray-600 dark:text-gray-400">@lang('admin::app.leads.view.followup.last')</p>
                         <p class="text-lg font-semibold dark:text-white">
                             @if ($lead->last_followup_date)
                                 {{ \Carbon\Carbon::parse($lead->last_followup_date)->diffForHumans() }}
                             @else
-                                <span class="text-gray-400">Never</span>
+                                <span class="text-gray-400">@lang('admin::app.leads.view.followup.never')</span>
                             @endif
                         </p>
                     </div>
@@ -65,7 +93,7 @@
                 <!-- Follow-up Notes -->
                 @if ($lead->followup_notes)
                     <div class="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-                        <p class="mb-2 text-sm font-semibold text-gray-600 dark:text-gray-400">Follow-up Notes</p>
+                        <p class="mb-2 text-sm font-semibold text-gray-600 dark:text-gray-400">@lang('admin::app.leads.view.followup.notes')</p>
                         <p class="text-gray-800 dark:text-gray-200">{{ $lead->followup_notes }}</p>
                     </div>
                 @endif
@@ -100,7 +128,7 @@
                             onclick="const modal = document.getElementById('followup-complete-modal-{{ $lead->id }}'); if (! modal.open && modal.showModal) { modal.showModal(); } else { modal.setAttribute('open', 'open'); } document.body.classList.add('overflow-hidden');"
                         >
                             <span class="icon-tick text-lg"></span>
-                            <span data-followup-label>Mark Follow-up Complete</span>
+                            <span data-followup-label>@lang('admin::app.leads.view.followup.mark-complete')</span>
                         </button>
                     </form>
                 @endif
@@ -142,7 +170,17 @@
 
             <div class="flex flex-col gap-4 px-5 py-4">
                 <p class="text-sm font-medium text-gray-800 dark:text-white">
-                    Would you like to schedule a next follow-up?
+                    @lang('admin::app.leads.view.followup.schedule-question')
+                </p>
+
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    @lang('admin::app.leads.view.followup.schedule-help')
+                    @if ($autoNextPreview)
+                        —
+                        <span class="font-medium text-gray-700 dark:text-gray-200">
+                            {{ $autoNextPreview->format('M d, Y h:i A') }}
+                        </span>
+                    @endif
                 </p>
 
                 <div class="grid grid-cols-3 gap-3 max-sm:grid-cols-1">
@@ -214,7 +252,7 @@
                     data-followup-submit="{{ $lead->id }}"
                     onclick="const form = document.getElementById('followup-complete-form-{{ $lead->id }}'); const field = document.getElementById('next-followup-field-{{ $lead->id }}'); const input = document.getElementById('next-followup-date-{{ $lead->id }}'); form.querySelector('[data-followup-schedule-input]').value = '0'; input.required = false; input.value = ''; field.classList.add('hidden'); field.classList.remove('flex');"
                 >
-                    No, Close Follow-up
+                    @lang('admin::app.leads.view.followup.use-auto')
                 </button>
 
                 <button
@@ -222,7 +260,7 @@
                     class="primary-button"
                     onclick="const form = document.getElementById('followup-complete-form-{{ $lead->id }}'); const field = document.getElementById('next-followup-field-{{ $lead->id }}'); const input = document.getElementById('next-followup-date-{{ $lead->id }}'); if (field.classList.contains('hidden')) { field.classList.remove('hidden'); field.classList.add('flex'); input.required = true; input.focus(); return; } form.querySelector('[data-followup-schedule-input]').value = '1'; form.requestSubmit();"
                 >
-                    Yes, Schedule Next
+                    @lang('admin::app.leads.view.followup.use-manual')
                 </button>
             </div>
         </div>

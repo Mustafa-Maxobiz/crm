@@ -20,6 +20,7 @@ use Webkul\Admin\Http\Resources\ActivityResource;
 use Webkul\Attribute\Repositories\AttributeRepository;
 use Webkul\Email\Repositories\EmailRepository;
 use Webkul\Lead\Repositories\LeadRepository;
+use Webkul\Lead\Services\FollowupScheduleService;
 
 class ActivityController extends Controller
 {
@@ -34,6 +35,7 @@ class ActivityController extends Controller
         protected AttributeRepository $attributeRepository,
         protected LeadRepository $leadRepository,
         protected EmailRepository $emailRepository,
+        protected FollowupScheduleService $followupScheduleService,
     ) {}
 
     /**
@@ -138,26 +140,11 @@ class ActivityController extends Controller
                 ->update([
                     'followup_count'     => ($lead->followup_count ?? 0) + 1,
                     'last_followup_date' => $completedAt,
-                    'next_followup_date' => null,
                 ]);
 
-            if ($followupAttribute = DB::table('attributes')
-                ->where('entity_type', 'leads')
-                ->where('code', 'next_followup_date')
-                ->first()
-            ) {
-                DB::table('attribute_values')->updateOrInsert(
-                    [
-                        'entity_type'  => 'leads',
-                        'entity_id'    => $lead->getKey(),
-                        'attribute_id' => $followupAttribute->id,
-                    ],
-                    [
-                        'datetime_value' => null,
-                        'unique_id'      => $lead->getKey().'|'.$followupAttribute->id,
-                    ]
-                );
-            }
+            $lead->refresh();
+
+            $this->followupScheduleService->applyNextFollowup($lead);
 
             $lead->refresh();
 

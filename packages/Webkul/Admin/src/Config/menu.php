@@ -131,6 +131,12 @@ return [
         'route'      => 'admin.contacts.organizations.index',
         'sort'       => 2,
         'icon-class' => '',
+    ], [
+        'key'        => 'contacts.teams',
+        'name'       => 'admin::app.layouts.teams',
+        'route'      => 'admin.contacts.teams.index',
+        'sort'       => 3,
+        'icon-class' => '',
     ],
 
     /**
@@ -216,6 +222,13 @@ return [
         'route'      => 'admin.settings.deleted_leads.index',
         'sort'       => 4,
         'icon-class' => 'icon-delete',
+    ], [
+        'key'        => 'settings.lead.followup_schedule',
+        'name'       => 'admin::app.layouts.followup-schedule',
+        'info'       => 'admin::app.layouts.followup-schedule-info',
+        'route'      => 'admin.settings.followup_schedule.index',
+        'sort'       => 5,
+        'icon-class' => 'icon-calendar',
     ], [
         'key'        => 'settings.warehouse',
         'name'       => 'admin::app.layouts.warehouse',

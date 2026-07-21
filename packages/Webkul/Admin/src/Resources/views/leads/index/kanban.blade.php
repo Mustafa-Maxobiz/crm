@@ -454,8 +454,11 @@
                                 return;
                             }
 
-                            params['search'] += `title:${column.value.join(',')};`;
-                            params['searchFields'] += `title:like;`;
+                            const searchValue = column.value.join(',');
+
+                            params['search'] += `title:${searchValue};description:${searchValue};person.name:${searchValue};user.name:${searchValue};source.name:${searchValue};source_link:${searchValue};`;
+                            params['searchFields'] += `title:like;description:like;person.name:like;user.name:like;source.name:like;source_link:like;`;
+                            params['searchJoin'] = 'or';
 
                             return;
                         }

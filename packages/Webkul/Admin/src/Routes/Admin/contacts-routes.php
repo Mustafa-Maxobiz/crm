@@ -5,6 +5,7 @@ use Webkul\Admin\Http\Controllers\Contact\OrganizationController;
 use Webkul\Admin\Http\Controllers\Contact\Persons\ActivityController;
 use Webkul\Admin\Http\Controllers\Contact\Persons\PersonController;
 use Webkul\Admin\Http\Controllers\Contact\Persons\TagController;
+use Webkul\Admin\Http\Controllers\Contact\TeamController;
 
 Route::prefix('contacts')->group(function () {
     /**
@@ -63,5 +64,24 @@ Route::prefix('contacts')->group(function () {
         Route::delete('{id}', 'destroy')->name('admin.contacts.organizations.delete');
 
         Route::put('mass-destroy', 'massDestroy')->name('admin.contacts.organizations.mass_delete');
+    });
+
+    /**
+     * Team routes.
+     */
+    Route::controller(TeamController::class)->prefix('teams')->group(function () {
+        Route::get('', 'index')->name('admin.contacts.teams.index');
+
+        Route::get('create', 'create')->name('admin.contacts.teams.create');
+
+        Route::post('create', 'store')->name('admin.contacts.teams.store');
+
+        Route::get('edit/{id}', 'edit')->name('admin.contacts.teams.edit');
+
+        Route::put('edit/{id}', 'update')->name('admin.contacts.teams.update');
+
+        Route::delete('{id}', 'destroy')->name('admin.contacts.teams.delete');
+
+        Route::put('mass-destroy', 'massDestroy')->name('admin.contacts.teams.mass_delete');
     });
 });

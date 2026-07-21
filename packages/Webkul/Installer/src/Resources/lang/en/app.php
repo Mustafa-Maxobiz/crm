@@ -26,12 +26,14 @@ return [
             ],
 
             'persons' => [
+                'address'         => 'Address',
                 'contact-numbers' => 'Contact Numbers',
                 'emails'          => 'Emails',
                 'job-title'       => 'Job Title',
                 'name'            => 'Name',
-                'organization'    => 'Organization',
+                'organization'    => 'Company',
                 'sales-owner'     => 'Sales Owner',
+                'website'         => 'Website',
             ],
 
             'organizations' => [

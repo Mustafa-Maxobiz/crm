@@ -39,6 +39,11 @@ class Organization extends Model implements OrganizationContract
         return $this->hasMany(PersonProxy::modelClass());
     }
 
+    public function teams()
+    {
+        return $this->belongsToMany(TeamProxy::modelClass(), 'organization_team', 'organization_id', 'team_id');
+    }
+
     /**
      * Get the user that owns the lead.
      */

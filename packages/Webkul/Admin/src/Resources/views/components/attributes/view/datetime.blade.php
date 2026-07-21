@@ -1,7 +1,7 @@
 <x-admin::form.control-group.controls.inline.datetime
     ::name="'{{ $attribute->code }}'"
     ::value="'{{ $value }}'"
-    rules="required"
+    :rules="$attribute->is_required ? 'required' : ''"
     position="left"
     :label="$attribute->name"
     ::errors="errors"

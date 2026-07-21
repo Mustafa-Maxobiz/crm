@@ -11,7 +11,7 @@ use Webkul\User\Contracts\User as UserContract;
 class SourceAccessService
 {
     /**
-     * Root source IDs the user may use. Null means all sources (admin).
+     * Root source IDs the user may use. Null means all sources.
      *
      * @return array<int>|null
      */
@@ -30,10 +30,9 @@ class SourceAccessService
         $user->loadMissing(['sources', 'role.sources']);
 
         $userSourceIds = $user->sources->pluck('id')->all();
+        $roleSourceIds = $user->role?->sources->pluck('id')->all() ?? [];
 
         if (! empty($userSourceIds)) {
-            $roleSourceIds = $user->role?->sources->pluck('id')->all() ?? [];
-
             if (! empty($roleSourceIds)) {
                 return array_values(array_intersect($userSourceIds, $roleSourceIds));
             }
@@ -41,15 +40,15 @@ class SourceAccessService
             return array_values(array_unique($userSourceIds));
         }
 
-        if ($user->role) {
-            return $user->role->sources->pluck('id')->all();
+        if (! empty($roleSourceIds)) {
+            return $roleSourceIds;
         }
 
-        return [];
+        return null;
     }
 
     /**
-     * Organization IDs the user may use. Null means all companies (admin).
+     * Organization IDs the user may use. Null means all companies.
      *
      * @return array<int>|null
      */
@@ -68,10 +67,9 @@ class SourceAccessService
         $user->loadMissing(['organizations', 'role.organizations']);
 
         $userOrganizationIds = $user->organizations->pluck('id')->all();
+        $roleOrganizationIds = $user->role?->organizations->pluck('id')->all() ?? [];
 
         if (! empty($userOrganizationIds)) {
-            $roleOrganizationIds = $user->role?->organizations->pluck('id')->all() ?? [];
-
             if (! empty($roleOrganizationIds)) {
                 return array_values(array_intersect($userOrganizationIds, $roleOrganizationIds));
             }
@@ -79,11 +77,11 @@ class SourceAccessService
             return array_values(array_unique($userOrganizationIds));
         }
 
-        if ($user->role) {
-            return $user->role->organizations->pluck('id')->all();
+        if (! empty($roleOrganizationIds)) {
+            return $roleOrganizationIds;
         }
 
-        return [];
+        return null;
     }
 
     /**
@@ -213,15 +211,20 @@ class SourceAccessService
             return false;
         }
 
-        if ($lead->lead_source_id && in_array((int) $lead->lead_source_id, $allowed, true)) {
+        $leadAttributes = $lead->getAttributes();
+
+        $leadSourceId = $leadAttributes['lead_source_id'] ?? null;
+        $leadSubSourceId = $leadAttributes['lead_sub_source_id'] ?? null;
+
+        if ($leadSourceId && in_array((int) $leadSourceId, $allowed, true)) {
             return true;
         }
 
-        if ($lead->lead_sub_source_id && in_array((int) $lead->lead_sub_source_id, $allowed, true)) {
+        if ($leadSubSourceId && in_array((int) $leadSubSourceId, $allowed, true)) {
             return true;
         }
 
-        return ! $lead->lead_source_id && ! $lead->lead_sub_source_id;
+        return ! $leadSourceId && ! $leadSubSourceId;
     }
 
     protected function leadMatchesOrganizationScope(LeadContract $lead, ?UserContract $user = null): bool
@@ -236,9 +239,13 @@ class SourceAccessService
             return false;
         }
 
+        if (! ($lead->getAttributes()['person_id'] ?? null)) {
+            return false;
+        }
+
         $lead->loadMissing('person');
 
-        $organizationId = $lead->person?->organization_id;
+        $organizationId = $lead->person?->getAttributes()['organization_id'] ?? null;
 
         if (! $organizationId) {
             return false;
@@ -261,7 +268,11 @@ class SourceAccessService
 
         return $query->where(function ($scopeQuery) use ($allowed) {
             $scopeQuery->whereIn('lead_source_id', $allowed)
-                ->orWhereIn('lead_sub_source_id', $allowed);
+                ->orWhereIn('lead_sub_source_id', $allowed)
+                ->orWhere(function ($emptySourceQuery) {
+                    $emptySourceQuery->whereNull('lead_source_id')
+                        ->whereNull('lead_sub_source_id');
+                });
         });
     }
 
@@ -294,7 +305,11 @@ class SourceAccessService
 
         return $query->where(function ($scopeQuery) use ($allowed) {
             $scopeQuery->whereIn('leads.lead_source_id', $allowed)
-                ->orWhereIn('leads.lead_sub_source_id', $allowed);
+                ->orWhereIn('leads.lead_sub_source_id', $allowed)
+                ->orWhere(function ($emptySourceQuery) {
+                    $emptySourceQuery->whereNull('leads.lead_source_id')
+                        ->whereNull('leads.lead_sub_source_id');
+                });
         });
     }
 

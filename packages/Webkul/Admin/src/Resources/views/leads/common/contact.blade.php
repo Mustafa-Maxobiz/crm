@@ -92,6 +92,50 @@
                 can-add-new="true"
             ></v-lookup-component>
         </x-admin::form.control-group>
+
+        <!-- Person Address -->
+        <x-admin::form.control-group>
+            <x-admin::form.control-group.label>
+                @lang('admin::app.leads.common.contact.address')
+            </x-admin::form.control-group.label>
+
+            @php
+                $addressAttribute = app('Webkul\Attribute\Repositories\AttributeRepository')->findOneWhere([
+                    'entity_type' => 'persons',
+                    'code'        => 'address',
+                ]);
+            @endphp
+
+            @if ($addressAttribute)
+                @php
+                    $addressAttribute->code = 'person['.$addressAttribute->code.']';
+                @endphp
+
+                <v-address-component
+                    :key="person.id || 'new-address'"
+                    :attribute='@json($addressAttribute)'
+                    :data="person.address"
+                    validations=""
+                    :is-disabled="person?.id ? true : false"
+                ></v-address-component>
+            @endif
+        </x-admin::form.control-group>
+
+        <!-- Person Website -->
+        <x-admin::form.control-group>
+            <x-admin::form.control-group.label>
+                @lang('admin::app.leads.common.contact.website')
+            </x-admin::form.control-group.label>
+
+            <x-admin::form.control-group.control
+                type="text"
+                name="person[website]"
+                ::value="person.website ?? ''"
+                ::disabled="person?.id ? true : false"
+                :label="trans('admin::app.leads.common.contact.website')"
+                :placeholder="trans('admin::app.leads.common.contact.website')"
+            />
+        </x-admin::form.control-group>
     </script>
 
     <script type="module">
@@ -105,7 +149,7 @@
                     is_searching: false,
 
                     person: this.data ? this.data : {
-                        'name': ''
+                        'name': '',
                     },
 
                     persons: [],
@@ -138,3 +182,5 @@
         });
     </script>
 @endPushOnce
+
+@include('admin::components.attributes.edit.address', ['attribute' => null, 'validations' => '', 'value' => null])

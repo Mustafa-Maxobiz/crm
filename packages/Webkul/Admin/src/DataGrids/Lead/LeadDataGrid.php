@@ -52,6 +52,8 @@ class LeadDataGrid extends DataGrid
             ->addSelect(
                 'leads.id',
                 'leads.title',
+                'leads.description',
+                'leads.source_link',
                 'leads.status',
                 'leads.lead_value',
                 'leads.expected_close_date',
@@ -95,9 +97,13 @@ class LeadDataGrid extends DataGrid
         }
 
         $this->addFilter('id', 'leads.id');
+        $this->addFilter('title', 'leads.title');
+        $this->addFilter('description', 'leads.description');
+        $this->addFilter('source_link', 'leads.source_link');
         $this->addFilter('user', 'leads.user_id');
         $this->addFilter('sales_person', 'users.name');
         $this->addFilter('lead_source_name', 'lead_sources.id');
+        $this->addFilter('lead_source_search', 'lead_sources.name');
         $this->addFilter('lead_type_name', 'lead_types.id');
         $this->addFilter('person_name', 'persons.name');
         $this->addFilter('type', 'lead_pipeline_stages.code');
@@ -130,7 +136,7 @@ class LeadDataGrid extends DataGrid
             'index'              => 'sales_person',
             'label'              => trans('admin::app.leads.index.datagrid.sales-person'),
             'type'               => 'string',
-            'searchable'         => false,
+            'searchable'         => true,
             'sortable'           => true,
             'filterable'         => true,
             'filterable_type'    => 'searchable_dropdown',
@@ -149,6 +155,36 @@ class LeadDataGrid extends DataGrid
             'type'       => 'string',
             'searchable' => true,
             'sortable'   => true,
+        ]);
+
+        $this->addColumn([
+            'index'      => 'description',
+            'label'      => trans('admin::app.leads.index.datagrid.description'),
+            'type'       => 'string',
+            'searchable' => true,
+            'sortable'   => false,
+            'filterable' => false,
+            'visibility' => false,
+        ]);
+
+        $this->addColumn([
+            'index'      => 'source_link',
+            'label'      => trans('admin::app.leads.index.datagrid.source-link'),
+            'type'       => 'string',
+            'searchable' => true,
+            'sortable'   => false,
+            'filterable' => false,
+            'visibility' => false,
+        ]);
+
+        $this->addColumn([
+            'index'      => 'lead_source_search',
+            'label'      => trans('admin::app.leads.index.datagrid.source'),
+            'type'       => 'string',
+            'searchable' => true,
+            'sortable'   => false,
+            'filterable' => false,
+            'visibility' => false,
         ]);
 
         $this->addColumn([
@@ -205,7 +241,7 @@ class LeadDataGrid extends DataGrid
             'index'              => 'person_name',
             'label'              => trans('admin::app.leads.index.datagrid.contact-person'),
             'type'               => 'string',
-            'searchable'         => false,
+            'searchable'         => true,
             'sortable'           => true,
             'filterable'         => true,
             'filterable_type'    => 'searchable_dropdown',

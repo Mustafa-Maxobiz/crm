@@ -154,6 +154,22 @@ class PersonRepository extends Repository
     }
 
     /**
+     * Find an existing person matching organization/email/phone unique identity.
+     */
+    public function findByUniqueIdentity(array $data)
+    {
+        $sanitized = $this->sanitizeRequestedPersonData($data);
+
+        if (empty($sanitized['unique_id'])) {
+            return null;
+        }
+
+        return $this->findOneWhere([
+            'unique_id' => $sanitized['unique_id'],
+        ]);
+    }
+
+    /**
      * Sanitize requested person data and return the clean array.
      */
     private function sanitizeRequestedPersonData(array $data): array
@@ -176,7 +192,21 @@ class PersonRepository extends Repository
         if (isset($data['contact_numbers'])) {
             $data['contact_numbers'] = collect($data['contact_numbers'])->filter(fn ($number) => ! is_null($number['value']))->toArray();
 
-            $data['unique_id'] .= '|'.$data['contact_numbers'][0]['value'];
+            if (! empty($data['contact_numbers'][0]['value'])) {
+                $data['unique_id'] .= '|'.$data['contact_numbers'][0]['value'];
+            }
+        }
+
+        if (array_key_exists('website', $data) && empty($data['website'])) {
+            $data['website'] = null;
+        }
+
+        if (array_key_exists('address', $data) && is_array($data['address'])) {
+            $hasAddress = collect($data['address'])->contains(fn ($part) => ! empty($part));
+
+            if (! $hasAddress) {
+                $data['address'] = null;
+            }
         }
 
         return $data;

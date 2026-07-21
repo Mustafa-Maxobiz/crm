@@ -88,7 +88,7 @@ class RoleDataGrid extends DataGrid
             'sortable'   => false,
             'searchable' => false,
             'filterable' => false,
-            'closure'    => fn ($row) => $row->assigned_sources ?: '—',
+            'closure'    => fn ($row) => $row->assigned_sources ?: trans('admin::app.settings.roles.index.datagrid.all'),
         ]);
 
         $this->addColumn([
@@ -98,7 +98,7 @@ class RoleDataGrid extends DataGrid
             'sortable'   => false,
             'searchable' => false,
             'filterable' => false,
-            'closure'    => fn ($row) => $row->assigned_organizations ?: '—',
+            'closure'    => fn ($row) => $row->assigned_organizations ?: trans('admin::app.settings.roles.index.datagrid.all'),
         ]);
 
         $this->addColumn([

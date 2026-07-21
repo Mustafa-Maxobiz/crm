@@ -14,7 +14,7 @@
             :class="[errors[`temp-${name}`] ? 'border !border-red-600 hover:border-red-600' : '']"
         >
             <ul
-                class="flex flex-wrap items-center gap-1"
+                class="relative flex flex-wrap items-center gap-1"
                 v-bind="$attrs"
             >
                 <li
@@ -56,6 +56,22 @@
                             @blur="addTag"
                         />
                     </v-field>
+
+                    <div
+                        v-if="suggestionsEndpoint && showSuggestions"
+                        class="absolute left-0 right-0 top-full z-10 mt-1 rounded border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900"
+                    >
+                        <ul class="max-h-48 overflow-auto py-1">
+                            <li
+                                v-for="suggestion in suggestions"
+                                :key="suggestion.id"
+                                class="cursor-pointer px-3 py-2 text-sm text-gray-800 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                                @mousedown.prevent="selectSuggestion(suggestion)"
+                            >
+                                @{{ suggestion.name }}
+                            </li>
+                        </ul>
+                    </div>
 
                     <template v-if="! tags.length && input != ''">
                         <v-field
@@ -132,6 +148,11 @@
                     type: Boolean,
                     default: true,
                 },
+
+                suggestionsEndpoint: {
+                    type: String,
+                    default: '',
+                },
             },
 
             data() {
@@ -139,7 +160,23 @@
                     tags: this.data ? this.data : [],
 
                     input: '',
+
+                    suggestions: [],
+
+                    isSearching: false,
                 }
+            },
+
+            computed: {
+                showSuggestions() {
+                    return this.input.trim().length >= 2 && this.suggestions.length > 0;
+                },
+            },
+
+            watch: {
+                input(newValue) {
+                    this.searchSuggestions(newValue);
+                },
             },
 
             methods: {
@@ -167,6 +204,8 @@
 
                     this.$emit('tags-updated', this.tags);
 
+                    this.suggestions = [];
+
                     this.input = '';
                 },
 
@@ -176,6 +215,42 @@
                     });
 
                     this.$emit('tags-updated', this.tags);
+                },
+
+                selectSuggestion(suggestion) {
+                    this.input = suggestion.name;
+
+                    this.addTag();
+                },
+
+                searchSuggestions(value) {
+                    const search = value.trim();
+
+                    if (
+                        ! this.suggestionsEndpoint
+                        || search.length < 2
+                    ) {
+                        this.suggestions = [];
+
+                        return;
+                    }
+
+                    this.isSearching = true;
+
+                    this.$axios.get(this.suggestionsEndpoint, {
+                        params: {
+                            search: `name:${search}`,
+                            searchFields: 'name:like',
+                        },
+                    }).then((response) => {
+                        this.suggestions = (response.data.data || []).filter((tag) => {
+                            return ! this.tags.includes(tag.name);
+                        });
+                    }).catch(() => {
+                        this.suggestions = [];
+                    }).finally(() => {
+                        this.isSearching = false;
+                    });
                 },
             }
         });

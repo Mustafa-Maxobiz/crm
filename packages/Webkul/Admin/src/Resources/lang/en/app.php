@@ -15,7 +15,8 @@ return [
         'webhook'          => 'Webhook',
         'contacts'         => 'Contacts',
         'persons'          => 'Persons',
-        'organizations'    => 'Organizations',
+        'organizations'    => 'Companies',
+        'teams'            => 'Teams',
         'products'         => 'Products',
         'settings'         => 'Settings',
         'groups'           => 'Groups',
@@ -38,6 +39,7 @@ return [
         'print'            => 'Print',
         'delete'           => 'Delete',
         'deleted-leads'    => 'Deleted Leads',
+        'followup-schedule'=> 'Follow-up Schedule',
         'meta-leads'       => 'Meta Leads',
         'export'           => 'Export',
         'mass-delete'      => 'Mass Delete',
@@ -301,7 +303,7 @@ return [
                 ],
 
                 'search' => [
-                    'title' => 'Search',
+                    'title' => 'Search by title, description, contact, source...',
                 ],
             ],
 
@@ -563,14 +565,14 @@ return [
                     'id'                => 'ID',
                     'view'              => 'View',
                     'name'              => 'Name',
-                    'organization-name' => 'Organization Name',
+                    'organization-name' => 'Company Name',
                 ],
             ],
 
             'view' => [
                 'title'              => ':name',
                 'about-person'       => 'About Person',
-                'about-organization' => 'About Organization',
+                'about-organization' => 'About Company',
 
                 'activities' => [
                     'index' => [
@@ -655,12 +657,12 @@ return [
 
         'organizations' => [
             'index' => [
-                'title'          => 'Organizations',
-                'create-btn'     => 'Create Organization',
-                'create-success' => 'Organization created successfully.',
-                'update-success' => 'Organization updated successfully.',
-                'delete-success' => 'Organization deleted successfully.',
-                'delete-failed'  => 'Organization can not be deleted.',
+                'title'          => 'Companies',
+                'create-btn'     => 'Create Company',
+                'create-success' => 'Company created successfully.',
+                'update-success' => 'Company updated successfully.',
+                'delete-success' => 'Company deleted successfully.',
+                'delete-failed'  => 'Company can not be deleted.',
 
                 'datagrid' => [
                     'delete'        => 'Delete',
@@ -672,13 +674,61 @@ return [
             ],
 
             'create' => [
-                'title'    => 'Create Organization',
-                'save-btn' => 'Save Organization',
+                'title'    => 'Create Company',
+                'save-btn' => 'Save Company',
             ],
 
             'edit' => [
-                'title'    => 'Edit Organization',
-                'save-btn' => 'Save Organization',
+                'title'     => 'Edit Company',
+                'save-btn'  => 'Save Company',
+                'teams'     => 'Teams',
+                'add-team'  => 'Add Team',
+                'no-teams'  => 'No teams yet for this company.',
+            ],
+        ],
+
+        'teams' => [
+            'unique-name' => 'A team with this name already exists for one of the selected companies.',
+
+            'index' => [
+                'title'          => 'Teams',
+                'create-btn'     => 'Create Team',
+                'create-success' => 'Team created successfully.',
+                'update-success' => 'Team updated successfully.',
+                'delete-success' => 'Team deleted successfully.',
+                'delete-failed'  => 'Team can not be deleted.',
+
+                'datagrid' => [
+                    'delete'     => 'Delete',
+                    'edit'       => 'Edit',
+                    'id'         => 'ID',
+                    'name'       => 'Name',
+                    'company'    => 'Companies',
+                    'owner'      => 'Owner',
+                    'created-at' => 'Created At',
+                ],
+            ],
+
+            'create' => [
+                'title'           => 'Create Team',
+                'save-btn'        => 'Save Team',
+                'name'            => 'Name',
+                'company'         => 'Companies',
+                'select-company'  => 'Select one or more companies',
+                'owner'           => 'Owner',
+                'select-owner'    => 'Select Owner',
+                'description'     => 'Description',
+            ],
+
+            'edit' => [
+                'title'           => 'Edit Team',
+                'save-btn'        => 'Save Team',
+                'name'            => 'Name',
+                'company'         => 'Companies',
+                'select-company'  => 'Select one or more companies',
+                'owner'           => 'Owner',
+                'select-owner'    => 'Select Owner',
+                'description'     => 'Description',
             ],
         ],
     ],
@@ -826,9 +876,9 @@ return [
                 'save-btn'       => 'Save Role',
                 'title'          => 'Create Role',
                 'lead-sources'   => 'Lead Sources',
-                'lead-sources-help' => 'Default sources for users in this role. Users without their own source assignment will inherit these. User-specific sources must be chosen from this list.',
+                'lead-sources-help' => 'Default sources for users in this role. Leave empty to allow all sources. Users without their own source assignment will inherit these.',
                 'companies'      => 'Companies',
-                'companies-help' => 'Default companies for users in this role. Users without their own company assignment will inherit these. User-specific companies must be chosen from this list.',
+                'companies-help' => 'Default companies for users in this role. Leave empty to allow all companies. Users without their own company assignment will inherit these.',
             ],
 
             'edit' => [
@@ -843,9 +893,9 @@ return [
                 'save-btn'       => 'Save Role',
                 'title'          => 'Edit Role',
                 'lead-sources'   => 'Lead Sources',
-                'lead-sources-help' => 'Default sources for users in this role. Users without their own source assignment will inherit these. User-specific sources must be chosen from this list.',
+                'lead-sources-help' => 'Default sources for users in this role. Leave empty to allow all sources. Users without their own source assignment will inherit these.',
                 'companies'      => 'Companies',
-                'companies-help' => 'Default companies for users in this role. Users without their own company assignment will inherit these. User-specific companies must be chosen from this list.',
+                'companies-help' => 'Default companies for users in this role. Leave empty to allow all companies. Users without their own company assignment will inherit these.',
             ],
         ],
 
@@ -896,6 +946,36 @@ return [
                     'stage'            => 'Stage',
                     'status'           => 'Status',
                     'title'            => 'Title',
+                ],
+            ],
+        ],
+
+        'followup-schedule' => [
+            'index' => [
+                'title'              => 'Follow-up Schedule',
+                'info'               => 'Add follow-up steps with interval and frequency. Example: every 4 hours × 2, then every 24 hours × 7, then every 7 days × 4. Manual dates always override this.',
+                'enabled'            => 'Enable Auto Follow-up',
+                'enabled-help'       => 'When enabled, leads without a manual next follow-up are scheduled automatically.',
+                'steps-title'        => 'Follow-up Steps',
+                'steps-help'         => 'Each step has an interval (value + unit) and how many times that interval should repeat before moving to the next step.',
+                'step'               => 'Step',
+                'add-step'           => 'Add Follow-up',
+                'remove-step'        => 'Remove',
+                'interval-value'     => 'Interval',
+                'interval-unit'      => 'Unit',
+                'frequency'          => 'Frequency (Times)',
+                'frequency-help'     => 'How many times to repeat this interval.',
+                'intervals-required' => 'Please add at least one follow-up step.',
+                'max-days'           => 'End After (Days)',
+                'max-days-help'      => 'Also stop and mark lead lost after this many days from lead creation, or when all step frequencies finish.',
+                'save-btn'           => 'Save Schedule',
+                'update-success'     => 'Follow-up schedule updated successfully.',
+                'units'              => [
+                    'minutes' => 'Minutes',
+                    'hours'   => 'Hours',
+                    'days'    => 'Days',
+                    'weeks'   => 'Weeks',
+                    'months'  => 'Months',
                 ],
             ],
         ],
@@ -1316,14 +1396,14 @@ return [
                     'view-permission'          => 'View Permission',
                     'select-at-lest-one-group' => 'Select at least one group',
                     'lead-sources'             => 'Lead Sources',
-                    'lead-sources-help'        => 'Assign specific sources for this user. Leave empty to inherit from the user\'s role. Leads are visible only when both source and company match.',
+                    'lead-sources-help'        => 'Assign specific sources for this user. Leave empty to inherit from the user\'s role. Empty role and user selections allow all sources.',
                     'lead-sources-role-pool'   => 'Only sources assigned to the selected role can be chosen for this user.',
-                    'lead-sources-empty-role'  => 'This role has no sources yet. Assign sources on the role first, or leave user sources empty to inherit later.',
+                    'lead-sources-empty-role'  => 'This role has no source restriction. Leave user sources empty to allow all sources.',
                     'source-role-mismatch'     => 'One or more selected sources are not allowed for this user\'s role.',
                     'companies'                => 'Companies',
-                    'companies-help'           => 'Assign specific companies for this user. Leave empty to inherit from the user\'s role. Leads are visible only when both source and company match.',
+                    'companies-help'           => 'Assign specific companies for this user. Leave empty to inherit from the user\'s role. Empty role and user selections allow all companies.',
                     'companies-role-pool'      => 'Only companies assigned to the selected role can be chosen for this user.',
-                    'companies-empty-role'     => 'This role has no companies yet. Assign companies on the role first, or leave user companies empty to inherit later.',
+                    'companies-empty-role'     => 'This role has no company restriction. Leave user companies empty to allow all companies.',
                     'company-role-mismatch'    => 'One or more selected companies are not allowed for this user\'s role.',
                 ],
 
@@ -1566,7 +1646,7 @@ return [
 
                     'entity-types' => [
                         'leads'         => 'Leads',
-                        'organizations' => 'Organizations',
+                        'organizations' => 'Companies',
                         'persons'       => 'Persons',
                         'products'      => 'Products',
                         'quotes'        => 'Quotes',
@@ -1976,6 +2056,12 @@ return [
         'destroy-success'           => 'Lead deleted successfully.',
         'destroy-failed'            => 'Lead can not be deleted.',
         'followup-complete-success' => 'Follow-up marked as complete successfully.',
+        'followup-schedule-ended'   => 'Follow-up schedule ended. Lead has been marked as lost.',
+        'replicate'                 => [
+            'success'           => ':count lead replica created successfully.',
+            'invalid-companies' => 'One or more selected companies are invalid.',
+            'invalid-teams'     => 'One or more selected teams are invalid for the chosen companies.',
+        ],
 
         'file' => [
             'data-not-found'         => 'Data not found.',
@@ -2036,11 +2122,13 @@ return [
                     'tags'                => 'Tags',
                     'expected-close-date' => 'Expected Close Date',
                     'created-at'          => 'Created At',
+                    'description'         => 'Description',
+                    'source-link'         => 'Source Link',
                 ],
 
                 'toolbar' => [
                     'search' => [
-                        'title' => 'Search by Title',
+                        'title' => 'Search by title, description, contact, source...',
                     ],
 
                     'filters' => [
@@ -2112,7 +2200,9 @@ return [
                 'name'           => 'Name',
                 'email'          => 'Email',
                 'contact-number' => 'Contact Number',
-                'organization'   => 'Organization',
+                'organization'   => 'Company',
+                'address'        => 'Address',
+                'website'        => 'Website',
             ],
 
             'products' => [
@@ -2138,6 +2228,26 @@ return [
 
             'attributes' => [
                 'title' => 'About Lead',
+            ],
+
+            'followup' => [
+                'title'             => 'Follow-up Tracking',
+                'overdue'           => 'Overdue',
+                'due-today'         => 'Due Today',
+                'auto-title'        => 'Auto Follow-up Schedule',
+                'auto-description'  => 'If you do not set a custom next follow-up, the system uses the configured auto schedule. Manual dates always override it.',
+                'auto-next'         => 'Next auto time',
+                'total-attempts'    => 'Total Attempts',
+                'next'              => 'Next Follow-up',
+                'last'              => 'Last Follow-up',
+                'not-set'           => 'Not set',
+                'never'             => 'Never',
+                'notes'             => 'Follow-up Notes',
+                'mark-complete'     => 'Mark Follow-up Complete',
+                'schedule-question' => 'Schedule the next follow-up?',
+                'schedule-help'     => 'Leave blank to use auto schedule. Manual date overrides auto schedule.',
+                'use-auto'          => 'Use Auto Schedule',
+                'use-manual'        => 'Set Custom Time',
             ],
 
             'quotes' => [
@@ -2192,6 +2302,23 @@ return [
                 'create-success'  => 'Tag created successfully.',
                 'destroy-success' => 'Tag deleted successfully.',
             ],
+
+            'replicate' => [
+                'action'             => 'Replicate Lead',
+                'title'              => 'Replicate Lead To Companies',
+                'description-step-1' => 'Step 1: Select one or more companies.',
+                'description-step-2' => 'Step 2: Choose teams for the selected companies. If you skip teams for a company, one replica is created for that company.',
+                'step-company'       => '1. Company',
+                'step-team'          => '2. Team',
+                'company-label'      => 'Companies',
+                'company-required'   => 'Please select at least one company.',
+                'team-label'         => 'Teams',
+                'team-help'          => 'Only teams belonging to the selected companies are shown.',
+                'no-teams'           => 'No teams available for this company.',
+                'back'               => 'Back',
+                'next'               => 'Next',
+                'submit'             => 'Create Replicas',
+            ],
         ],
     ],
 
@@ -2245,7 +2372,8 @@ return [
                         'info'           => 'We can configure the menu items name here.',
                         'leads'          => 'Leads',
                         'mail'           => 'Mail',
-                        'organizations'  => 'Organizations',
+                        'organizations'  => 'Companies',
+                        'teams'          => 'Teams',
                         'outbox'         => 'Outbox',
                         'persons'        => 'Persons',
                         'products'       => 'Products',
@@ -2329,7 +2457,7 @@ return [
                 'average-leads-per-day' => 'Average Leads Per Day',
                 'total-quotations'      => 'Total Quotations',
                 'total-persons'         => 'Total Persons',
-                'total-organizations'   => 'Total Organizations',
+                'total-organizations'   => 'Total Companies',
             ],
 
             'total-leads' => [
@@ -2392,8 +2520,10 @@ return [
         'contacts'             => 'Contacts',
         'persons'              => 'Persons',
         'person'               => 'Person',
-        'organizations'        => 'Organizations',
-        'organization'         => 'Organization',
+        'organizations'        => 'Companies',
+        'organization'         => 'Company',
+        'teams'                => 'Teams',
+        'team'                 => 'Team',
         'products'             => 'Products',
         'product'              => 'Product',
         'settings'             => 'Settings',
@@ -2416,6 +2546,8 @@ return [
         'types-info'           => 'Add, edit or delete types from CRM',
         'deleted-leads'        => 'Deleted Leads',
         'deleted-leads-info'   => 'Restore or permanently delete removed leads from CRM',
+        'followup-schedule'    => 'Follow-up Schedule',
+        'followup-schedule-info' => 'Add multiple follow-up steps and set when they end',
         'automation'           => 'Automation',
         'automation-info'      => 'Manage all your automation related settings in the CRM',
         'attributes'           => 'Attributes',
