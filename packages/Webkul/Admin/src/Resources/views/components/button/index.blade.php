@@ -7,6 +7,8 @@
     >
         <button
             v-if="! loading"
+            v-bind="buttonAttrs"
+            :type="buttonNativeType"
             :class="[buttonClass, '']"
         >
             @{{ title }}
@@ -14,6 +16,8 @@
 
         <button
             v-else
+            v-bind="buttonAttrs"
+            :type="buttonNativeType"
             :class="[buttonClass, '']"
         >
             <!-- Spinner -->
@@ -29,11 +33,25 @@
         app.component('v-button', {
             template: '#v-button-template',
 
+            inheritAttrs: false,
+
             props: {
                 loading: Boolean,
                 buttonType: String,
                 title: String,
                 buttonClass: String,
+            },
+
+            computed: {
+                buttonNativeType() {
+                    return this.buttonType || this.$attrs.type;
+                },
+
+                buttonAttrs() {
+                    const { type, ...attrs } = this.$attrs;
+
+                    return attrs;
+                },
             },
         });
     </script>

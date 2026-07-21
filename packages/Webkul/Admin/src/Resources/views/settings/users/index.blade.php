@@ -224,31 +224,32 @@
                 as="div"
                 ref="modalForm"
             >
-                <form
-                    @submit="handleSubmit($event, updateOrCreate)"
-                    ref="userForm"
+                {!! view_render_event('admin.settings.users.index.form_controls.before') !!}
+
+                <x-admin::modal
+                    ref="userUpdateAndCreateModal"
+                    size="large"
+                    @toggle="handleToggle"
                 >
-                    {!! view_render_event('admin.settings.users.index.form_controls.before') !!}
+                    <!-- Modal Header -->
+                    <x-slot:header>
+                        <p class="text-lg font-bold text-gray-800 dark:text-white">
+                            @{{
+                                selectedType == 'create'
+                                ? "@lang('admin::app.settings.users.index.create.title')"
+                                : "@lang('admin::app.settings.users.index.edit.title')"
+                            }}
+                        </p>
+                    </x-slot>
 
-                    <x-admin::modal
-                        ref="userUpdateAndCreateModal"
-                        size="large"
-                        @toggle="handleToggle"
-                    >
-                        <!-- Modal Header -->
-                        <x-slot:header>
-                            <p class="text-lg font-bold text-gray-800 dark:text-white">
-                                @{{
-                                    selectedType == 'create'
-                                    ? "@lang('admin::app.settings.users.index.create.title')"
-                                    : "@lang('admin::app.settings.users.index.edit.title')"
-                                }}
-                            </p>
-                        </x-slot>
-
-                        <!-- Modal Content -->
-                        <x-slot:content class="!border-b-0 !p-0">
-                            <div class="px-4 py-2.5">
+                    <!-- Modal Content -->
+                    <x-slot:content class="!border-b-0 !p-0">
+                        <form
+                            id="user-settings-form"
+                            class="px-4 py-2.5"
+                            @submit="handleSubmit($event, updateOrCreate)"
+                            ref="userForm"
+                        >
                             <x-admin::form.control-group.control
                                 type="hidden"
                                 name="id"
@@ -566,28 +567,28 @@
                             </x-admin::form.control-group>
 
                             {!! view_render_event('admin.settings.users.index.form.status.after') !!}
-                            </div>
-                        </x-slot>
+                        </form>
+                    </x-slot>
 
-                        <!-- Modal Footer -->
-                        <x-slot:footer>
-                            {!! view_render_event('admin.settings.users.index.modal.footer.save_button.before') !!}
+                    <!-- Modal Footer -->
+                    <x-slot:footer>
+                        {!! view_render_event('admin.settings.users.index.modal.footer.save_button.before') !!}
 
-                            <!-- Save Button -->
-                            <x-admin::button
-                                button-type="submit"
-                                class="primary-button justify-center"
-                                :title="trans('admin::app.settings.users.index.create.save-btn')"
-                                ::loading="isProcessing"
-                                ::disabled="isProcessing"
-                            />
+                        <!-- Save Button -->
+                        <x-admin::button
+                            form="user-settings-form"
+                            button-type="submit"
+                            class="primary-button justify-center"
+                            :title="trans('admin::app.settings.users.index.create.save-btn')"
+                            ::loading="isProcessing"
+                            ::disabled="isProcessing"
+                        />
 
-                            {!! view_render_event('admin.settings.users.index.modal.footer.save_button.after') !!}
-                        </x-slot>
-                    </x-admin::modal>
+                        {!! view_render_event('admin.settings.users.index.modal.footer.save_button.after') !!}
+                    </x-slot>
+                </x-admin::modal>
 
-                    {!! view_render_event('admin.settings.users.index.form_controls.after') !!}
-                </form>
+                {!! view_render_event('admin.settings.users.index.form_controls.after') !!}
             </x-admin::form>
         </script>
 
@@ -736,6 +737,7 @@
 
                     openModal() {
                         this.user = {
+                            view_permission: 'global',
                             groups: [],
                             source_ids: [],
                             organization_ids: [],
@@ -747,15 +749,16 @@
                     },
 
                     updateOrCreate(params, {resetForm, setErrors}) {
+                        const userId = params.id || this.user.id;
                         const userForm = new FormData(this.$refs.userForm);
 
-                        userForm.append('_method', params.id ? 'put' : 'post');
+                        userForm.append('_method', userId ? 'put' : 'post');
 
                         this.isProcessing = true;
 
                         this.$axios.post(
-                                params.id
-                                ? `{{ route('admin.settings.users.update', '') }}/${params.id}`
+                                userId
+                                ? `{{ route('admin.settings.users.update', '') }}/${userId}`
                                 : "{{ route('admin.settings.users.store') }}", userForm
                             )
                             .then(response => {

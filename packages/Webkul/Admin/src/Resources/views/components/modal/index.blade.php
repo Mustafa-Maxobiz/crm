@@ -58,7 +58,10 @@
                 </slot>
             </div>
 
-            <Teleport to="body">
+            <Teleport
+                to="body"
+                :disabled="isInsideForm"
+            >
                 <transition
                     tag="div"
                     name="modal-overlay"
@@ -141,11 +144,17 @@
                     isOpen: this.isActive,
 
                     isMobile: window.innerWidth < 640,
+
+                    isInsideForm: false,
                 };
             },
 
             created() {
                 window.addEventListener('resize', this.checkScreenSize);
+            },
+
+            mounted() {
+                this.isInsideForm = !! this.$el.closest('form');
             },
 
             beforeUnmount() {
