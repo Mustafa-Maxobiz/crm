@@ -144,7 +144,13 @@ return [
                 'name'       => 'contacts.organizations',
                 'title'      => 'admin::app.configuration.index.general.settings.menu.organizations',
                 'type'       => 'text',
-                'default'    => 'Organizations',
+                'default'    => 'Companies',
+                'validation' => 'max:20',
+            ], [
+                'name'       => 'contacts.teams',
+                'title'      => 'admin::app.configuration.index.general.settings.menu.teams',
+                'type'       => 'text',
+                'default'    => 'Teams',
                 'validation' => 'max:20',
             ], [
                 'name'       => 'products',

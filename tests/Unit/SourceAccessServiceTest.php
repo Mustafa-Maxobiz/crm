@@ -3,6 +3,21 @@
 use Tests\Support\AccessTestHelpers;
 use Webkul\Lead\Services\SourceAccessService;
 
+function mockNoChildSources(): void
+{
+    \Illuminate\Support\Facades\DB::shouldReceive('table')
+        ->with('lead_source_parents')
+        ->andReturnSelf();
+
+    \Illuminate\Support\Facades\DB::shouldReceive('whereIn')
+        ->with('parent_source_id', \Mockery::type('array'))
+        ->andReturnSelf();
+
+    \Illuminate\Support\Facades\DB::shouldReceive('pluck')
+        ->with('source_id')
+        ->andReturn(collect());
+}
+
 beforeEach(function () {
     $this->service = new SourceAccessService;
 });
@@ -40,11 +55,21 @@ describe('source access inheritance', function () {
         expect($this->service->getEffectiveRootSourceIds($user))->toBe([2]);
     });
 
-    it('returns empty source list when user and role have no sources', function () {
+    it('does not restrict sources when user and role have no sources', function () {
         $user = AccessTestHelpers::user();
 
+        expect($this->service->getEffectiveRootSourceIds($user))->toBeNull()
+            ->and($this->service->canAccessSourceId(1, $user))->toBeTrue();
+    });
+
+    it('returns empty source list when user sources do not match the role pool', function () {
+        $user = AccessTestHelpers::user([
+            'role_source_ids' => [1, 2],
+            'user_source_ids' => [5],
+        ]);
+
         expect($this->service->getEffectiveRootSourceIds($user))->toBe([])
-            ->and($this->service->canAccessSourceId(1, $user))->toBeFalse();
+            ->and($this->service->canAccessSourceId(5, $user))->toBeFalse();
     });
 });
 
@@ -70,10 +95,29 @@ describe('organization access inheritance', function () {
 
         expect($this->service->getEffectiveOrganizationIds($user))->toBe([20]);
     });
+
+    it('does not restrict companies when user and role have no companies', function () {
+        $user = AccessTestHelpers::user();
+
+        expect($this->service->getEffectiveOrganizationIds($user))->toBeNull()
+            ->and($this->service->canAccessOrganizationId(99, $user))->toBeTrue();
+    });
+
+    it('returns empty company list when user companies do not match the role pool', function () {
+        $user = AccessTestHelpers::user([
+            'role_organization_ids' => [10, 20],
+            'user_organization_ids' => [99],
+        ]);
+
+        expect($this->service->getEffectiveOrganizationIds($user))->toBe([])
+            ->and($this->service->canAccessOrganizationId(99, $user))->toBeFalse();
+    });
 });
 
 describe('combined lead access (source AND company)', function () {
     it('allows lead when both source and company match', function () {
+        mockNoChildSources();
+
         $user = AccessTestHelpers::user([
             'role_source_ids'        => [1],
             'role_organization_ids'  => [10],
@@ -88,6 +132,8 @@ describe('combined lead access (source AND company)', function () {
     });
 
     it('denies lead when source matches but company does not', function () {
+        mockNoChildSources();
+
         $user = AccessTestHelpers::user([
             'role_source_ids'        => [1],
             'role_organization_ids'  => [10],
@@ -102,6 +148,8 @@ describe('combined lead access (source AND company)', function () {
     });
 
     it('denies lead when company matches but source does not', function () {
+        mockNoChildSources();
+
         $user = AccessTestHelpers::user([
             'role_source_ids'        => [1],
             'role_organization_ids'  => [10],
@@ -116,6 +164,8 @@ describe('combined lead access (source AND company)', function () {
     });
 
     it('denies lead without company when user has company restrictions', function () {
+        mockNoChildSources();
+
         $user = AccessTestHelpers::user([
             'role_source_ids'        => [1],
             'role_organization_ids'  => [10],
@@ -126,6 +176,32 @@ describe('combined lead access (source AND company)', function () {
         ]);
 
         expect($this->service->canAccessLead($lead, $user))->toBeFalse();
+    });
+
+    it('allows lead when source matches and company is unrestricted', function () {
+        mockNoChildSources();
+
+        $user = AccessTestHelpers::user([
+            'role_source_ids' => [1],
+        ]);
+
+        $lead = AccessTestHelpers::lead([
+            'lead_source_id' => 1,
+        ]);
+
+        expect($this->service->canAccessLead($lead, $user))->toBeTrue();
+    });
+
+    it('allows lead without source when source scope exists', function () {
+        mockNoChildSources();
+
+        $user = AccessTestHelpers::user([
+            'role_source_ids' => [1],
+        ]);
+
+        $lead = AccessTestHelpers::lead();
+
+        expect($this->service->canAccessLead($lead, $user))->toBeTrue();
     });
 
     it('allows admin to access any lead', function () {

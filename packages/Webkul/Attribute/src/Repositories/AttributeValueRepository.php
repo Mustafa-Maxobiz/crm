@@ -70,6 +70,18 @@ class AttributeValueRepository extends Repository
                 $data[$attribute->code] = null;
             }
 
+            if ($attribute->type === 'datetime' && empty($data[$attribute->code])) {
+                $data[$attribute->code] = null;
+            }
+
+            if ($attribute->type === 'address' && is_array($data[$attribute->code])) {
+                $hasAddress = collect($data[$attribute->code])->contains(fn ($part) => ! empty($part));
+
+                if (! $hasAddress) {
+                    $data[$attribute->code] = null;
+                }
+            }
+
             if ($attribute->type === 'multiselect' || $attribute->type === 'checkbox') {
                 $data[$attribute->code] = implode(',', $data[$attribute->code]);
             }

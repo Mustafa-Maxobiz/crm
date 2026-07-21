@@ -11,6 +11,7 @@ use Webkul\Attribute\Repositories\AttributeValueRepository;
 use Webkul\Contact\Repositories\PersonRepository;
 use Webkul\Core\Eloquent\Repository;
 use Webkul\Lead\Contracts\Lead;
+use Webkul\Lead\Services\FollowupScheduleService;
 
 class LeadRepository extends Repository
 {
@@ -19,12 +20,15 @@ class LeadRepository extends Repository
      */
     protected $fieldSearchable = [
         'title',
+        'description',
+        'source_link',
         'lead_value',
         'status',
         'user_id',
         'user.name',
         'person_id',
         'person.name',
+        'source.name',
         'lead_source_id',
         'lead_type_id',
         'lead_pipeline_id',
@@ -45,6 +49,7 @@ class LeadRepository extends Repository
         protected ProductRepository $productRepository,
         protected AttributeRepository $attributeRepository,
         protected AttributeValueRepository $attributeValueRepository,
+        protected FollowupScheduleService $followupScheduleService,
         Container $container
     ) {
         parent::__construct($container);
@@ -139,6 +144,13 @@ class LeadRepository extends Repository
             $data['expected_close_date'] = null;
         }
 
+        $hasManualFollowup = ! empty($data['next_followup_date']);
+
+        if (! $hasManualFollowup) {
+            $data['next_followup_date'] = $this->followupScheduleService
+                ->calculateNext(null, Carbon::now(), 0);
+        }
+
         // Convert empty lead_sub_source_id to null
         if (isset($data['lead_sub_source_id']) && empty($data['lead_sub_source_id'])) {
             $data['lead_sub_source_id'] = null;
@@ -150,7 +162,8 @@ class LeadRepository extends Repository
         ], $data));
 
         $this->attributeValueRepository->save(array_merge($data, [
-            'entity_id' => $lead->id,
+            'entity_id'         => $lead->id,
+            'next_followup_date'=> $lead->next_followup_date,
         ]));
 
         if (isset($data['products'])) {
@@ -211,6 +224,16 @@ class LeadRepository extends Repository
 
         if (empty($data['expected_close_date'])) {
             $data['expected_close_date'] = null;
+        }
+
+        if (array_key_exists('next_followup_date', $data) && empty($data['next_followup_date'])) {
+            $existingLead = $this->find($id);
+
+            $data['next_followup_date'] = $this->followupScheduleService->calculateNext(
+                $existingLead,
+                Carbon::now(),
+                (int) ($existingLead->followup_count ?? 0)
+            );
         }
 
         // Convert empty lead_sub_source_id to null
@@ -312,6 +335,25 @@ class LeadRepository extends Repository
         // Check if job title is provided
         if (!empty($personData['job_title'])) {
             return true;
+        }
+
+        // Check if organization is provided
+        if (! empty($personData['organization_id'])) {
+            return true;
+        }
+
+        // Check if website is provided
+        if (! empty($personData['website'])) {
+            return true;
+        }
+
+        // Check if any address field has a value
+        if (! empty($personData['address']) && is_array($personData['address'])) {
+            foreach ($personData['address'] as $part) {
+                if (! empty($part)) {
+                    return true;
+                }
+            }
         }
 
         return false;

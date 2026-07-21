@@ -58,63 +58,65 @@
                 </slot>
             </div>
 
-            <transition
-                tag="div"
-                name="modal-overlay"
-                enter-class="duration-300 ease-[cubic-bezier(.4,0,.2,1)]"
-                enter-from-class="opacity-0"
-                enter-to-class="opacity-100"
-                leave-class="duration-200 ease-[cubic-bezier(.4,0,.2,1)]"
-                leave-from-class="opacity-100"
-                leave-to-class="opacity-0"
-            >
-                <div
-                    class="fixed inset-0 z-[10002] bg-gray-500 bg-opacity-50 transition-opacity"
-                    v-show="isOpen"
-                ></div>
-            </transition>
-
-            <transition
-                tag="div"
-                name="modal-content"
-                enter-class="duration-300 ease-[cubic-bezier(.4,0,.2,1)]"
-                :enter-from-class="enterFromLeaveToClasses"
-                enter-to-class="translate-y-0 opacity-100"
-                leave-class="duration-300 ease-[cubic-bezier(.4,0,.2,1)]"
-                leave-from-class="translate-y-0 opacity-100"
-                :leave-to-class="enterFromLeaveToClasses"
-            >
-                <div
-                    class="fixed inset-0 z-[10003] flex items-center justify-center overflow-hidden p-4 transition"
-                    v-if="isOpen"
+            <Teleport to="body">
+                <transition
+                    tag="div"
+                    name="modal-overlay"
+                    enter-class="duration-300 ease-[cubic-bezier(.4,0,.2,1)]"
+                    enter-from-class="opacity-0"
+                    enter-to-class="opacity-100"
+                    leave-class="duration-200 ease-[cubic-bezier(.4,0,.2,1)]"
+                    leave-from-class="opacity-100"
+                    leave-to-class="opacity-0"
                 >
                     <div
-                        class="box-shadow z-[999] flex max-h-full w-full flex-col overflow-hidden rounded-lg bg-white dark:bg-gray-900"
-                        :class="sizeClass"
-                        :style="{ maxHeight: 'calc(100vh - 2rem)' }"
-                    >
-                        <!-- Header Slot -->
-                        <div class="flex-shrink-0">
-                            <slot
-                                name="header"
-                                :toggle="toggle"
-                                :isOpen="isOpen"
-                            >
-                            </slot>
-                        </div>
+                        class="fixed inset-0 z-[10002] bg-gray-500 bg-opacity-50 transition-opacity"
+                        v-show="isOpen"
+                    ></div>
+                </transition>
 
-                        <!-- Content Slot -->
-                        <div class="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
-                            <slot name="content"></slot>
-                        </div>
-                        
-                        <!-- Footer Slot -->
-                        <div class="flex-shrink-0">
-                            <slot name="footer"></slot>
+                <transition
+                    tag="div"
+                    name="modal-content"
+                    enter-class="duration-300 ease-[cubic-bezier(.4,0,.2,1)]"
+                    :enter-from-class="enterFromLeaveToClasses"
+                    enter-to-class="translate-y-0 opacity-100"
+                    leave-class="duration-300 ease-[cubic-bezier(.4,0,.2,1)]"
+                    leave-from-class="translate-y-0 opacity-100"
+                    :leave-to-class="enterFromLeaveToClasses"
+                >
+                    <div
+                        class="fixed inset-0 z-[10003] flex items-center justify-center overflow-hidden p-4 transition"
+                        v-if="isOpen"
+                    >
+                        <div
+                            class="box-shadow z-[999] flex max-h-full w-full flex-col overflow-hidden rounded-lg bg-white dark:bg-gray-900"
+                            :class="sizeClass"
+                            :style="{ maxHeight: 'calc(100vh - 2rem)' }"
+                        >
+                            <!-- Header Slot -->
+                            <div class="flex-shrink-0">
+                                <slot
+                                    name="header"
+                                    :toggle="toggle"
+                                    :isOpen="isOpen"
+                                >
+                                </slot>
+                            </div>
+
+                            <!-- Content Slot -->
+                            <div class="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+                                <slot name="content"></slot>
+                            </div>
+                            
+                            <!-- Footer Slot -->
+                            <div class="flex-shrink-0">
+                                <slot name="footer"></slot>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </transition>
+                </transition>
+            </Teleport>
         </div>
     </script>
 

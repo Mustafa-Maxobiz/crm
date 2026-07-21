@@ -29,7 +29,7 @@
             <template v-else>
                 <div class="flex w-full items-center gap-x-1.5">
                     <!-- Search Panel -->
-                    <div class="flex max-w-[445px] items-center max-sm:w-full max-sm:max-w-full">
+                    <div class="flex w-1/2 items-center max-sm:w-full">
                         <div class="relative w-full">
                             <div class="icon-search absolute top-1.5 flex items-center text-2xl ltr:left-3 rtl:right-3"></div>
 

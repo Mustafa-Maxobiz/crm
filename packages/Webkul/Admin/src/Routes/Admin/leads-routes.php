@@ -42,6 +42,8 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
 
     Route::post('followup/complete/{id}', 'followupComplete')->name('admin.leads.followup.complete');
 
+    Route::post('duplicate/{id}', 'duplicateToCompanies')->name('admin.leads.duplicate_to_companies');
+
     Route::get('kanban/look-up', [LeadController::class, 'kanbanLookup'])->name('admin.leads.kanban.look_up');
 
     Route::controller(ActivityController::class)->prefix('{id}/activities')->group(function () {

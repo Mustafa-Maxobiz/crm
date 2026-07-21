@@ -139,6 +139,21 @@ Breadcrumbs::for('contacts.organizations.edit', function (BreadcrumbTrail $trail
     $trail->push(trans('admin::app.contacts.organizations.edit.title'), route('admin.contacts.organizations.edit', $organization->id));
 });
 
+Breadcrumbs::for('contacts.teams', function (BreadcrumbTrail $trail) {
+    $trail->parent('contacts');
+    $trail->push(trans('admin::app.layouts.teams'), route('admin.contacts.teams.index'));
+});
+
+Breadcrumbs::for('contacts.teams.create', function (BreadcrumbTrail $trail) {
+    $trail->parent('contacts.teams');
+    $trail->push(trans('admin::app.contacts.teams.create.title'), route('admin.contacts.teams.create'));
+});
+
+Breadcrumbs::for('contacts.teams.edit', function (BreadcrumbTrail $trail, $team) {
+    $trail->parent('contacts.teams');
+    $trail->push(trans('admin::app.contacts.teams.edit.title'), route('admin.contacts.teams.edit', $team->id));
+});
+
 // Products
 Breadcrumbs::for('products', function (BreadcrumbTrail $trail) {
     $trail->parent('dashboard');
@@ -289,12 +304,17 @@ Breadcrumbs::for('settings.deleted_leads', function (BreadcrumbTrail $trail) {
     $trail->push(trans('admin::app.layouts.deleted-leads'), route('admin.settings.deleted_leads.index'));
 });
 
+// Settings > Follow-up Schedule
+Breadcrumbs::for('settings.followup_schedule', function (BreadcrumbTrail $trail) {
+    $trail->parent('settings');
+    $trail->push(trans('admin::app.layouts.followup-schedule'), route('admin.settings.followup_schedule.index'));
+});
+
 // Settings > Email Templates
 Breadcrumbs::for('settings.email_templates', function (BreadcrumbTrail $trail) {
     $trail->parent('settings');
     $trail->push(trans('admin::app.settings.email-template.index.title'), route('admin.settings.email_templates.index'));
 });
-
 // Dashboard > Email Templates > Create Email Template
 Breadcrumbs::for('settings.email_templates.create', function (BreadcrumbTrail $trail) {
     $trail->parent('settings.email_templates');

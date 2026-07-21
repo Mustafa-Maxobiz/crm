@@ -5,6 +5,7 @@ use Webkul\Admin\Http\Controllers\Settings\AttributeController;
 use Webkul\Admin\Http\Controllers\Settings\DataTransfer\ImportController;
 use Webkul\Admin\Http\Controllers\Settings\DeletedLeadController;
 use Webkul\Admin\Http\Controllers\Settings\EmailTemplateController;
+use Webkul\Admin\Http\Controllers\Settings\FollowupScheduleController;
 use Webkul\Admin\Http\Controllers\Settings\GroupController;
 use Webkul\Admin\Http\Controllers\Settings\LocationController;
 use Webkul\Admin\Http\Controllers\Settings\Marketing\CampaignsController;
@@ -75,6 +76,15 @@ Route::prefix('settings')->group(function () {
         Route::post('{id}/restore', 'restore')->name('admin.settings.deleted_leads.restore');
 
         Route::delete('{id}/permanent-delete', 'permanentDelete')->name('admin.settings.deleted_leads.permanent_delete');
+    });
+
+    /**
+     * Auto follow-up schedule routes.
+     */
+    Route::controller(FollowupScheduleController::class)->prefix('followup-schedule')->group(function () {
+        Route::get('', 'index')->name('admin.settings.followup_schedule.index');
+
+        Route::put('', 'update')->name('admin.settings.followup_schedule.update');
     });
 
     /**

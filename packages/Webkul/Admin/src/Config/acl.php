@@ -197,6 +197,26 @@ return [
         'route' => ['admin.contacts.organizations.delete', 'admin.contacts.organizations.mass_delete'],
         'sort'  => 3,
     ], [
+        'key'   => 'contacts.teams',
+        'name'  => 'admin::app.acl.teams',
+        'route' => 'admin.contacts.teams.index',
+        'sort'  => 3,
+    ], [
+        'key'   => 'contacts.teams.create',
+        'name'  => 'admin::app.acl.create',
+        'route' => ['admin.contacts.teams.create', 'admin.contacts.teams.store'],
+        'sort'  => 1,
+    ], [
+        'key'   => 'contacts.teams.edit',
+        'name'  => 'admin::app.acl.edit',
+        'route' => ['admin.contacts.teams.edit', 'admin.contacts.teams.update'],
+        'sort'  => 2,
+    ], [
+        'key'   => 'contacts.teams.delete',
+        'name'  => 'admin::app.acl.delete',
+        'route' => ['admin.contacts.teams.delete', 'admin.contacts.teams.mass_delete'],
+        'sort'  => 3,
+    ], [
         'key'   => 'products',
         'name'  => 'admin::app.acl.products',
         'route' => 'admin.products.index',
@@ -294,7 +314,7 @@ return [
     ], [
         'key'   => 'settings.lead',
         'name'  => 'admin::app.acl.lead',
-        'route' => ['admin.settings.pipelines.index', 'admin.settings.sources.index', 'admin.settings.types.index', 'admin.settings.deleted_leads.index'],
+        'route' => ['admin.settings.pipelines.index', 'admin.settings.sources.index', 'admin.settings.types.index', 'admin.settings.deleted_leads.index', 'admin.settings.followup_schedule.index'],
         'sort'  => 2,
     ], [
         'key'   => 'settings.lead.pipelines',
@@ -371,6 +391,11 @@ return [
         'name'  => 'admin::app.acl.permanent-delete',
         'route' => 'admin.settings.deleted_leads.permanent_delete',
         'sort'  => 2,
+    ], [
+        'key'   => 'settings.lead.followup_schedule',
+        'name'  => 'admin::app.acl.followup-schedule',
+        'route' => ['admin.settings.followup_schedule.index', 'admin.settings.followup_schedule.update'],
+        'sort'  => 5,
     ], [
         'key'   => 'settings.automation',
         'name'  => 'admin::app.acl.automation',

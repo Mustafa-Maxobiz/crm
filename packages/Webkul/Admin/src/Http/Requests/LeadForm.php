@@ -137,6 +137,16 @@ class LeadForm extends FormRequest
 
         return [
             ...$this->rules,
+            'next_followup_date'           => ['nullable', 'date'],
+            'tags'                         => ['nullable', 'array'],
+            'tags.*'                       => ['nullable', 'string', 'max:100'],
+            'person.name'                  => ['nullable', 'string', 'max:100'],
+            'person.emails'                => ['nullable', 'array'],
+            'person.emails.*.value'        => ['nullable', 'email'],
+            'person.contact_numbers'       => ['nullable', 'array'],
+            'person.contact_numbers.*.value' => ['nullable'],
+            'person.organization_id'       => ['nullable'],
+            'person.website'               => ['nullable', 'url'],
             'products'              => 'array',
             'products.*.product_id' => 'sometimes|required|exists:products,id',
             'products.*.name'       => 'required_with:products.*.product_id',

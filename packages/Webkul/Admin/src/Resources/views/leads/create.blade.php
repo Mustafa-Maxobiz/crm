@@ -218,6 +218,25 @@
                                             ],
                                         ]"
                                     />
+
+                                    <x-admin::form.control-group>
+                                        <x-admin::form.control-group.label>
+                                            @lang('admin::app.leads.index.datagrid.tags')
+                                        </x-admin::form.control-group.label>
+
+                                        <x-admin::form.control-group.control
+                                            type="tags"
+                                            name="tags"
+                                            :label="trans('admin::app.leads.index.datagrid.tags')"
+                                            :placeholder="trans('admin::app.components.tags.index.placeholder')"
+                                            :data="old('tags') ?: []"
+                                            input-rules="max:100"
+                                            :allow-duplicates="false"
+                                            suggestions-endpoint="{{ route('admin.settings.tags.search') }}"
+                                        />
+
+                                        <x-admin::form.control-group.error control-name="tags" />
+                                    </x-admin::form.control-group>
                                 </div>
                             </div>
 
@@ -244,7 +263,7 @@
                             </p>
                         </div>
 
-                        <div class="w-1/2 max-md:w-full">
+                        <div class="w-full max-w-3xl">
                             <!-- Contact Person Component -->
                             @include('admin::leads.common.contact')
                         </div>

@@ -6,6 +6,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Validator;
@@ -19,7 +20,9 @@ use Webkul\Admin\Http\Requests\MassUpdateRequest;
 use Webkul\Admin\Http\Resources\LeadResource;
 use Webkul\Admin\Http\Resources\StageResource;
 use Webkul\Attribute\Repositories\AttributeRepository;
+use Webkul\Contact\Repositories\OrganizationRepository;
 use Webkul\Contact\Repositories\PersonRepository;
+use Webkul\Contact\Repositories\TeamRepository;
 use Webkul\Lead\Helpers\MagicAI;
 use Webkul\Lead\Repositories\LeadRepository;
 use Webkul\Lead\Repositories\PipelineRepository;
@@ -27,6 +30,7 @@ use Webkul\Lead\Repositories\ProductRepository;
 use Webkul\Lead\Repositories\SourceRepository;
 use Webkul\Lead\Repositories\StageRepository;
 use Webkul\Lead\Repositories\TypeRepository;
+use Webkul\Lead\Services\FollowupScheduleService;
 use Webkul\Lead\Services\MagicAIService;
 use Webkul\Lead\Services\SourceAccessService;
 use Webkul\Tag\Repositories\TagRepository;
@@ -54,7 +58,11 @@ class LeadController extends Controller
         protected LeadRepository $leadRepository,
         protected ProductRepository $productRepository,
         protected PersonRepository $personRepository,
+        protected OrganizationRepository $organizationRepository,
+        protected TeamRepository $teamRepository,
+        protected TagRepository $tagRepository,
         protected SourceAccessService $sourceAccessService,
+        protected FollowupScheduleService $followupScheduleService,
     ) {
         request()->request->add(['entity_type' => 'leads']);
     }
@@ -198,6 +206,8 @@ class LeadController extends Controller
 
         $lead = $this->leadRepository->create($data);
 
+        $this->syncLeadTags($lead, $data['tags'] ?? []);
+
         if (request()->ajax()) {
             return response()->json([
                 'message' => trans('admin::app.leads.create-success'),
@@ -283,6 +293,8 @@ class LeadController extends Controller
         }
 
         $lead = $this->leadRepository->update($data, $id);
+
+        $this->syncLeadTags($lead, $data['tags'] ?? []);
 
         Event::dispatch('lead.update.after', $lead);
 
@@ -754,12 +766,216 @@ class LeadController extends Controller
                 'lead_pipeline_stage_id' => $stage->id,
             ]));
 
+            $this->syncLeadTags($lead, $rawLead['tags'] ?? []);
+
             Event::dispatch('lead.create.after', $lead);
 
             $leads[] = $lead;
         }
 
         return $leads;
+    }
+
+    /**
+     * Sync tag names on a lead.
+     */
+    private function syncLeadTags($lead, array $tagNames): void
+    {
+        $tagIds = collect($tagNames)
+            ->filter(fn ($name) => filled($name))
+            ->map(fn ($name) => trim($name))
+            ->filter()
+            ->unique()
+            ->map(function (string $name): int {
+                $tag = $this->tagRepository->findOneWhere([
+                    'name'    => $name,
+                    'user_id' => auth()->id(),
+                ]);
+
+                if (! $tag) {
+                    $tag = $this->tagRepository->create([
+                        'name'    => $name,
+                        'user_id' => auth()->id(),
+                    ]);
+                }
+
+                return $tag->id;
+            })
+            ->values()
+            ->all();
+
+        $lead->tags()->sync($tagIds);
+    }
+
+    /**
+     * Duplicate a lead into selected companies and optional teams.
+     */
+    public function duplicateToCompanies(int $id): RedirectResponse
+    {
+        $data = request()->validate([
+            'organization_ids'   => ['required', 'array', 'min:1'],
+            'organization_ids.*' => ['required', 'integer', 'exists:organizations,id'],
+            'team_ids'           => ['nullable', 'array'],
+            'team_ids.*'         => ['integer', 'exists:teams,id'],
+        ]);
+
+        $lead = $this->leadRepository->with(['person', 'tags'])->findOrFail($id);
+
+        if (! $this->sourceAccessService->canAccessLead($lead)) {
+            return redirect()->route('admin.leads.index');
+        }
+
+        $organizationIds = array_values(array_unique(array_map('intval', $data['organization_ids'])));
+        $teamIds = array_values(array_unique(array_map('intval', $data['team_ids'] ?? [])));
+
+        $allowedOrganizationIds = collect($this->organizationRepository->getDropdownOptions())
+            ->pluck('value')
+            ->map(fn ($value) => (int) $value)
+            ->all();
+
+        if (array_diff($organizationIds, $allowedOrganizationIds)) {
+            return redirect()->back()->withErrors([
+                'organization_ids' => trans('admin::app.leads.replicate.invalid-companies'),
+            ]);
+        }
+
+        $teamsByOrganization = collect();
+
+        if (! empty($teamIds)) {
+            $teams = $this->teamRepository->getModel()
+                ->newQuery()
+                ->with(['organizations' => fn ($query) => $query->whereIn('organizations.id', $organizationIds)])
+                ->whereIn('id', $teamIds)
+                ->get();
+
+            if ($teams->count() !== count($teamIds)) {
+                return redirect()->back()->withErrors([
+                    'team_ids' => trans('admin::app.leads.replicate.invalid-teams'),
+                ]);
+            }
+
+            $invalidTeams = $teams->filter(
+                fn ($team) => $team->organizations->isEmpty()
+            );
+
+            if ($invalidTeams->isNotEmpty()) {
+                return redirect()->back()->withErrors([
+                    'team_ids' => trans('admin::app.leads.replicate.invalid-teams'),
+                ]);
+            }
+
+            $teamsByOrganization = $teams
+                ->flatMap(fn ($team) => $team->organizations->map(fn ($organization) => [
+                    'organization_id' => (int) $organization->id,
+                    'team'            => $team,
+                ]))
+                ->groupBy('organization_id')
+                ->map(fn ($rows) => $rows->pluck('team'));
+        }
+
+        $replicasCreated = 0;
+
+        DB::transaction(function () use ($lead, $organizationIds, $teamsByOrganization, &$replicasCreated) {
+            foreach ($organizationIds as $organizationId) {
+                $organizationTeams = $teamsByOrganization->get($organizationId, collect());
+
+                if ($organizationTeams->isEmpty()) {
+                    Event::dispatch('lead.create.before');
+
+                    $replicatedLead = $this->leadRepository->create(
+                        $this->buildLeadDuplicatePayload($lead, (int) $organizationId)
+                    );
+
+                    $this->syncLeadTags($replicatedLead, $lead->tags->pluck('name')->all());
+
+                    Event::dispatch('lead.create.after', $replicatedLead);
+
+                    $replicasCreated++;
+
+                    continue;
+                }
+
+                foreach ($organizationTeams as $team) {
+                    Event::dispatch('lead.create.before');
+
+                    $replicatedLead = $this->leadRepository->create(
+                        $this->buildLeadDuplicatePayload($lead, (int) $organizationId, (int) $team->id)
+                    );
+
+                    $this->syncLeadTags($replicatedLead, $lead->tags->pluck('name')->all());
+
+                    Event::dispatch('lead.create.after', $replicatedLead);
+
+                    $replicasCreated++;
+                }
+            }
+        });
+
+        session()->flash('success', trans('admin::app.leads.replicate.success', [
+            'count' => $replicasCreated,
+        ]));
+
+        return redirect()->back();
+    }
+
+    /**
+     * Build duplicate payload for the selected company.
+     */
+    private function buildLeadDuplicatePayload($lead, int $organizationId, ?int $teamId = null): array
+    {
+        $payload = [];
+
+        foreach ($lead->getFillable() as $field) {
+            $payload[$field] = $lead->getRawOriginal($field);
+        }
+
+        $payload = Arr::except($payload, [
+            'person_id',
+            'team_id',
+            'next_followup_date',
+            'followup_count',
+            'last_followup_date',
+            'followup_notes',
+        ]);
+
+        $payload['entity_type'] = 'leads';
+        $payload['team_id'] = $teamId;
+        $payload['person'] = $this->buildDuplicatePersonPayload($lead, $organizationId);
+
+        return $payload;
+    }
+
+    /**
+     * Build duplicate person payload for the selected company.
+     */
+    private function buildDuplicatePersonPayload($lead, int $organizationId): array
+    {
+        if (! $lead->person) {
+            return [
+                'organization_id' => $organizationId,
+            ];
+        }
+
+        $payload = [
+            'name'            => $lead->person->name,
+            'emails'          => $lead->person->emails ?? [],
+            'contact_numbers' => $lead->person->contact_numbers ?? [],
+            'job_title'       => $lead->person->job_title,
+            'user_id'         => $lead->person->user_id,
+            'organization_id' => $organizationId,
+            'address'         => $lead->person->address,
+            'website'         => $lead->person->website,
+        ];
+
+        $existingPerson = $this->personRepository->findByUniqueIdentity($payload);
+
+        if ($existingPerson) {
+            return [
+                'id' => $existingPerson->id,
+            ];
+        }
+
+        return $payload;
     }
 
     /**
@@ -773,7 +989,7 @@ class LeadController extends Controller
             'next_followup_date'     => ['required_if:schedule_next_followup,1', 'nullable', 'date', 'after:now'],
         ]);
 
-        $lead = DB::transaction(function () use ($id, $data) {
+        $result = DB::transaction(function () use ($id, $data) {
             $lead = $this->leadRepository
                 ->getModel()
                 ->newQuery()
@@ -781,54 +997,47 @@ class LeadController extends Controller
                 ->findOrFail($id);
 
             if (! $lead->next_followup_date) {
-                return $lead;
+                return ['lead' => $lead, 'exhausted' => false];
             }
 
             if (! Carbon::parse($lead->next_followup_date)->equalTo(Carbon::parse($data['current_followup_date']))) {
-                return $lead;
+                return ['lead' => $lead, 'exhausted' => false];
             }
 
             Event::dispatch('lead.update.before', $id);
 
-            $nextFollowupDate = request()->boolean('schedule_next_followup')
+            $completedAt = Carbon::now();
+            $manualNext = request()->boolean('schedule_next_followup')
                 ? Carbon::parse($data['next_followup_date'])
                 : null;
-            $completedAt = Carbon::now();
 
             $lead->newQuery()
                 ->whereKey($lead->getKey())
                 ->update([
                     'followup_count'     => ($lead->followup_count ?? 0) + 1,
                     'last_followup_date' => $completedAt,
-                    'next_followup_date' => $nextFollowupDate,
                 ]);
-
-            if ($followupAttribute = DB::table('attributes')
-                ->where('entity_type', 'leads')
-                ->where('code', 'next_followup_date')
-                ->first()
-            ) {
-                DB::table('attribute_values')->updateOrInsert(
-                    [
-                        'entity_type'  => 'leads',
-                        'entity_id'    => $lead->getKey(),
-                        'attribute_id' => $followupAttribute->id,
-                    ],
-                    [
-                        'datetime_value' => $nextFollowupDate,
-                        'unique_id'      => $lead->getKey().'|'.$followupAttribute->id,
-                    ]
-                );
-            }
 
             $lead->refresh();
 
+            $this->followupScheduleService->applyNextFollowup($lead, $manualNext);
+
+            $lead->refresh();
+
+            $exhausted = ! $manualNext
+                && is_null($lead->next_followup_date)
+                && optional($lead->loadMissing('stage')->stage)->code === 'lost';
+
             Event::dispatch('lead.update.after', $lead);
 
-            return $lead;
+            return ['lead' => $lead, 'exhausted' => $exhausted];
         });
 
-        session()->flash('success', trans('admin::app.leads.followup-complete-success'));
+        if ($result['exhausted']) {
+            session()->flash('warning', trans('admin::app.leads.followup-schedule-ended'));
+        } else {
+            session()->flash('success', trans('admin::app.leads.followup-complete-success'));
+        }
 
         return redirect()->back();
     }
