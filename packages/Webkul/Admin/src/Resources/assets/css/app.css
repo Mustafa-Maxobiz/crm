@@ -501,11 +501,11 @@
     }
 
     .primary-button {
-        @apply bg-brandColor border border-brandColor cursor-pointer flex focus:opacity-[0.9] font-semibold gap-x-1 hover:opacity-[0.9] items-center place-content-center px-3 py-1.5 rounded-md text-gray-50 transition-all;
+        @apply bg-brandColor border border-brandColor cursor-pointer flex focus:bg-white focus:text-brandColor font-semibold gap-x-1 hover:bg-white hover:text-brandColor items-center place-content-center px-3 py-1.5 rounded-md text-gray-50 transition-all dark:hover:bg-gray-900 dark:focus:bg-gray-900;
     }
 
     .secondary-button {
-        @apply flex cursor-pointer place-content-center items-center gap-x-1 whitespace-nowrap rounded-md border-2 border-brandColor bg-white px-3 py-1.5 font-semibold text-brandColor transition-all hover:bg-[#eff6ff61] focus:bg-[#eff6ff61] dark:border-gray-400 dark:bg-gray-800 dark:text-white dark:hover:opacity-80;
+        @apply flex cursor-pointer place-content-center items-center gap-x-1 whitespace-nowrap rounded-md border-2 border-brandColor bg-white px-3 py-1.5 font-semibold text-brandColor transition-all hover:bg-brandColor hover:text-gray-50 focus:bg-brandColor focus:text-gray-50 dark:border-gray-400 dark:bg-gray-800 dark:text-white dark:hover:border-brandColor dark:hover:bg-brandColor dark:focus:border-brandColor dark:focus:bg-brandColor;
     }
 
     .transparent-button {
