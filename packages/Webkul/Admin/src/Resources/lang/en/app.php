@@ -2056,6 +2056,7 @@ return [
         'destroy-success'           => 'Lead deleted successfully.',
         'destroy-failed'            => 'Lead can not be deleted.',
         'followup-complete-success' => 'Follow-up marked as complete successfully.',
+        'followup-closed-success'   => 'Follow-up closed successfully.',
         'followup-schedule-ended'   => 'Follow-up schedule ended. Lead has been marked as lost.',
         'replicate'                 => [
             'success'           => ':count lead replica created successfully.',
@@ -2250,6 +2251,7 @@ return [
                 'mark-complete'     => 'Mark Follow-up Complete',
                 'schedule-question' => 'Schedule the next follow-up?',
                 'schedule-help'     => 'Leave blank to use auto schedule. Manual date overrides auto schedule.',
+                'close-followup'    => 'Close Follow-up',
                 'use-auto'          => 'Use Auto Schedule',
                 'use-manual'        => 'Set Custom Time',
             ],

@@ -121,6 +121,13 @@
                             data-followup-schedule-input
                         />
 
+                        <input
+                            type="hidden"
+                            name="close_followup"
+                            value="0"
+                            data-followup-close-input
+                        />
+
                         <button
                             type="button"
                             class="secondary-button disabled:cursor-not-allowed disabled:opacity-60"
@@ -153,8 +160,8 @@
         ></form>
 
         <div
-            class="absolute left-1/2 top-1/2 w-[92vw] max-w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white shadow-xl dark:bg-gray-900"
-            style="z-index: 1;"
+            class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white shadow-xl dark:bg-gray-900"
+            style="z-index: 1; width: min(92vw, 560px);"
         >
             <div class="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
                 <p class="text-base font-semibold text-gray-800 dark:text-white">
@@ -236,10 +243,10 @@
                 </div>
             </div>
 
-            <div class="flex flex-wrap justify-end gap-2 border-t border-gray-200 px-5 py-4 dark:border-gray-800">
+            <div class="flex flex-nowrap justify-end gap-1.5 border-t border-gray-200 px-5 py-4 dark:border-gray-800 max-sm:flex-wrap max-sm:justify-start">
                 <button
                     type="button"
-                    class="secondary-button"
+                    class="secondary-button !px-2.5 !py-1.5 !text-xs"
                     onclick="document.getElementById('followup-complete-modal-{{ $lead->id }}').close();"
                 >
                     Cancel
@@ -248,17 +255,27 @@
                 <button
                     type="submit"
                     form="followup-complete-form-{{ $lead->id }}"
-                    class="secondary-button"
+                    class="secondary-button !px-2.5 !py-1.5 !text-xs"
                     data-followup-submit="{{ $lead->id }}"
-                    onclick="const form = document.getElementById('followup-complete-form-{{ $lead->id }}'); const field = document.getElementById('next-followup-field-{{ $lead->id }}'); const input = document.getElementById('next-followup-date-{{ $lead->id }}'); form.querySelector('[data-followup-schedule-input]').value = '0'; input.required = false; input.value = ''; field.classList.add('hidden'); field.classList.remove('flex');"
+                    onclick="const form = document.getElementById('followup-complete-form-{{ $lead->id }}'); const field = document.getElementById('next-followup-field-{{ $lead->id }}'); const input = document.getElementById('next-followup-date-{{ $lead->id }}'); form.querySelector('[data-followup-schedule-input]').value = '0'; form.querySelector('[data-followup-close-input]').value = '1'; input.required = false; input.value = ''; field.classList.add('hidden'); field.classList.remove('flex');"
+                >
+                    @lang('admin::app.leads.view.followup.close-followup')
+                </button>
+
+                <button
+                    type="submit"
+                    form="followup-complete-form-{{ $lead->id }}"
+                    class="secondary-button !px-2.5 !py-1.5 !text-xs"
+                    data-followup-submit="{{ $lead->id }}"
+                    onclick="const form = document.getElementById('followup-complete-form-{{ $lead->id }}'); const field = document.getElementById('next-followup-field-{{ $lead->id }}'); const input = document.getElementById('next-followup-date-{{ $lead->id }}'); form.querySelector('[data-followup-schedule-input]').value = '0'; form.querySelector('[data-followup-close-input]').value = '0'; input.required = false; input.value = ''; field.classList.add('hidden'); field.classList.remove('flex');"
                 >
                     @lang('admin::app.leads.view.followup.use-auto')
                 </button>
 
                 <button
                     type="button"
-                    class="primary-button"
-                    onclick="const form = document.getElementById('followup-complete-form-{{ $lead->id }}'); const field = document.getElementById('next-followup-field-{{ $lead->id }}'); const input = document.getElementById('next-followup-date-{{ $lead->id }}'); if (field.classList.contains('hidden')) { field.classList.remove('hidden'); field.classList.add('flex'); input.required = true; input.focus(); return; } form.querySelector('[data-followup-schedule-input]').value = '1'; form.requestSubmit();"
+                    class="primary-button !px-2.5 !py-1.5 !text-xs"
+                    onclick="const form = document.getElementById('followup-complete-form-{{ $lead->id }}'); const field = document.getElementById('next-followup-field-{{ $lead->id }}'); const input = document.getElementById('next-followup-date-{{ $lead->id }}'); form.querySelector('[data-followup-close-input]').value = '0'; if (field.classList.contains('hidden')) { field.classList.remove('hidden'); field.classList.add('flex'); input.required = true; input.focus(); return; } form.querySelector('[data-followup-schedule-input]').value = '1'; form.requestSubmit();"
                 >
                     @lang('admin::app.leads.view.followup.use-manual')
                 </button>

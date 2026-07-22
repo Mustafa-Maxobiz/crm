@@ -1031,6 +1031,7 @@ class LeadController extends Controller
         $data = request()->validate([
             'current_followup_date'  => ['required', 'date'],
             'schedule_next_followup' => ['required', 'boolean'],
+            'close_followup'         => ['nullable', 'boolean'],
             'next_followup_date'     => ['required_if:schedule_next_followup,1', 'nullable', 'date', 'after:now'],
         ]);
 
@@ -1042,17 +1043,18 @@ class LeadController extends Controller
                 ->findOrFail($id);
 
             if (! $lead->next_followup_date) {
-                return ['lead' => $lead, 'exhausted' => false];
+                return ['lead' => $lead, 'closed' => false, 'exhausted' => false];
             }
 
             if (! Carbon::parse($lead->next_followup_date)->equalTo(Carbon::parse($data['current_followup_date']))) {
-                return ['lead' => $lead, 'exhausted' => false];
+                return ['lead' => $lead, 'closed' => false, 'exhausted' => false];
             }
 
             Event::dispatch('lead.update.before', $id);
 
             $completedAt = Carbon::now();
-            $manualNext = request()->boolean('schedule_next_followup')
+            $closeFollowup = request()->boolean('close_followup');
+            $manualNext = ! $closeFollowup && request()->boolean('schedule_next_followup')
                 ? Carbon::parse($data['next_followup_date'])
                 : null;
 
@@ -1065,20 +1067,23 @@ class LeadController extends Controller
 
             $lead->refresh();
 
-            $this->followupScheduleService->applyNextFollowup($lead, $manualNext);
+            $this->followupScheduleService->applyNextFollowup($lead, $manualNext, ! $closeFollowup);
 
             $lead->refresh();
 
-            $exhausted = ! $manualNext
+            $exhausted = ! $closeFollowup
+                && ! $manualNext
                 && is_null($lead->next_followup_date)
                 && optional($lead->loadMissing('stage')->stage)->code === 'lost';
 
             Event::dispatch('lead.update.after', $lead);
 
-            return ['lead' => $lead, 'exhausted' => $exhausted];
+            return ['lead' => $lead, 'closed' => $closeFollowup, 'exhausted' => $exhausted];
         });
 
-        if ($result['exhausted']) {
+        if ($result['closed']) {
+            session()->flash('success', trans('admin::app.leads.followup-closed-success'));
+        } elseif ($result['exhausted']) {
             session()->flash('warning', trans('admin::app.leads.followup-schedule-ended'));
         } else {
             session()->flash('success', trans('admin::app.leads.followup-complete-success'));
