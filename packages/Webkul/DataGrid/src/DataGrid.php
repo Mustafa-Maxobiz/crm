@@ -360,7 +360,20 @@ abstract class DataGrid
             $this->sortColumn = $this->primaryColumn;
         }
 
-        return $this->queryBuilder->orderBy($requestedSort['column'] ?? $this->sortColumn, $requestedSort['order'] ?? $this->sortOrder);
+        $requestedColumn = $requestedSort['column'] ?? null;
+        $sortOrder = $requestedSort['order'] ?? $this->sortOrder;
+
+        $column = $requestedColumn
+            ? collect($this->columns)->first(
+                fn ($column) => $column->getIndex() === $requestedColumn && $column->getSortable()
+            )
+            : null;
+
+        $sortColumn = $column
+            ? ($column->getColumnName() ?: $column->getIndex())
+            : $this->sortColumn;
+
+        return $this->queryBuilder->orderBy($sortColumn, $sortOrder);
     }
 
     /**

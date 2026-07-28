@@ -2122,7 +2122,7 @@ return [
             'datagrid' => [
                 'id'                  => 'ID',
                 'sales-person'        => 'Sales Person',
-                'subject'             => 'Subject',
+                'subject'             => 'Company Name',
                 'source'              => 'Source',
                 'lead-value'          => 'Lead Value',
                 'lead-type'           => 'Lead Type',

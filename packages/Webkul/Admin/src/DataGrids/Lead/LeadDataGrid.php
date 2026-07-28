@@ -10,7 +10,6 @@ use Webkul\Lead\Repositories\SourceRepository;
 use Webkul\Lead\Repositories\StageRepository;
 use Webkul\Lead\Repositories\TypeRepository;
 use Webkul\Tag\Repositories\TagRepository;
-use Webkul\User\Repositories\UserRepository;
 
 class LeadDataGrid extends DataGrid
 {
@@ -31,7 +30,6 @@ class LeadDataGrid extends DataGrid
         protected StageRepository $stageRepository,
         protected SourceRepository $sourceRepository,
         protected TypeRepository $typeRepository,
-        protected UserRepository $userRepository,
         protected TagRepository $tagRepository,
     ) {
         if (request('pipeline_id')) {
@@ -46,8 +44,6 @@ class LeadDataGrid extends DataGrid
      */
     public function prepareQueryBuilder(): Builder
     {
-        $tablePrefix = DB::getTablePrefix();
-
         $queryBuilder = DB::table('leads')
             ->addSelect(
                 'leads.id',
@@ -55,8 +51,6 @@ class LeadDataGrid extends DataGrid
                 'leads.description',
                 'leads.source_link',
                 'leads.status',
-                'leads.lead_value',
-                'leads.expected_close_date',
                 'leads.next_followup_date',
                 'leads.followup_count',
                 'leads.last_followup_date',
@@ -68,13 +62,9 @@ class LeadDataGrid extends DataGrid
                 'lead_pipeline_stages.name as stage',
                 'lead_tags.tag_id as tag_id',
                 'users.id as user_id',
-                'users.name as sales_person',
                 'persons.id as person_id',
                 'persons.name as person_name',
                 'tags.name as tag_name',
-                'lead_pipelines.rotten_days as pipeline_rotten_days',
-                'lead_pipeline_stages.code as stage_code',
-                DB::raw('CASE WHEN DATEDIFF(NOW(),'.$tablePrefix.'leads.created_at) >='.$tablePrefix.'lead_pipelines.rotten_days THEN 1 ELSE 0 END as rotten_lead'),
             )
             ->leftJoin('users', 'leads.user_id', '=', 'users.id')
             ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
@@ -102,16 +92,11 @@ class LeadDataGrid extends DataGrid
 
         app(\Webkul\Lead\Services\SourceAccessService::class)->applyLeadTableScope($queryBuilder);
 
-        if (! is_null(request()->input('rotten_lead.in'))) {
-            $queryBuilder->havingRaw($tablePrefix.'rotten_lead = '.request()->input('rotten_lead.in'));
-        }
-
         $this->addFilter('id', 'leads.id');
         $this->addFilter('title', 'leads.title');
         $this->addFilter('description', 'leads.description');
         $this->addFilter('source_link', 'leads.source_link');
         $this->addFilter('user', 'leads.user_id');
-        $this->addFilter('sales_person', 'users.name');
         $this->addFilter('lead_source_name', 'lead_sources.id');
         $this->addFilter('lead_source_search', 'lead_sources.name');
         $this->addFilter('lead_type_name', 'lead_types.id');
@@ -119,13 +104,11 @@ class LeadDataGrid extends DataGrid
         $this->addFilter('type', 'lead_pipeline_stages.code');
         $this->addFilter('stage', 'lead_pipeline_stages.id');
         $this->addFilter('tag_name', 'tags.name');
-        $this->addFilter('expected_close_date', 'leads.expected_close_date');
         $this->addFilter('next_followup_date', 'leads.next_followup_date');
         $this->addFilter('followup_count', 'leads.followup_count');
         $this->addFilter('last_followup_date', 'leads.last_followup_date');
         $this->addFilter('lead_disqualification_reason', 'leads.lead_disqualification_reason');
         $this->addFilter('created_at', 'leads.created_at');
-        $this->addFilter('rotten_lead', DB::raw('DATEDIFF(NOW(), '.$tablePrefix.'leads.created_at) >= '.$tablePrefix.'lead_pipelines.rotten_days'));
 
         return $queryBuilder;
     }
@@ -146,23 +129,6 @@ class LeadDataGrid extends DataGrid
             'type'       => 'integer',
             'sortable'   => true,
             'filterable' => true,
-        ]);
-
-        $this->addColumn([
-            'index'              => 'sales_person',
-            'label'              => trans('admin::app.leads.index.datagrid.sales-person'),
-            'type'               => 'string',
-            'searchable'         => true,
-            'sortable'           => true,
-            'filterable'         => true,
-            'filterable_type'    => 'searchable_dropdown',
-            'filterable_options' => [
-                'repository' => UserRepository::class,
-                'column'     => [
-                    'label' => 'name',
-                    'value' => 'name',
-                ],
-            ],
         ]);
 
         $this->addColumn([
@@ -212,16 +178,6 @@ class LeadDataGrid extends DataGrid
             'filterable'         => true,
             'filterable_type'    => 'dropdown',
             'filterable_options' => $this->sourceRepository->getRootDropdownOptions(),
-        ]);
-
-        $this->addColumn([
-            'index'      => 'lead_value',
-            'label'      => trans('admin::app.leads.index.datagrid.lead-value'),
-            'type'       => 'string',
-            'sortable'   => true,
-            'searchable' => false,
-            'filterable' => true,
-            'closure'    => fn ($row) => core()->formatBasePrice($row->lead_value, 2),
         ]);
 
         $this->addColumn([
@@ -313,42 +269,6 @@ class LeadDataGrid extends DataGrid
                 }
 
                 return trans('admin::app.leads.disqualification.'.str_replace('_', '-', $row->lead_disqualification_reason));
-            },
-        ]);
-
-        $this->addColumn([
-            'index'      => 'rotten_lead',
-            'label'      => trans('admin::app.leads.index.datagrid.rotten-lead'),
-            'type'       => 'string',
-            'sortable'   => true,
-            'searchable' => false,
-            'closure'    => function ($row) {
-                if (! $row->rotten_lead) {
-                    return trans('admin::app.leads.index.datagrid.no');
-                }
-
-                if (in_array($row->stage_code, ['won', 'lost'])) {
-                    return trans('admin::app.leads.index.datagrid.no');
-                }
-
-                return trans('admin::app.leads.index.datagrid.yes');
-            },
-        ]);
-
-        $this->addColumn([
-            'index'           => 'expected_close_date',
-            'label'           => trans('admin::app.leads.index.datagrid.expected-close-date'),
-            'type'            => 'date',
-            'searchable'      => false,
-            'sortable'        => true,
-            'filterable'      => true,
-            'filterable_type' => 'date_range',
-            'closure'         => function ($row) {
-                if (! $row->expected_close_date) {
-                    return '--';
-                }
-
-                return $row->expected_close_date;
             },
         ]);
 
