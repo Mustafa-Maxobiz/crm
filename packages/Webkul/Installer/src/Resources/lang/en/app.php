@@ -9,6 +9,8 @@ return [
                 'next-followup-date'  => 'Next Follow-up Date',
                 'lead-value'          => 'Lead Value',
                 'pricing-type'        => 'Pricing Type',
+                'industry'            => 'Industry',
+                'service-offered'     => 'Service Offered',
                 'fixed-price'         => 'Fixed Price',
                 'hourly-rate'         => 'Hourly Rate',
                 'optional'            => 'Optional',

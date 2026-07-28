@@ -298,6 +298,18 @@ Breadcrumbs::for('settings.types.edit', function (BreadcrumbTrail $trail, $type)
     $trail->push(trans('admin::app.settings.types.edit-title'), route('admin.settings.types.edit', $type->id));
 });
 
+// Settings > Industries
+Breadcrumbs::for('settings.industries', function (BreadcrumbTrail $trail) {
+    $trail->parent('settings');
+    $trail->push(trans('admin::app.layouts.industries'), route('admin.settings.industries.index'));
+});
+
+// Settings > Services Offered
+Breadcrumbs::for('settings.services_offered', function (BreadcrumbTrail $trail) {
+    $trail->parent('settings');
+    $trail->push(trans('admin::app.layouts.services-offered'), route('admin.settings.services_offered.index'));
+});
+
 // Settings > Deleted Leads
 Breadcrumbs::for('settings.deleted_leads', function (BreadcrumbTrail $trail) {
     $trail->parent('settings');

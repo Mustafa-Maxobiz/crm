@@ -24,7 +24,13 @@ return [
     ], [
         'key'   => 'leads.edit',
         'name'  => 'admin::app.acl.edit',
-        'route' => ['admin.leads.edit', 'admin.leads.update', 'admin.leads.mass_update'],
+        'route' => [
+            'admin.leads.edit',
+            'admin.leads.update',
+            'admin.leads.mass_update',
+            'admin.leads.tags.attach',
+            'admin.leads.tags.detach',
+        ],
         'sort'  => 3,
     ], [
         'key'   => 'leads.delete',
@@ -319,7 +325,15 @@ return [
     ], [
         'key'   => 'settings.lead',
         'name'  => 'admin::app.acl.lead',
-        'route' => ['admin.settings.pipelines.index', 'admin.settings.sources.index', 'admin.settings.types.index', 'admin.settings.deleted_leads.index', 'admin.settings.followup_schedule.index'],
+        'route' => [
+            'admin.settings.pipelines.index',
+            'admin.settings.sources.index',
+            'admin.settings.types.index',
+            'admin.settings.industries.index',
+            'admin.settings.services_offered.index',
+            'admin.settings.deleted_leads.index',
+            'admin.settings.followup_schedule.index',
+        ],
         'sort'  => 2,
     ], [
         'key'   => 'settings.lead.pipelines',
@@ -380,6 +394,46 @@ return [
         'key'   => 'settings.lead.types.delete',
         'name'  => 'admin::app.acl.delete',
         'route' => 'admin.settings.types.delete',
+        'sort'  => 3,
+    ], [
+        'key'   => 'settings.lead.industries',
+        'name'  => 'admin::app.acl.industries',
+        'route' => 'admin.settings.industries.index',
+        'sort'  => 4,
+    ], [
+        'key'   => 'settings.lead.industries.create',
+        'name'  => 'admin::app.acl.create',
+        'route' => ['admin.settings.industries.store'],
+        'sort'  => 1,
+    ], [
+        'key'   => 'settings.lead.industries.edit',
+        'name'  => 'admin::app.acl.edit',
+        'route' => ['admin.settings.industries.edit', 'admin.settings.industries.update'],
+        'sort'  => 2,
+    ], [
+        'key'   => 'settings.lead.industries.delete',
+        'name'  => 'admin::app.acl.delete',
+        'route' => 'admin.settings.industries.delete',
+        'sort'  => 3,
+    ], [
+        'key'   => 'settings.lead.services_offered',
+        'name'  => 'admin::app.acl.services-offered',
+        'route' => 'admin.settings.services_offered.index',
+        'sort'  => 5,
+    ], [
+        'key'   => 'settings.lead.services_offered.create',
+        'name'  => 'admin::app.acl.create',
+        'route' => ['admin.settings.services_offered.store'],
+        'sort'  => 1,
+    ], [
+        'key'   => 'settings.lead.services_offered.edit',
+        'name'  => 'admin::app.acl.edit',
+        'route' => ['admin.settings.services_offered.edit', 'admin.settings.services_offered.update'],
+        'sort'  => 2,
+    ], [
+        'key'   => 'settings.lead.services_offered.delete',
+        'name'  => 'admin::app.acl.delete',
+        'route' => 'admin.settings.services_offered.delete',
         'sort'  => 3,
     ], [
         'key'   => 'settings.lead.deleted_leads',
@@ -536,10 +590,10 @@ return [
         'name'  => 'admin::app.acl.tags',
         'route' => 'admin.settings.tags.index',
         'sort'  => 1,
-    ], [
+    ],     [
         'key'   => 'settings.other_settings.tags.create',
         'name'  => 'admin::app.acl.create',
-        'route' => ['admin.settings.tags.create', 'admin.settings.tags.store', 'admin.leads.tags.attach'],
+        'route' => ['admin.settings.tags.create', 'admin.settings.tags.store'],
         'sort'  => 1,
     ], [
         'key'   => 'settings.other_settings.tags.edit',
@@ -549,7 +603,7 @@ return [
     ], [
         'key'   => 'settings.other_settings.tags.delete',
         'name'  => 'admin::app.acl.delete',
-        'route' => ['admin.settings.tags.delete', 'admin.settings.tags.mass_delete', 'admin.leads.tags.detach'],
+        'route' => ['admin.settings.tags.delete', 'admin.settings.tags.mass_delete'],
         'sort'  => 2,
     ],
     [

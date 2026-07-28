@@ -24,7 +24,7 @@
                 {!! view_render_event('admin.settings.tags.index.create_button.before') !!}
                 
                 <!-- Create button for Tags -->
-                @if (bouncer()->hasPermission('settings.other_settings.tags.create'))
+                @if (! empty($canManageTags) && ($tagsCount ?? 0) < ($maxTags ?? 5))
                     <div class="flex items-center gap-x-2.5">
                         <button
                             type="button"
@@ -39,6 +39,10 @@
                 {!! view_render_event('admin.settings.tags.index.create_button.after') !!}
             </div>
         </div>
+
+        <p class="text-sm text-gray-600 dark:text-gray-300">
+            @lang('admin::app.settings.tags.index.static-info', ['max' => $maxTags ?? 5])
+        </p>
         
         <v-tag-settings ref="tagSettings">
             <!-- DataGrid Shimmer -->

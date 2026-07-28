@@ -204,17 +204,17 @@ class TagController extends Controller
     protected function sourceNameForTag($tag): ?string
     {
         return match (strtolower(trim((string) $tag?->name))) {
-            'cold call', 'cold calls' => 'Cold Call',
-            'warm lead', 'warm leads' => 'Warm Leads',
-            default => null,
+            'cold lead', 'cold call', 'cold calls' => 'Cold Call',
+            'warm lead', 'warm leads'              => 'Warm Leads',
+            default                                => null,
         };
     }
 
     protected function oppositeSourceTagName(string $sourceName): string
     {
         return $sourceName === 'Warm Leads'
-            ? 'Cold Call'
-            : 'Warm Leads';
+            ? 'Cold Lead'
+            : 'Warm Lead';
     }
 
     /**

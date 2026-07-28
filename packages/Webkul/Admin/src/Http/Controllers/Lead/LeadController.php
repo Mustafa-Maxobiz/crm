@@ -734,32 +734,30 @@ class LeadController extends Controller
             return;
         }
 
-        $tag = $this->firstOrCreateSourceTag($sourceName);
-        $oppositeTag = $this->firstOrCreateSourceTag(
-            $sourceName === 'Warm Leads' ? 'Cold Call' : 'Warm Leads'
-        );
+        $tagName = $sourceName === 'Warm Leads' ? 'Warm Lead' : 'Cold Lead';
+        $oppositeTagName = $sourceName === 'Warm Leads' ? 'Cold Lead' : 'Warm Lead';
 
-        $lead->tags()->detach($oppositeTag->id);
+        $tag = $this->findSourceTag($tagName);
+        $oppositeTag = $this->findSourceTag($oppositeTagName);
+
+        if (! $tag) {
+            return;
+        }
+
+        if ($oppositeTag) {
+            $lead->tags()->detach($oppositeTag->id);
+        }
+
         $lead->tags()->syncWithoutDetaching([$tag->id]);
     }
 
-    protected function firstOrCreateSourceTag(string $name)
+    protected function findSourceTag(string $name)
     {
-        $tag = $this->tagRepository
+        return $this->tagRepository
             ->getModel()
             ->newQuery()
             ->where('name', $name)
             ->first();
-
-        if ($tag) {
-            return $tag;
-        }
-
-        return $this->tagRepository->create([
-            'name'    => $name,
-            'color'   => $name === 'Warm Leads' ? '#FEE2E2' : '#DBEAFE',
-            'user_id' => auth()->guard('user')->id(),
-        ]);
     }
 
     /**

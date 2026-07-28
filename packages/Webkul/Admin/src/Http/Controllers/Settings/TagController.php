@@ -10,7 +10,9 @@ use Webkul\Admin\DataGrids\Settings\TagDataGrid;
 use Webkul\Admin\Http\Controllers\Controller;
 use Webkul\Admin\Http\Requests\MassDestroyRequest;
 use Webkul\Admin\Http\Resources\TagResource;
+use Webkul\Lead\Services\SourceAccessService;
 use Webkul\Tag\Repositories\TagRepository;
+use Webkul\Tag\StaticTags;
 
 class TagController extends Controller
 {
@@ -19,7 +21,10 @@ class TagController extends Controller
      *
      * @return void
      */
-    public function __construct(protected TagRepository $tagRepository) {}
+    public function __construct(
+        protected TagRepository $tagRepository,
+        protected SourceAccessService $sourceAccessService,
+    ) {}
 
     /**
      * Display a listing of the resource.
@@ -30,7 +35,11 @@ class TagController extends Controller
             return datagrid(TagDataGrid::class)->process();
         }
 
-        return view('admin::settings.tags.index');
+        return view('admin::settings.tags.index', [
+            'canManageTags' => $this->sourceAccessService->isAdmin(),
+            'tagsCount'     => $this->tagRepository->count(),
+            'maxTags'       => StaticTags::maxAllowed(),
+        ]);
     }
 
     /**
@@ -38,6 +47,16 @@ class TagController extends Controller
      */
     public function store(): JsonResponse
     {
+        $this->ensureAdminCanManageTags();
+
+        if ($this->tagRepository->count() >= StaticTags::maxAllowed()) {
+            return new JsonResponse([
+                'message' => trans('admin::app.settings.tags.index.max-allowed', [
+                    'max' => StaticTags::maxAllowed(),
+                ]),
+            ], 422);
+        }
+
         $this->validate(request(), [
             'name' => ['required', 'unique:tags,name', 'max:50'],
         ]);
@@ -64,6 +83,8 @@ class TagController extends Controller
      */
     public function edit(int $id): View|JsonResponse
     {
+        $this->ensureAdminCanManageTags();
+
         $tag = $this->tagRepository->findOrFail($id);
 
         return new JsonResponse([
@@ -76,6 +97,8 @@ class TagController extends Controller
      */
     public function update(int $id): JsonResponse
     {
+        $this->ensureAdminCanManageTags();
+
         $this->validate(request(), [
             'name' => 'required|max:50|unique:tags,name,'.$id,
         ]);
@@ -100,6 +123,8 @@ class TagController extends Controller
      */
     public function destroy(int $id): JsonResponse
     {
+        $this->ensureAdminCanManageTags();
+
         $tag = $this->tagRepository->findOrFail($id);
 
         try {
@@ -139,6 +164,8 @@ class TagController extends Controller
      */
     public function massDestroy(MassDestroyRequest $massDestroyRequest): JsonResponse
     {
+        $this->ensureAdminCanManageTags();
+
         $indices = $massDestroyRequest->input('indices');
 
         try {
@@ -158,5 +185,14 @@ class TagController extends Controller
                 'message' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    protected function ensureAdminCanManageTags(): void
+    {
+        abort_unless(
+            $this->sourceAccessService->isAdmin(),
+            403,
+            trans('admin::app.settings.tags.index.admin-only')
+        );
     }
 }

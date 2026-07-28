@@ -28,6 +28,8 @@ return [
         'pipelines'        => 'Pipelines',
         'sources'          => 'Sources',
         'types'            => 'Types',
+        'industries'       => 'Industries',
+        'services-offered' => 'Services Offered',
         'email-templates'  => 'Email Templates',
         'workflows'        => 'Workflows',
         'other-settings'   => 'Other Settings',
@@ -359,8 +361,9 @@ return [
             'index' => [
                 'title'          => 'Tags',
                 'added-tags'     => 'Added Tags',
+                'available-tags' => 'Available Tags',
                 'save-btn'       => 'Save Tag',
-                'placeholder'    => 'Type to search tags',
+                'placeholder'    => 'Search or choose a tag',
                 'add-tag'        => 'Add \":term\"...',
                 'aquarelle-red'  => 'Aquarelle Red',
                 'crushed-cashew' => 'Crushed Cashew',
@@ -928,6 +931,66 @@ return [
             ],
         ],
 
+        'industries' => [
+            'index' => [
+                'create-btn'     => 'Create Industry',
+                'create-success' => 'Industry created successfully.',
+                'delete-failed'  => 'Industry can not be deleted.',
+                'delete-success' => 'Industry deleted successfully.',
+                'title'          => 'Industries',
+                'update-success' => 'Industry updated successfully.',
+
+                'datagrid' => [
+                    'delete'      => 'Delete',
+                    'edit'        => 'Edit',
+                    'id'          => 'ID',
+                    'name'        => 'Name',
+                    'sort-order'  => 'Sort Order',
+                ],
+
+                'create' => [
+                    'name'        => 'Name',
+                    'sort-order'  => 'Sort Order',
+                    'save-btn'    => 'Save Industry',
+                    'title'       => 'Create Industry',
+                ],
+
+                'edit' => [
+                    'title' => 'Edit Industry',
+                ],
+            ],
+        ],
+
+        'services_offered' => [
+            'index' => [
+                'create-btn'     => 'Create Service',
+                'create-success' => 'Service offered created successfully.',
+                'delete-failed'  => 'Service offered can not be deleted.',
+                'delete-success' => 'Service offered deleted successfully.',
+                'title'          => 'Services Offered',
+                'update-success' => 'Service offered updated successfully.',
+
+                'datagrid' => [
+                    'delete'      => 'Delete',
+                    'edit'        => 'Edit',
+                    'id'          => 'ID',
+                    'name'        => 'Name',
+                    'sort-order'  => 'Sort Order',
+                ],
+
+                'create' => [
+                    'name'        => 'Name',
+                    'sort-order'  => 'Sort Order',
+                    'save-btn'    => 'Save Service',
+                    'title'       => 'Create Service',
+                ],
+
+                'edit' => [
+                    'title' => 'Edit Service',
+                ],
+            ],
+        ],
+
         'deleted-leads' => [
             'index' => [
                 'permanent-delete-failed'  => 'Lead can not be permanently deleted.',
@@ -1321,6 +1384,9 @@ return [
                 'update-success' => 'Tag updated successfully.',
                 'delete-success' => 'Tag deleted successfully.',
                 'delete-failed'  => 'Tag can not be deleted.',
+                'admin-only'     => 'Only administrators can create or update tags.',
+                'max-allowed'    => 'A maximum of :max tags is allowed.',
+                'static-info'    => 'Tags are limited to :max static options. Other users can only choose existing tags.',
 
                 'datagrid' => [
                     'delete'      => 'Delete',
@@ -2126,8 +2192,14 @@ return [
                 'source'              => 'Source',
                 'lead-value'          => 'Lead Value',
                 'lead-type'           => 'Lead Type',
+                'industry'            => 'Industry',
+                'service-offered'     => 'Service Offered',
+                'products'            => 'Products',
                 'tag-name'            => 'Tag Name',
                 'contact-person'      => 'Contact Person',
+                'phone'               => 'Phone',
+                'copy-phone'          => 'Copy phone',
+                'copied'              => 'Copied',
                 'stage'               => 'Stage',
                 'disqualification'    => 'Record Status',
                 'rotten-lead'         => 'Rotten Lead',
@@ -2588,6 +2660,10 @@ return [
         'sources-info'         => 'Add, edit or delete sources from CRM',
         'types'                => 'Types',
         'types-info'           => 'Add, edit or delete types from CRM',
+        'industries'           => 'Industries',
+        'industries-info'      => 'Add, edit or delete industry options for leads',
+        'services-offered'     => 'Services Offered',
+        'services-offered-info'=> 'Add, edit or delete service offered options for leads',
         'deleted-leads'        => 'Deleted Leads',
         'deleted-leads-info'   => 'Restore or permanently delete removed leads from CRM',
         'followup-schedule'    => 'Follow-up Schedule',

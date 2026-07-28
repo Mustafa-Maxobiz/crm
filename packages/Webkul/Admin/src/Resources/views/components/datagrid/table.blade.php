@@ -18,7 +18,7 @@
     >
         <div class="w-full">
             <!-- Table view for larger screens, Card view for mobile -->
-            <div class="table-responsive box-shadow rounded-t-0 grid w-full overflow-hidden border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            <div class="table-responsive box-shadow rounded-t-0 grid w-full overflow-x-auto border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
                 <!-- Table Header - Always visible on all screens -->
                 <slot
                     name="header"
@@ -36,7 +36,7 @@
                     <template v-else>
                         <div
                             class="row grid min-h-[47px] items-center gap-2.5 border-b bg-gray-50 px-4 py-2.5 text-black dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 max-lg:hidden"
-                            :style="`grid-template-columns: repeat(${gridsCount}, minmax(0, 1fr))`"
+                            :style="gridRowStyle"
                         >
                             <!-- Mass Actions -->
                             <p v-if="available.massActions.length">
@@ -65,7 +65,7 @@
                             <!-- Columns -->
                             <template v-for="column in available.columns">
                                 <div
-                                    class="flex items-center gap-1.5 break-words"
+                                    class="flex min-w-0 items-center gap-1.5 break-words"
                                     :class="{'cursor-pointer select-none hover:text-gray-800 dark:hover:text-white': column.sortable}"
                                     @click="sort(column)"
                                     v-if="column.visibility"
@@ -175,7 +175,7 @@
                             <div
                                 class="row grid items-center gap-2.5 border-b px-4 py-4 text-black transition-all hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-950 max-lg:hidden"
                                 v-for="record in available.records"
-                                :style="`grid-template-columns: repeat(${gridsCount}, minmax(0, 1fr))`"
+                                :style="gridRowStyle"
                             >
                                 <!-- Mass Actions -->
                                 <p v-if="available.massActions.length">
@@ -197,7 +197,7 @@
                                 <!-- Columns -->
                                 <template v-for="column in available.columns">
                                     <p
-                                        class="break-words"
+                                        class="min-w-0 break-words"
                                         v-html="record[column.index]"
                                         v-if="column.visibility"
                                     >
@@ -305,6 +305,39 @@
                     }
 
                     return count;
+                },
+
+                /**
+                 * Keep columns readable: minimum width + horizontal scroll when needed.
+                 */
+                gridRowStyle() {
+                    const dataColumnMin = 160;
+                    const tracks = [];
+
+                    if (this.available.massActions.length) {
+                        tracks.push('40px');
+                    }
+
+                    const visibleColumns = this.available.columns.filter((column) => column.visibility).length;
+
+                    for (let i = 0; i < visibleColumns; i++) {
+                        tracks.push(`minmax(${dataColumnMin}px, 1fr)`);
+                    }
+
+                    if (this.available.actions.length) {
+                        tracks.push('72px');
+                    }
+
+                    const minWidth =
+                        (this.available.massActions.length ? 40 : 0)
+                        + (visibleColumns * dataColumnMin)
+                        + (this.available.actions.length ? 72 : 0)
+                        + ((tracks.length - 1) * 10); // gap-2.5
+
+                    return {
+                        gridTemplateColumns: tracks.join(' '),
+                        minWidth: `${minWidth}px`,
+                    };
                 },
             },
 

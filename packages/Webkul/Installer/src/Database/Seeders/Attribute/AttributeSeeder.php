@@ -153,6 +153,34 @@ class AttributeSeeder extends Seeder
                 'created_at'      => $now,
                 'updated_at'      => $now,
             ], [
+                'code'            => 'industry',
+                'name'            => trans('installer::app.seeders.attributes.leads.industry', [], $defaultLocale),
+                'type'            => 'select',
+                'entity_type'     => 'leads',
+                'lookup_type'     => null,
+                'validation'      => null,
+                'sort_order'      => '5.1',
+                'is_required'     => '0',
+                'is_unique'       => '0',
+                'quick_add'       => '1',
+                'is_user_defined' => '0',
+                'created_at'      => $now,
+                'updated_at'      => $now,
+            ], [
+                'code'            => 'service_offered',
+                'name'            => trans('installer::app.seeders.attributes.leads.service-offered', [], $defaultLocale),
+                'type'            => 'select',
+                'entity_type'     => 'leads',
+                'lookup_type'     => null,
+                'validation'      => null,
+                'sort_order'      => '5.2',
+                'is_required'     => '0',
+                'is_unique'       => '0',
+                'quick_add'       => '1',
+                'is_user_defined' => '0',
+                'created_at'      => $now,
+                'updated_at'      => $now,
+            ], [
                 'code'            => 'user_id',
                 'name'            => trans('installer::app.seeders.attributes.leads.sales-owner', [], $defaultLocale),
                 'type'            => 'select',
@@ -791,5 +819,64 @@ class AttributeSeeder extends Seeder
                 ],
             ]);
         }
+
+        $this->seedSelectOptions('industry', [
+            'Healthcare',
+            'Real Estate',
+            'Legal',
+            'Construction',
+            'IT / Software',
+            'Finance',
+            'Education',
+            'Retail',
+            'Hospitality',
+            'Other',
+        ]);
+
+        $this->seedSelectOptions('service_offered', [
+            'Website Development',
+            'Social Media',
+            'SEO',
+            'Branding',
+            'Paid Ads',
+            'Email Marketing',
+            'Content Marketing',
+            'Other',
+        ]);
+    }
+
+    /**
+     * Seed select attribute options when the attribute exists.
+     */
+    protected function seedSelectOptions(string $code, array $options): void
+    {
+        $attributeId = DB::table('attributes')
+            ->where('code', $code)
+            ->where('entity_type', 'leads')
+            ->value('id');
+
+        if (! $attributeId) {
+            return;
+        }
+
+        $existingOptions = DB::table('attribute_options')
+            ->where('attribute_id', $attributeId)
+            ->count();
+
+        if ($existingOptions > 0) {
+            return;
+        }
+
+        $rows = [];
+
+        foreach (array_values($options) as $index => $name) {
+            $rows[] = [
+                'attribute_id' => $attributeId,
+                'name'         => $name,
+                'sort_order'   => $index + 1,
+            ];
+        }
+
+        DB::table('attribute_options')->insert($rows);
     }
 }

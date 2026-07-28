@@ -5,11 +5,16 @@
     'leadContext' => null,
 ])
 
+@php
+    $canManageTags = auth()->guard('user')->user()?->role?->permission_type === 'all';
+@endphp
+
 <v-tags
     attach-endpoint="{{ $attachEndpoint }}"
     detach-endpoint="{{ $detachEndpoint }}"
     :added-tags='@json($addedTags)'
     :lead-context='@json($leadContext)'
+    :can-manage-tags='@json((bool) $canManageTags)'
 >
     <x-admin::shimmer.tags count="3" />
 </v-tags>
@@ -54,14 +59,14 @@
                                         type="text"
                                         class="w-full cursor-pointer pr-6 dark:bg-gray-900 dark:text-gray-300"
                                         placeholder="@lang('admin::app.components.tags.index.placeholder')"
-                                        v-model.lazy="searchTerm"
-                                        v-debounce="2000"
+                                        v-model="searchTerm"
+                                        @focus="loadAvailableTags"
                                     />
 
                                     <template v-if="! isSearching">
                                         <span
                                             class="absolute right-1.5 top-1.5 text-2xl"
-                                            :class="[searchTerm.length >= 2 ? 'icon-up-arrow' : 'icon-down-arrow']"
+                                            :class="[showTagOptions ? 'icon-up-arrow' : 'icon-down-arrow']"
                                         ></span>
                                     </template>
 
@@ -73,27 +78,30 @@
                                 <!-- Search Tags Dropdown -->
                                 <div
                                     class="absolute z-10 w-full rounded bg-white shadow-[0px_10px_20px_0px_#0000001F] dark:bg-gray-800"
-                                    v-if="searchTerm.length >= 2"
+                                    v-if="showTagOptions"
                                 >
-                                    <ul class="p-2">
+                                    <ul class="max-h-60 overflow-y-auto p-2">
                                         <li
                                             class="cursor-pointer break-all rounded-sm px-5 py-2 text-sm text-gray-800 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-950"
-                                            v-for="tag in searchedTags"
+                                            v-for="tag in filteredAvailableTags"
                                             @click="attachToEntity(tag)"
                                         >
                                             @{{ tag.name }}
                                         </li>
 
-                                        @if (bouncer()->hasPermission('settings.other_settings.tags.create'))
-                                            <template v-if="! searchedTags.length && ! isSearching">
-                                                <li
-                                                    class="cursor-pointer rounded-sm bg-gray-100 px-5 py-2 text-sm text-gray-800 dark:bg-gray-950 dark:text-white"
-                                                    @click="create"
-                                                >
-                                                    @{{ `@lang('admin::app.components.tags.index.add-tag', ['term' => 'replaceTerm'])`.replace('replaceTerm', searchTerm) }}
-                                                </li>
-                                            </template>
-                                        @endif
+                                        <template v-if="! filteredAvailableTags.length && ! isSearching">
+                                            <li class="rounded-sm px-5 py-2 text-sm text-gray-500 dark:text-gray-400">
+                                                @lang('admin::app.components.datagrid.table.no-records-available')
+                                            </li>
+
+                                            <li
+                                                v-if="canManageTags && searchTerm.length >= 2"
+                                                class="cursor-pointer rounded-sm bg-gray-100 px-5 py-2 text-sm text-gray-800 dark:bg-gray-950 dark:text-white"
+                                                @click="create"
+                                            >
+                                                @{{ `@lang('admin::app.components.tags.index.add-tag', ['term' => 'replaceTerm'])`.replace('replaceTerm', searchTerm) }}
+                                            </li>
+                                        </template>
                                     </ul>
                                 </div>
                             </div>
@@ -128,55 +136,54 @@
 
                                         <!-- Action -->
                                         <div class="flex items-center gap-1">
-                                            @if (bouncer()->hasPermission('settings.other_settings.tags.edit'))
-                                                <x-admin::dropdown position="bottom-right">
-                                                    <x-slot:toggle>
-                                                        <button class="flex cursor-pointer items-center gap-1 rounded border border-gray-200 px-2 py-0.5 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:hover:border-gray-400 dark:focus:border-gray-400">
-                                                            <span
-                                                                class="h-4 w-4 break-all rounded-full"
-                                                                :style="'background-color: ' + (tag.color ? tag.color : '#546E7A')"
-                                                            >
-                                                            </span>
-
-                                                            <span class="icon-down-arrow text-xl"></span>
-                                                        </button>
-                                                    </x-slot>
-
-                                                    <x-slot:menu class="!top-7 !p-0">
-                                                        <x-admin::dropdown.menu.item
-                                                            class="top-5 flex gap-2"
-                                                            ::class="{ 'bg-gray-100 dark:bg-gray-950': tag.color === color.background }"
-                                                            v-for="color in backgroundColors"
-                                                            @click="update(tag, color)"
+                                            <x-admin::dropdown
+                                                v-if="canManageTags"
+                                                position="bottom-right"
+                                            >
+                                                <x-slot:toggle>
+                                                    <button class="flex cursor-pointer items-center gap-1 rounded border border-gray-200 px-2 py-0.5 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:hover:border-gray-400 dark:focus:border-gray-400">
+                                                        <span
+                                                            class="h-4 w-4 break-all rounded-full"
+                                                            :style="'background-color: ' + (tag.color ? tag.color : '#546E7A')"
                                                         >
-                                                            <span
-                                                                class="flex h-4 w-4 break-all rounded-full"
-                                                                :style="'background-color: ' + color.background"
-                                                            >
-                                                            </span>
+                                                        </span>
 
-                                                            @{{ color.label }}
-                                                        </x-admin::dropdown.menu.item>
-                                                    </x-slot>
-                                                </x-admin::dropdown>
-                                            @endif
+                                                        <span class="icon-down-arrow text-xl"></span>
+                                                    </button>
+                                                </x-slot>
 
-                                            @if (bouncer()->hasPermission('settings.other_settings.tags.delete'))
-                                                <div class="flex items-center">
-                                                    <span
-                                                        class="icon-cross-large flex cursor-pointer rounded-md p-1 text-xl text-gray-600 transition-all hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-800"
-                                                        v-show="! isRemoving[tag.id]"
-                                                        @click="detachFromEntity(tag)"
-                                                    ></span>
-
-                                                    <span
-                                                        class="p-1"
-                                                        v-show="isRemoving[tag.id]"
+                                                <x-slot:menu class="!top-7 !p-0">
+                                                    <x-admin::dropdown.menu.item
+                                                        class="top-5 flex gap-2"
+                                                        ::class="{ 'bg-gray-100 dark:bg-gray-950': tag.color === color.background }"
+                                                        v-for="color in backgroundColors"
+                                                        @click="update(tag, color)"
                                                     >
-                                                        <x-admin::spinner />
-                                                    </span>
-                                                </div>
-                                            @endif
+                                                        <span
+                                                            class="flex h-4 w-4 break-all rounded-full"
+                                                            :style="'background-color: ' + color.background"
+                                                        >
+                                                        </span>
+
+                                                        @{{ color.label }}
+                                                    </x-admin::dropdown.menu.item>
+                                                </x-slot>
+                                            </x-admin::dropdown>
+
+                                            <div class="flex items-center">
+                                                <span
+                                                    class="icon-cross-large flex cursor-pointer rounded-md p-1 text-xl text-gray-600 transition-all hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-800"
+                                                    v-show="! isRemoving[tag.id]"
+                                                    @click="detachFromEntity(tag)"
+                                                ></span>
+
+                                                <span
+                                                    class="p-1"
+                                                    v-show="isRemoving[tag.id]"
+                                                >
+                                                    <x-admin::spinner />
+                                                </span>
+                                            </div>
                                         </div>
                                     </li>
                                 </template>
@@ -324,6 +331,11 @@
                     type: Object,
                     default: null,
                 },
+
+                canManageTags: {
+                    type: Boolean,
+                    default: false,
+                },
             },
 
             data: function () {
@@ -333,6 +345,8 @@
                     isStoring: false,
 
                     isSearching: false,
+
+                    showTagOptions: false,
 
                     isRemoving: {},
 
@@ -344,7 +358,7 @@
 
                     tags: [],
 
-                    searchedTags: [],
+                    availableTags: [],
 
                     backgroundColors: [
                         {
@@ -383,16 +397,35 @@
                         persons: [],
                     };
                 },
+
+                filteredAvailableTags() {
+                    const term = (this.searchTerm || '').trim().toLowerCase();
+                    const addedIds = this.tags.map(tag => Number(tag.id));
+
+                    return this.availableTags.filter(tag => {
+                        if (addedIds.includes(Number(tag.id))) {
+                            return false;
+                        }
+
+                        if (! term) {
+                            return true;
+                        }
+
+                        return (tag.name || '').toLowerCase().includes(term);
+                    });
+                },
             },
 
             watch: {
-                searchTerm(newVal, oldVal) {
-                    this.search();
+                searchTerm() {
+                    this.showTagOptions = true;
+                    this.loadAvailableTags();
                 },
             },
 
             mounted() {
                 this.tags = this.addedTags;
+                this.loadAvailableTags();
             },
 
             methods: {
@@ -400,42 +433,30 @@
                     this.$refs.mailActivityModal.open();
                 },
 
-                search() {
-                    if (this.searchTerm.length <= 1) {
-                        this.searchedTags = [];
+                loadAvailableTags() {
+                    this.showTagOptions = true;
 
-                        this.isSearching = false;
-
+                    if (this.availableTags.length || this.isSearching) {
                         return;
                     }
 
                     this.isSearching = true;
 
-                    let self = this;
-
-                    this.$axios.get("{{ route('admin.settings.tags.search') }}", {
-                            params: {
-                                search: 'name:' + this.searchTerm,
-                                searchFields: 'name:like',
-                            }
+                    this.$axios.get("{{ route('admin.settings.tags.search') }}")
+                        .then(response => {
+                            this.availableTags = response.data.data || [];
+                            this.isSearching = false;
                         })
-                        .then (function(response) {
-                            self.tags.forEach(function(addedTag) {
-                                response.data.data = response.data.data.filter(function(tag) {
-                                    return tag.id !== addedTag.id;
-                                });
-                            });
-
-                            self.searchedTags = response.data.data;
-
-                            self.isSearching = false;
-                        })
-                        .catch (function (error) {
-                            self.isSearching = false;
+                        .catch(() => {
+                            this.isSearching = false;
                         });
                 },
 
                 create() {
+                    if (! this.canManageTags) {
+                        return;
+                    }
+
                     this.isStoring = true;
 
                     var self = this;
@@ -445,6 +466,7 @@
                         color: this.backgroundColors[Math.floor(Math.random() * this.backgroundColors.length)].background,
                     })
                         .then(response => {
+                            self.availableTags.push(response.data.data);
                             self.attachToEntity(response.data.data);
                         })
                         .catch(error => {
@@ -455,6 +477,10 @@
                 },
 
                 update(tag, color) {
+                    if (! this.canManageTags) {
+                        return;
+                    }
+
                     var self = this;
 
                     this.$axios.put("{{ route('admin.settings.tags.update', 'replaceTagId') }}".replace('replaceTagId', tag.id), {
@@ -482,10 +508,8 @@
                         tag_id: params.id,
                     })
                         .then(response => {
-                            self.searchedTags = [];
-
                             self.searchTerm = '';
-
+                            self.showTagOptions = false;
                             self.isStoring = false;
 
                             self.removeDetachedTags(response.data.detached_tag_ids || []);
@@ -542,8 +566,8 @@
                         tag_id: this.pendingNotAnswerTag.id,
                     })
                         .then(response => {
-                            self.searchedTags = [];
                             self.searchTerm = '';
+                            self.showTagOptions = false;
                             self.isNotAnswerStoring = false;
 
                             self.removeDetachedTags(response.data.detached_tag_ids || []);
@@ -593,7 +617,6 @@
                     const detachedIds = tagIds.map(tagId => Number(tagId));
 
                     this.tags = this.tags.filter(tag => ! detachedIds.includes(Number(tag.id)));
-                    this.searchedTags = this.searchedTags.filter(tag => ! detachedIds.includes(Number(tag.id)));
                 },
 
                 refreshAfterTagChange() {

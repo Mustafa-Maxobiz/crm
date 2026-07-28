@@ -7,6 +7,7 @@ use Webkul\Admin\Http\Controllers\Settings\DeletedLeadController;
 use Webkul\Admin\Http\Controllers\Settings\EmailTemplateController;
 use Webkul\Admin\Http\Controllers\Settings\FollowupScheduleController;
 use Webkul\Admin\Http\Controllers\Settings\GroupController;
+use Webkul\Admin\Http\Controllers\Settings\LeadAttributeOptionController;
 use Webkul\Admin\Http\Controllers\Settings\LocationController;
 use Webkul\Admin\Http\Controllers\Settings\Marketing\CampaignsController;
 use Webkul\Admin\Http\Controllers\Settings\Marketing\EventController;
@@ -65,6 +66,36 @@ Route::prefix('settings')->group(function () {
         Route::put('edit/{id}', 'update')->name('admin.settings.types.update');
 
         Route::delete('{id}', 'destroy')->name('admin.settings.types.delete');
+    });
+
+    /**
+     * Industry option routes.
+     */
+    Route::controller(LeadAttributeOptionController::class)->prefix('industries')->group(function () {
+        Route::get('', 'index')->name('admin.settings.industries.index');
+
+        Route::post('create', 'store')->name('admin.settings.industries.store');
+
+        Route::get('edit/{id?}', 'edit')->name('admin.settings.industries.edit');
+
+        Route::put('edit/{id}', 'update')->name('admin.settings.industries.update');
+
+        Route::delete('{id}', 'destroy')->name('admin.settings.industries.delete');
+    });
+
+    /**
+     * Service offered option routes.
+     */
+    Route::controller(LeadAttributeOptionController::class)->prefix('services-offered')->group(function () {
+        Route::get('', 'index')->name('admin.settings.services_offered.index');
+
+        Route::post('create', 'store')->name('admin.settings.services_offered.store');
+
+        Route::get('edit/{id?}', 'edit')->name('admin.settings.services_offered.edit');
+
+        Route::put('edit/{id}', 'update')->name('admin.settings.services_offered.update');
+
+        Route::delete('{id}', 'destroy')->name('admin.settings.services_offered.delete');
     });
 
     /**

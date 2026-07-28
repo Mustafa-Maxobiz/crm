@@ -84,7 +84,9 @@ class TagDataGrid extends DataGrid
      */
     public function prepareActions(): void
     {
-        if (bouncer()->hasPermission('settings.other_settings.tags.edit')) {
+        $isAdmin = auth()->guard('user')->user()?->role?->permission_type === 'all';
+
+        if ($isAdmin && bouncer()->hasPermission('settings.other_settings.tags.edit')) {
             $this->addAction([
                 'index'  => 'edit',
                 'icon'   => 'icon-edit',
@@ -96,7 +98,7 @@ class TagDataGrid extends DataGrid
             ]);
         }
 
-        if (bouncer()->hasPermission('settings.other_settings.tags.delete')) {
+        if ($isAdmin && bouncer()->hasPermission('settings.other_settings.tags.delete')) {
             $this->addAction([
                 'index'  => 'delete',
                 'icon'   => 'icon-delete',
@@ -114,6 +116,12 @@ class TagDataGrid extends DataGrid
      */
     public function prepareMassActions(): void
     {
+        $isAdmin = auth()->guard('user')->user()?->role?->permission_type === 'all';
+
+        if (! $isAdmin || ! bouncer()->hasPermission('settings.other_settings.tags.delete')) {
+            return;
+        }
+
         $this->addMassAction([
             'icon'   => 'icon-delete',
             'title'  => trans('admin::app.settings.tags.index.datagrid.delete'),

@@ -44,6 +44,16 @@ class LeadDataGrid extends DataGrid
      */
     public function prepareQueryBuilder(): Builder
     {
+        $industryAttributeId = DB::table('attributes')
+            ->where('code', 'industry')
+            ->where('entity_type', 'leads')
+            ->value('id');
+
+        $serviceAttributeId = DB::table('attributes')
+            ->where('code', 'service_offered')
+            ->where('entity_type', 'leads')
+            ->value('id');
+
         $queryBuilder = DB::table('leads')
             ->addSelect(
                 'leads.id',
@@ -64,7 +74,16 @@ class LeadDataGrid extends DataGrid
                 'users.id as user_id',
                 'persons.id as person_id',
                 'persons.name as person_name',
+                'persons.contact_numbers',
                 'tags.name as tag_name',
+                'industry_options.name as industry',
+                'service_options.name as service_offered',
+                DB::raw('(
+                    SELECT GROUP_CONCAT(products.name SEPARATOR ", ")
+                    FROM lead_products
+                    INNER JOIN products ON products.id = lead_products.product_id
+                    WHERE lead_products.lead_id = leads.id
+                ) as product_names'),
             )
             ->leftJoin('users', 'leads.user_id', '=', 'users.id')
             ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
@@ -74,6 +93,28 @@ class LeadDataGrid extends DataGrid
             ->leftJoin('lead_pipelines', 'leads.lead_pipeline_id', '=', 'lead_pipelines.id')
             ->leftJoin('lead_tags', 'leads.id', '=', 'lead_tags.lead_id')
             ->leftJoin('tags', 'tags.id', '=', 'lead_tags.tag_id')
+            ->leftJoin('attribute_values as industry_values', function ($join) use ($industryAttributeId) {
+                $join->on('industry_values.entity_id', '=', 'leads.id')
+                    ->where('industry_values.entity_type', '=', 'leads');
+
+                if ($industryAttributeId) {
+                    $join->where('industry_values.attribute_id', '=', $industryAttributeId);
+                } else {
+                    $join->whereRaw('1 = 0');
+                }
+            })
+            ->leftJoin('attribute_options as industry_options', 'industry_options.id', '=', 'industry_values.integer_value')
+            ->leftJoin('attribute_values as service_values', function ($join) use ($serviceAttributeId) {
+                $join->on('service_values.entity_id', '=', 'leads.id')
+                    ->where('service_values.entity_type', '=', 'leads');
+
+                if ($serviceAttributeId) {
+                    $join->where('service_values.attribute_id', '=', $serviceAttributeId);
+                } else {
+                    $join->whereRaw('1 = 0');
+                }
+            })
+            ->leftJoin('attribute_options as service_options', 'service_options.id', '=', 'service_values.integer_value')
             ->groupBy('leads.id')
             ->whereNull('leads.deleted_at')
             ->where('leads.lead_pipeline_id', $this->pipeline->id);
@@ -101,6 +142,8 @@ class LeadDataGrid extends DataGrid
         $this->addFilter('lead_source_search', 'lead_sources.name');
         $this->addFilter('lead_type_name', 'lead_types.id');
         $this->addFilter('person_name', 'persons.name');
+        $this->addFilter('industry', 'industry_options.name');
+        $this->addFilter('service_offered', 'service_options.name');
         $this->addFilter('type', 'lead_pipeline_stages.code');
         $this->addFilter('stage', 'lead_pipeline_stages.id');
         $this->addFilter('tag_name', 'tags.name');
@@ -192,6 +235,36 @@ class LeadDataGrid extends DataGrid
         ]);
 
         $this->addColumn([
+            'index'      => 'industry',
+            'label'      => trans('admin::app.leads.index.datagrid.industry'),
+            'type'       => 'string',
+            'searchable' => false,
+            'sortable'   => true,
+            'filterable' => true,
+            'closure'    => fn ($row) => $row->industry ?: '--',
+        ]);
+
+        $this->addColumn([
+            'index'      => 'service_offered',
+            'label'      => trans('admin::app.leads.index.datagrid.service-offered'),
+            'type'       => 'string',
+            'searchable' => false,
+            'sortable'   => true,
+            'filterable' => true,
+            'closure'    => fn ($row) => $row->service_offered ?: '--',
+        ]);
+
+        $this->addColumn([
+            'index'      => 'product_names',
+            'label'      => trans('admin::app.leads.index.datagrid.products'),
+            'type'       => 'string',
+            'searchable' => false,
+            'sortable'   => false,
+            'filterable' => false,
+            'closure'    => fn ($row) => $row->product_names ?: '--',
+        ]);
+
+        $this->addColumn([
             'index'              => 'tag_name',
             'label'              => trans('admin::app.leads.index.datagrid.tag-name'),
             'type'               => 'string',
@@ -232,6 +305,40 @@ class LeadDataGrid extends DataGrid
                 $route = route('admin.contacts.persons.view', $row->person_id);
 
                 return "<a class=\"text-brandColor transition-all hover:underline\" href='".$route."'>".$row->person_name.'</a>';
+            },
+        ]);
+
+        $this->addColumn([
+            'index'      => 'contact_numbers',
+            'label'      => trans('admin::app.leads.index.datagrid.phone'),
+            'type'       => 'string',
+            'searchable' => false,
+            'sortable'   => false,
+            'filterable' => false,
+            'closure'    => function ($row) {
+                $numbers = collect(json_decode($row->contact_numbers ?? '[]', true) ?? [])
+                    ->pluck('value')
+                    ->filter()
+                    ->values();
+
+                if ($numbers->isEmpty()) {
+                    return '--';
+                }
+
+                $phone = e($numbers->first());
+                $allPhones = e($numbers->join(', '));
+
+                return '<span class="inline-flex items-center gap-1.5 whitespace-nowrap">'
+                    .'<span title="'.$allPhones.'">'.$phone.'</span>'
+                    .'<button '
+                    .'type="button" '
+                    .'class="inline-flex h-6 shrink-0 items-center justify-center rounded border border-gray-200 px-1.5 text-xs font-semibold text-gray-600 transition-all hover:border-brandColor hover:text-brandColor dark:border-gray-700 dark:text-gray-300" '
+                    .'title="'.e(trans('admin::app.leads.index.datagrid.copy-phone')).'" '
+                    .'onclick="event.stopPropagation(); (window.copyLeadPhone || function () {})(this, \''.$phone.'\')"'
+                    .'>'
+                    .'Copy'
+                    .'</button>'
+                    .'</span>';
             },
         ]);
 
