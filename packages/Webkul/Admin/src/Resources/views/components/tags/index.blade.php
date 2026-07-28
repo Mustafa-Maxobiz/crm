@@ -55,7 +55,7 @@
                                         class="w-full cursor-pointer pr-6 dark:bg-gray-900 dark:text-gray-300"
                                         placeholder="@lang('admin::app.components.tags.index.placeholder')"
                                         v-model.lazy="searchTerm"
-                                        v-debounce="500"
+                                        v-debounce="2000"
                                     />
 
                                     <template v-if="! isSearching">

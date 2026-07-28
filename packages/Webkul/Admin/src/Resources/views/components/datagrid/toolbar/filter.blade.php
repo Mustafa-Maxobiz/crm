@@ -1483,36 +1483,52 @@
                     isMinimumCharacters: false,
 
                     searchedOptions: [],
+                    lookUpTimer: null,
+                    isLookingUp: false,
                 };
+            },
+
+            beforeUnmount() {
+                clearTimeout(this.lookUpTimer);
             },
 
             methods: {
                 lookUp($event) {
-                    let params = {
-                        datagrid_id: this.datagridId,
-                        column: this.column.index,
-                        search: $event.target.value,
-                    };
+                    const search = $event.target.value || '';
 
-                    if (! (params['search'].length > 1)) {
+                    clearTimeout(this.lookUpTimer);
+
+                    if (! (search.trim().length > 1)) {
                         this.searchedOptions = [];
-
                         this.isMinimumCharacters = false;
+                        this.isLookingUp = false;
 
                         return;
                     }
 
-                    this.$axios
-                        .get('{{ route('admin.datagrid.look_up') }}', {
-                            params
-                        })
-                        .then(({
-                            data
-                        }) => {
-                            this.isMinimumCharacters = true;
+                    this.isLookingUp = true;
 
-                            this.searchedOptions = data;
-                        });
+                    this.lookUpTimer = setTimeout(() => {
+                        let params = {
+                            datagrid_id: this.datagridId,
+                            column: this.column.index,
+                            search,
+                        };
+
+                        this.$axios
+                            .get('{{ route('admin.datagrid.look_up') }}', {
+                                params
+                            })
+                            .then(({
+                                data
+                            }) => {
+                                this.isMinimumCharacters = true;
+                                this.searchedOptions = data;
+                            })
+                            .finally(() => {
+                                this.isLookingUp = false;
+                            });
+                    }, 2000);
                 },
 
                 selectOption(option) {

@@ -771,7 +771,7 @@
                                 class="w-full px-1 py-1 dark:bg-gray-900 dark:text-gray-300"
                                 placeholder="@lang('admin::app.activities.edit.participants')"
                                 v-model.lazy="searchTerm"
-                                v-debounce="500"
+                                v-debounce="2000"
                             />
                         </li>
                     </ul>

@@ -371,7 +371,7 @@
                                         </p>
                                     </div>
 
-                                    <div class="flex justify-end">
+                                    <div class="flex items-start justify-end">
                                         <span
                                             class="sdr-row-time-badge"
                                             v-if="item.time"
@@ -999,6 +999,7 @@
 
             .sdr-row-time-badge {
                 align-items: center;
+                align-self: flex-start;
                 background: #fff7ed;
                 border: 1px solid #fed7aa;
                 border-radius: 9999px;
@@ -1007,8 +1008,10 @@
                 flex-shrink: 0;
                 font-size: 11px;
                 font-weight: 800;
+                height: 28px;
+                justify-content: center;
                 line-height: 1;
-                padding: 6px 8px;
+                padding: 0 10px;
                 white-space: nowrap;
             }
 

@@ -22,14 +22,23 @@
 
                 <input
                     type="text"
-                    class="peer block w-full rounded-3xl border bg-white px-10 py-1.5 leading-6 text-gray-600 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400 dark:focus:border-gray-400"
+                    class="block w-full rounded-3xl border bg-white px-10 py-1.5 leading-6 text-gray-600 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400 dark:focus:border-gray-400"
                     :class="{'border-gray-400': isDropdownOpen}"
                     placeholder="@lang('admin::app.components.layouts.header.mega-search.title')"
-                    v-model.lazy="searchTerm"
+                    v-model="searchTerm"
+                    @input="onSearchInput"
+                    @keyup.enter="searchNow"
                     @click="searchTerm.length >= 2 ? isDropdownOpen = true : {}"
-                    v-debounce="500"
                     ref="searchInput"
                 >
+
+                <div
+                    v-if="isPending || isLoading"
+                    class="pointer-events-none absolute inset-y-0 flex items-center ltr:right-10 rtl:left-10"
+                    title="Searching..."
+                >
+                    <div class="app-search-spinner"></div>
+                </div>
 
                 <i class="icon-cross-large absolute top-2 flex items-center text-2xl ltr:right-4 rtl:left-4"></i>
 
@@ -474,7 +483,13 @@
 
                     isLoading: false,
 
+                    isPending: false,
+
                     searchTerm: '',
+
+                    debounceTimer: null,
+
+                    debounceMs: 2000,
 
                     searchedResults: {
                         leads: [],
@@ -493,8 +508,6 @@
             },
 
             watch: {
-                searchTerm: 'updateSearchParams',
-
                 activeTab: 'updateSearchParams',
             },
 
@@ -502,7 +515,8 @@
                 window.addEventListener('click', this.handleFocusOut);
             },
 
-            beforeDestroy() {
+            beforeUnmount() {
+                clearTimeout(this.debounceTimer);
                 window.removeEventListener('click', this.handleFocusOut);
             },
 
@@ -519,7 +533,33 @@
                         });
                     } else {
                         this.searchTerm = '';
+                        this.isPending = false;
+                        clearTimeout(this.debounceTimer);
                     }
+                },
+
+                onSearchInput() {
+                    clearTimeout(this.debounceTimer);
+
+                    if (! (this.searchTerm || '').trim()) {
+                        this.isPending = false;
+                        this.updateSearchParams();
+
+                        return;
+                    }
+
+                    this.isPending = true;
+
+                    this.debounceTimer = setTimeout(() => {
+                        this.isPending = false;
+                        this.updateSearchParams();
+                    }, this.debounceMs);
+                },
+
+                searchNow() {
+                    clearTimeout(this.debounceTimer);
+                    this.isPending = false;
+                    this.updateSearchParams();
                 },
 
                 search(endpoint) {
@@ -531,11 +571,13 @@
                         this.searchedResults[this.activeTab] = [];
 
                         this.isDropdownOpen = false;
+                        this.isLoading = false;
 
                         return;
                     }
 
                     this.isDropdownOpen = true;
+                    this.isLoading = true;
 
                     this.$axios.get(endpoint, {
                             params: {
@@ -590,4 +632,29 @@
             },
         });
     </script>
+@endPushOnce
+
+@pushOnce('styles')
+    <style>
+        .app-search-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #d1d5db;
+            border-top-color: #f97316;
+            border-radius: 9999px;
+            animation: app-search-spin 0.7s linear infinite;
+            pointer-events: none;
+        }
+
+        .dark .app-search-spinner {
+            border-color: #4b5563;
+            border-top-color: #fb923c;
+        }
+
+        @keyframes app-search-spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
 @endPushOnce

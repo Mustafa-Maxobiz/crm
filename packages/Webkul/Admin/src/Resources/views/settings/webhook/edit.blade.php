@@ -107,7 +107,7 @@
                                             rules="required|url"
                                             :label="trans('admin::app.settings.webhooks.edit.url-endpoint')"
                                             :placeholder="trans('admin::app.settings.webhooks.edit.url-endpoint')"
-                                            v-debounce="500"
+                                            v-debounce="2000"
                                             v-model.lazy="baseUrl"
                                         />
                                     </div>

@@ -51,7 +51,7 @@
                             class="w-full px-1 py-1 dark:bg-gray-900 dark:text-gray-300"
                             placeholder="@lang('admin::app.components.activities.actions.activity.participants.placeholder')"
                             v-model.lazy="searchTerm"
-                            v-debounce="500"
+                            v-debounce="2000"
                         />
 
                         {!! view_render_event('admin.components.activities.actions.activity.participants.search_term.after') !!}

@@ -26,9 +26,19 @@
                         <input
                             type="text"
                             class="min-h-[37px] w-[260px] rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 max-sm:w-full"
+                            :style="isPending ? 'padding-right: 2.25rem;' : null"
                             v-model="searchTerm"
+                            @input="queueSearch"
                             placeholder="Search any state"
                         />
+
+                        <div
+                            v-if="isPending"
+                            class="pointer-events-none absolute inset-y-0 flex items-center ltr:right-3 rtl:left-3"
+                            title="Searching..."
+                        >
+                            <div class="app-search-spinner"></div>
+                        </div>
                     </div>
 
                     <a
@@ -108,6 +118,9 @@
             data() {
                 return {
                     searchTerm: '',
+                    appliedSearchTerm: '',
+                    isPending: false,
+                    searchTimer: null,
                     now: new Date(),
                     timer: null,
                 };
@@ -129,7 +142,7 @@
                 },
 
                 filteredStates() {
-                    const query = this.searchTerm.trim().toLowerCase();
+                    const query = this.appliedSearchTerm.trim().toLowerCase();
 
                     if (! query) {
                         return this.enrichedStates;
@@ -143,11 +156,11 @@
                 },
 
                 visibleStates() {
-                    if (this.searchTerm.trim() && ! this.isPreview) {
+                    if (this.appliedSearchTerm.trim() && ! this.isPreview) {
                         return this.filteredStates;
                     }
 
-                    if (this.searchTerm.trim()) {
+                    if (this.appliedSearchTerm.trim()) {
                         return this.filteredStates.slice(0, 4);
                     }
 
@@ -183,9 +196,28 @@
 
             beforeUnmount() {
                 clearInterval(this.timer);
+                clearTimeout(this.searchTimer);
             },
 
             methods: {
+                queueSearch() {
+                    clearTimeout(this.searchTimer);
+
+                    if (! (this.searchTerm || '').trim()) {
+                        this.isPending = false;
+                        this.appliedSearchTerm = '';
+
+                        return;
+                    }
+
+                    this.isPending = true;
+
+                    this.searchTimer = setTimeout(() => {
+                        this.isPending = false;
+                        this.appliedSearchTerm = this.searchTerm;
+                    }, 2000);
+                },
+
                 isPriorityTime(state) {
                     const localMinutes = (state.localHour * 60) + state.localMinute;
 
@@ -226,4 +258,29 @@
             },
         });
     </script>
+@endPushOnce
+
+@pushOnce('styles')
+    <style>
+        .app-search-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #d1d5db;
+            border-top-color: #f97316;
+            border-radius: 9999px;
+            animation: app-search-spin 0.7s linear infinite;
+            pointer-events: none;
+        }
+
+        .dark .app-search-spinner {
+            border-color: #4b5563;
+            border-top-color: #fb923c;
+        }
+
+        @keyframes app-search-spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
 @endPushOnce

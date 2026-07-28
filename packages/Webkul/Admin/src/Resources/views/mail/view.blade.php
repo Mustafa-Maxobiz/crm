@@ -615,11 +615,10 @@
                                 <input
                                     type="text"
                                     v-model.lazy="searchTerm"
-                                    v-debounce="500"
+                                    v-debounce="2000"
                                     class="w-full rounded border border-gray-200 px-2.5 py-2 pr-10 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400 dark:focus:border-gray-400"
                                     placeholder="Search..."
                                     ref="searchInput"
-                                    @keyup="search"
                                 />
 
                                 <!-- Search Icon (absolute positioned) -->
@@ -838,11 +837,10 @@
                                     <input
                                         type="text"
                                         v-model.lazy="searchTerm"
-                                        v-debounce="500"
+                                        v-debounce="2000"
                                         class="w-full rounded border border-gray-200 px-2.5 py-2 pr-10 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400 dark:focus:border-gray-400"
                                         placeholder="@lang('admin::app.mail.view.search')"
                                         ref="searchInput"
-                                        @keyup="search"
                                     />
 
                                     <!-- Search Icon (absolute positioned) -->

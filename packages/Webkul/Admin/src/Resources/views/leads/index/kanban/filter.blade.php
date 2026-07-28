@@ -1047,35 +1047,44 @@
                     isMinimumCharacters: false,
 
                     searchedOptions: [],
+                    lookUpTimer: null,
                 };
+            },
+
+            beforeUnmount() {
+                clearTimeout(this.lookUpTimer);
             },
 
             methods: {
                 lookUp($event) {
-                    let params = {
-                        column: this.column.index,
-                        search: $event.target.value,
-                    };
+                    const search = $event.target.value || '';
 
-                    if (! (params['search'].length > 1)) {
+                    clearTimeout(this.lookUpTimer);
+
+                    if (! (search.trim().length > 1)) {
                         this.searchedOptions = [];
-
                         this.isMinimumCharacters = false;
 
                         return;
                     }
 
-                    this.$axios
-                        .get('{{ route('admin.leads.kanban.look_up') }}', {
-                            params
-                        })
-                        .then(({
-                            data
-                        }) => {
-                            this.isMinimumCharacters = true;
+                    this.lookUpTimer = setTimeout(() => {
+                        let params = {
+                            column: this.column.index,
+                            search,
+                        };
 
-                            this.searchedOptions = data;
-                        });
+                        this.$axios
+                            .get('{{ route('admin.leads.kanban.look_up') }}', {
+                                params
+                            })
+                            .then(({
+                                data
+                            }) => {
+                                this.isMinimumCharacters = true;
+                                this.searchedOptions = data;
+                            });
+                    }, 2000);
                 },
 
                 selectOption(option) {

@@ -96,8 +96,13 @@
                     placeholder="@lang('admin::app.configuration.index.search')"
                     v-model.lazy="searchTerm"
                     @click="searchTerm.length >= 2 ? isDropdownOpen = true : {}"
-                    v-debounce="500"
+                    v-debounce="2000"
                 >
+
+                <div
+                    class="app-search-spinner absolute top-1/2 -translate-y-1/2 ltr:right-3 rtl:left-3"
+                    :class="{'is-visible': isLoading}"
+                ></div>
 
                 <div
                     class="absolute top-10 z-10 w-full rounded-lg border bg-white shadow-[0px_0px_0px_0px_rgba(0,0,0,0.10),0px_1px_3px_0px_rgba(0,0,0,0.10),0px_5px_5px_0px_rgba(0,0,0,0.09),0px_12px_7px_0px_rgba(0,0,0,0.05),0px_22px_9px_0px_rgba(0,0,0,0.01),0px_34px_9px_0px_rgba(0,0,0,0.00)] dark:border-gray-800 dark:bg-gray-900"
@@ -192,5 +197,36 @@
                 },
             });
         </script>
+
+        @pushOnce('styles')
+            <style>
+                .app-search-spinner {
+                    width: 16px;
+                    height: 16px;
+                    border: 2px solid #d1d5db;
+                    border-top-color: #f97316;
+                    border-radius: 9999px;
+                    display: none;
+                    animation: app-search-spin 0.7s linear infinite;
+                    pointer-events: none;
+                }
+
+                .app-search-spinner.is-visible,
+                input.is-pending ~ .app-search-spinner {
+                    display: block;
+                }
+
+                .dark .app-search-spinner {
+                    border-color: #4b5563;
+                    border-top-color: #fb923c;
+                }
+
+                @keyframes app-search-spin {
+                    to {
+                        transform: translateY(-50%) rotate(360deg);
+                    }
+                }
+            </style>
+        @endPushOnce
     @endpushOnce
 </x-admin::layouts>
