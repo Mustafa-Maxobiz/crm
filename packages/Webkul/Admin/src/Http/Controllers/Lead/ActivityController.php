@@ -31,6 +31,8 @@ class ActivityController extends Controller
     public function index($id)
     {
         $activities = $this->activityRepository
+            ->with(['files', 'participants'])
+            ->select('activities.*')
             ->leftJoin('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
             ->where('lead_activities.lead_id', $id)
             ->get();
@@ -50,7 +52,13 @@ class ActivityController extends Controller
             ->union(DB::table('emails as parent')->where('parent.lead_id', $leadId))
             ->get();
 
-        return $activities->concat($emails->map(function ($email) {
+        $attachmentsByEmailId = $emails->isEmpty()
+            ? collect()
+            : $this->attachmentRepository
+                ->findWhereIn('email_id', $emails->pluck('id')->all())
+                ->groupBy('email_id');
+
+        return $activities->concat($emails->map(function ($email) use ($attachmentsByEmailId) {
             return (object) [
                 'id'            => $email->id,
                 'parent_id'     => $email->parent_id,
@@ -70,7 +78,7 @@ class ActivityController extends Controller
                     'cc'      => json_decode($email->cc),
                     'bcc'     => json_decode($email->bcc),
                 ],
-                'files'         => $this->attachmentRepository->findWhere(['email_id' => $email->id])->map(function ($attachment) {
+                'files'         => ($attachmentsByEmailId[$email->id] ?? collect())->map(function ($attachment) {
                     return (object) [
                         'id'         => $attachment->id,
                         'name'       => $attachment->name,

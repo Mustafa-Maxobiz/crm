@@ -35,13 +35,13 @@
                         {!! view_render_event('admin.leads.view.person.avatar.after', ['lead' => $lead]) !!}
             
                         <!-- Person Details -->
-                        <div class="flex flex-col gap-1">
+                        <div class="flex min-w-0 flex-1 flex-col gap-1">
                             {!! view_render_event('admin.leads.view.person.name.before', ['lead' => $lead]) !!}
             
                             @if ($hasName)
                                 <a
                                     href="{{ route('admin.contacts.persons.view', $lead->person->id) }}"
-                                    class="font-semibold text-brandColor"
+                                    class="break-words font-semibold text-brandColor"
                                     target="_blank"
                                 >
                                     {{ $lead->person->name }}
@@ -53,7 +53,7 @@
                             {!! view_render_event('admin.leads.view.person.job_title.before', ['lead' => $lead]) !!}
             
                             @if ($lead->person->job_title)
-                                <span class="dark:text-white">
+                                <span class="break-words dark:text-white">
                                     @if ($lead->person->organization)
                                         @lang('admin::app.leads.view.persons.job-title', [
                                             'job_title'    => $lead->person->job_title,
@@ -71,9 +71,9 @@
             
                             @foreach ($lead->person->emails as $email)
                                 @if (!empty($email['value']))
-                                    <div class="flex gap-1">
+                                    <div class="flex min-w-0 flex-wrap gap-x-1">
                                         <a 
-                                            class="text-brandColor"
+                                            class="min-w-0 break-all text-brandColor"
                                             href="mailto:{{ $email['value'] }}"
                                         >
                                             {{ $email['value'] }}
@@ -92,9 +92,9 @@
                         
                             @foreach ($lead->person->contact_numbers as $contactNumber)
                                 @if (!empty($contactNumber['value']))
-                                    <div class="flex gap-1">
+                                    <div class="flex min-w-0 flex-wrap gap-x-1">
                                         <a  
-                                            class="text-brandColor"
+                                            class="min-w-0 break-all text-brandColor"
                                             href="callto:{{ $contactNumber['value'] }}"
                                         >
                                             {{ $contactNumber['value'] }}

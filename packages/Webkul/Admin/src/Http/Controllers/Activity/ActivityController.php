@@ -7,6 +7,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -71,15 +72,13 @@ class ActivityController extends Controller
     }
 
     /**
-     * Returns due and overdue follow-up notifications directly from leads.
+     * Returns due follow-up and meeting notifications for the bell.
      */
     public function notifications(): JsonResponse
     {
         $query = $this->dueFollowupNotificationQuery();
 
-        $count = (clone $query)->count('leads.id');
-
-        $notifications = $query
+        $followupNotifications = $query
             ->with(['person'])
             ->orderBy('leads.next_followup_date')
             ->get()
@@ -97,25 +96,38 @@ class ActivityController extends Controller
                 ];
             });
 
+        $meetingNotifications = $this->dueMeetingNotifications();
+
+        $notifications = $followupNotifications
+            ->merge($meetingNotifications)
+            ->sortBy('schedule_from')
+            ->values();
+
         return response()->json([
-            'count'                 => $count,
+            'count'                 => $notifications->count(),
             'unread_messages_count' => $this->unreadMessagesCount(),
             'notifications'         => $notifications,
         ]);
     }
 
     /**
-     * Mark a due follow-up notification as done.
+     * Mark a due notification as done.
      */
-    public function markNotificationAsDone(int $id): JsonResponse
+    public function markNotificationAsDone(string $id): JsonResponse
     {
         DB::transaction(function () use ($id) {
+            if (preg_match('/^meeting-(before|start)-(\d+)$/', $id, $matches)) {
+                $this->markMeetingNotificationRead((int) $matches[2], $matches[1]);
+
+                return;
+            }
+
             $userIds = bouncer()->getAuthorizedUserIds();
 
             $query = $this->leadRepository
                 ->getModel()
                 ->newQuery()
-                ->where('leads.id', $id)
+                ->where('leads.id', (int) str_replace('followup-', '', $id))
                 ->lockForUpdate();
 
             if (! is_null($userIds)) {
@@ -124,35 +136,35 @@ class ActivityController extends Controller
 
             $lead = $query->firstOrFail();
 
-            if (
-                ! $lead->next_followup_date
-                || Carbon::parse($lead->next_followup_date)->isFuture()
-            ) {
-                return;
-            }
-
-            Event::dispatch('lead.update.before', $lead->id);
-
-            $completedAt = Carbon::now();
-
-            $lead->newQuery()
-                ->whereKey($lead->getKey())
-                ->update([
-                    'followup_count'     => ($lead->followup_count ?? 0) + 1,
-                    'last_followup_date' => $completedAt,
-                ]);
-
-            $lead->refresh();
-
-            $this->followupScheduleService->applyNextFollowup($lead);
-
-            $lead->refresh();
-
-            Event::dispatch('lead.update.after', $lead);
+            $this->completeFollowupNotification($lead);
         });
 
         return response()->json([
             'message' => trans('admin::app.activities.notifications.marked-done'),
+        ]);
+    }
+
+    /**
+     * Mark all due follow-up notifications as done.
+     */
+    public function markAllNotificationsAsDone(): JsonResponse
+    {
+        DB::transaction(function () {
+            $this->dueFollowupNotificationQuery()
+                ->lockForUpdate()
+                ->get()
+                ->each(fn ($lead) => $this->completeFollowupNotification($lead));
+
+            $this->dueMeetingNotifications()
+                ->each(function ($notification) {
+                    [$prefix, $reminderType, $activityId] = explode('-', $notification['id']);
+
+                    $this->markMeetingNotificationRead((int) $activityId, $reminderType);
+                });
+        });
+
+        return response()->json([
+            'message' => trans('admin::app.activities.notifications.marked-all-done'),
         ]);
     }
 
@@ -163,11 +175,21 @@ class ActivityController extends Controller
     {
         $this->validate(request(), [
             'type'          => 'required',
-            'comment'       => 'required_if:type,note',
+            'comment'       => ['required_if:type,note', 'required_if:stage_meeting,1'],
             'schedule_from' => 'required_unless:type,note,file',
             'schedule_to'   => 'required_unless:type,note,file',
+            'location'      => 'required_if:stage_meeting,1',
             'file'          => 'required_if:type,file',
         ]);
+
+        if (request('stage_meeting') && ! $this->hasActivityParticipants(request('participants', []))) {
+            return response()->json([
+                'message' => 'Please select at least one participant.',
+                'errors'  => [
+                    'participants' => ['Please select at least one participant.'],
+                ],
+            ], 422);
+        }
 
         if (request('type') === 'meeting') {
             /**
@@ -195,10 +217,21 @@ class ActivityController extends Controller
 
         Event::dispatch('activity.create.before');
 
-        $activity = $this->activityRepository->create(array_merge(request()->all(), [
-            'is_done' => request('type') == 'note' ? 1 : 0,
+        $data = $this->normalizeActivityStatusData(request()->all());
+
+        $data = $this->prepareMeetingActivityData($data);
+
+        $activity = $this->activityRepository->create(array_merge($data, [
             'user_id' => auth()->guard('user')->user()->id,
         ]));
+
+        if (isset($data['lead_id'])) {
+            $activity->leads()->sync(
+                ! empty($data['lead_id'])
+                    ? [$data['lead_id']]
+                    : []
+            );
+        }
 
         Event::dispatch('activity.create.after', $activity);
 
@@ -235,6 +268,167 @@ class ActivityController extends Controller
         }
 
         return $query;
+    }
+
+    /**
+     * Meeting reminders due in the current 15-minute notification window.
+     */
+    protected function dueMeetingNotifications()
+    {
+        $now = Carbon::now();
+        $windowStart = $now->copy()->subMinutes(15);
+        $windowEnd = $now->copy()->addMinutes(15);
+        $currentUserId = auth()->guard('user')->id();
+
+        $query = DB::table('activities')
+            ->select(
+                'activities.id',
+                'activities.title',
+                'activities.comment',
+                'activities.location',
+                'activities.schedule_from',
+                'activities.schedule_to',
+                'leads.title as lead_title',
+                'persons.name as person_name',
+            )
+            ->leftJoin('lead_activities', 'lead_activities.activity_id', '=', 'activities.id')
+            ->leftJoin('leads', 'leads.id', '=', 'lead_activities.lead_id')
+            ->leftJoin('persons', 'persons.id', '=', 'leads.person_id')
+            ->where('activities.type', 'meeting')
+            ->where('activities.is_done', 0)
+            ->whereNotNull('activities.schedule_from')
+            ->whereBetween('activities.schedule_from', [$windowStart, $windowEnd])
+            ->groupBy(
+                'activities.id',
+                'activities.title',
+                'activities.comment',
+                'activities.location',
+                'activities.schedule_from',
+                'activities.schedule_to',
+                'leads.title',
+                'persons.name',
+            );
+
+        $this->applyMeetingNotificationAccessScope($query);
+
+        $meetings = $query
+            ->orderBy('activities.schedule_from')
+            ->get();
+
+        if ($meetings->isEmpty()) {
+            return collect();
+        }
+
+        $readReminders = DB::table('activity_notification_reads')
+            ->where('user_id', $currentUserId)
+            ->whereIn('activity_id', $meetings->pluck('id')->all())
+            ->get(['activity_id', 'reminder_type'])
+            ->groupBy('activity_id')
+            ->map(fn ($rows) => $rows->pluck('reminder_type')->all());
+
+        return $meetings
+            ->map(function ($meeting) use ($now, $readReminders) {
+                $startsAt = Carbon::parse($meeting->schedule_from);
+                $reminderType = $startsAt->greaterThan($now) ? 'before' : 'start';
+
+                if (in_array($reminderType, $readReminders[$meeting->id] ?? [], true)) {
+                    return null;
+                }
+
+                return [
+                    'id'            => "meeting-{$reminderType}-{$meeting->id}",
+                    'title'         => $reminderType === 'before'
+                        ? 'Meeting starts in 15 min: '.$meeting->title
+                        : 'Meeting now: '.$meeting->title,
+                    'type'          => 'meeting',
+                    'comment'       => $meeting->comment,
+                    'schedule_from' => $startsAt->toIso8601String(),
+                    'schedule_to'   => $meeting->schedule_to ? Carbon::parse($meeting->schedule_to)->toIso8601String() : null,
+                    'lead_title'    => $meeting->lead_title,
+                    'person_name'   => $meeting->person_name,
+                    'edit_url'      => route('admin.activities.edit', $meeting->id),
+                ];
+            })
+            ->filter()
+            ->values();
+    }
+
+    protected function markMeetingNotificationRead(int $activityId, string $reminderType): void
+    {
+        $query = DB::table('activities')
+            ->where('activities.id', $activityId)
+            ->where('activities.type', 'meeting');
+
+        $this->applyMeetingNotificationAccessScope($query);
+
+        if (! $query->exists()) {
+            abort(404);
+        }
+
+        DB::table('activity_notification_reads')->updateOrInsert(
+            [
+                'activity_id'    => $activityId,
+                'user_id'        => auth()->guard('user')->id(),
+                'reminder_type'  => $reminderType,
+            ],
+            [
+                'read_at'    => Carbon::now(),
+                'updated_at' => Carbon::now(),
+                'created_at' => Carbon::now(),
+            ]
+        );
+    }
+
+    protected function applyMeetingNotificationAccessScope($query): void
+    {
+        $userIds = bouncer()->getAuthorizedUserIds();
+
+        if (is_null($userIds)) {
+            return;
+        }
+
+        $query->where(function ($query) use ($userIds) {
+            $query->whereIn('activities.user_id', $userIds)
+                ->orWhereExists(function ($participantQuery) use ($userIds) {
+                    $participantQuery
+                        ->select(DB::raw(1))
+                        ->from('activity_participants')
+                        ->whereColumn('activity_participants.activity_id', 'activities.id')
+                        ->whereIn('activity_participants.user_id', $userIds);
+                });
+        });
+    }
+
+    /**
+     * Complete a follow-up notification and schedule the next one if configured.
+     */
+    protected function completeFollowupNotification($lead): void
+    {
+        if (
+            ! $lead->next_followup_date
+            || Carbon::parse($lead->next_followup_date)->isFuture()
+        ) {
+            return;
+        }
+
+        Event::dispatch('lead.update.before', $lead->id);
+
+        $completedAt = Carbon::now();
+
+        $lead->newQuery()
+            ->whereKey($lead->getKey())
+            ->update([
+                'followup_count'     => ($lead->followup_count ?? 0) + 1,
+                'last_followup_date' => $completedAt,
+            ]);
+
+        $lead->refresh();
+
+        $this->followupScheduleService->applyNextFollowup($lead);
+
+        $lead->refresh();
+
+        Event::dispatch('lead.update.after', $lead);
     }
 
     /**
@@ -280,9 +474,20 @@ class ActivityController extends Controller
      */
     public function update($id): RedirectResponse|JsonResponse
     {
+        $existingActivity = $this->activityRepository->findOrFail($id);
+
+        if (request('activity_status') === 'meeting_scheduled') {
+            $this->prepareMeetingScheduleRequest($existingActivity);
+        }
+
+        $this->validateActivityStatusRequest();
+
+        $moveLeadToMeetingStage = request('activity_status') === 'meeting_scheduled';
+        $markLinkedLeadsEnded = request('activity_status') === 'done';
+
         Event::dispatch('activity.update.before', $id);
 
-        $data = request()->all();
+        $data = $this->normalizeActivityStatusData(request()->all());
 
         $activity = $this->activityRepository->update($data, $id);
 
@@ -297,6 +502,14 @@ class ActivityController extends Controller
                     ? [$data['lead_id']]
                     : []
             );
+        }
+
+        if ($moveLeadToMeetingStage) {
+            $this->moveLinkedLeadsToMeetingStage($activity->refresh());
+        }
+
+        if ($markLinkedLeadsEnded) {
+            $this->markLinkedLeadsEnded($activity->refresh(), trim((string) $activity->comment));
         }
 
         Event::dispatch('activity.update.after', $activity);
@@ -324,7 +537,9 @@ class ActivityController extends Controller
             Event::dispatch('activity.update.before', $activity->id);
 
             $activity = $this->activityRepository->update([
-                'is_done' => $massUpdateRequest->input('value'),
+                'is_done'                => $massUpdateRequest->input('value'),
+                'call_status'            => $massUpdateRequest->input('value') ? 'done' : 'scheduled',
+                'call_status_updated_at' => now(),
             ], $activity->id);
 
             Event::dispatch('activity.update.after', $activity);
@@ -333,6 +548,198 @@ class ActivityController extends Controller
         return response()->json([
             'message' => trans('admin::app.activities.mass-update-success'),
         ]);
+    }
+
+    /**
+     * Normalize the edit form status dropdown into the legacy done flag.
+     */
+    protected function normalizeActivityStatusData(array $data): array
+    {
+        $status = $data['activity_status'] ?? null;
+        $endLeadComment = trim($data['end_lead_comment'] ?? '');
+
+        unset($data['activity_status'], $data['end_lead_comment']);
+
+        if ($status === 'meeting_scheduled') {
+            $data['type'] = 'meeting';
+            $status = 'scheduled';
+        }
+
+        if ($status === 'done') {
+            $data['comment'] = $endLeadComment !== ''
+                ? $endLeadComment
+                : trim($data['comment'] ?? '');
+        }
+
+        if (! in_array($status, ['scheduled', 'not_answered', 'done'], true)) {
+            if (($data['type'] ?? null) === 'note') {
+                $status = 'done';
+            } elseif ((int) ($data['is_done'] ?? 0) === 1) {
+                $status = 'done';
+            } else {
+                $status = $data['call_status'] ?? 'scheduled';
+            }
+        }
+
+        $data['call_status'] = $status;
+        $data['is_done'] = $status === 'done' ? 1 : 0;
+        $data['call_status_updated_at'] = now();
+
+        return $data;
+    }
+
+    /**
+     * Validate status-specific fields from the activity edit form.
+     */
+    protected function validateActivityStatusRequest(): void
+    {
+        $status = request('activity_status');
+
+        if ($status === 'done') {
+            request()->validate([
+                'comment'          => ['required_without:end_lead_comment', 'string', 'max:1000'],
+                'end_lead_comment' => ['nullable', 'string', 'max:1000'],
+            ], [
+                'comment.required_without' => 'Please add a comment before ending the lead.',
+            ]);
+        }
+
+        if ($status === 'meeting_scheduled') {
+            request()->validate([
+                'schedule_from' => ['required'],
+                'schedule_to'   => ['required'],
+                'lead_id'       => ['required'],
+                'comment'       => ['required', 'string', 'max:1000'],
+                'location'      => ['required', 'string', 'max:255'],
+            ], [
+                'comment.required' => 'Please add meeting details before scheduling the meeting.',
+            ]);
+
+            if (! $this->hasActivityParticipants(request('participants', []))) {
+                throw ValidationException::withMessages([
+                    'participants' => ['Please select at least one participant.'],
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Keep meeting conversion reliable when the edit screen submits an empty lookup component.
+     */
+    protected function prepareMeetingScheduleRequest($activity): void
+    {
+        $participants = (array) request('participants', []);
+
+        if (! $this->hasActivityParticipants($participants)) {
+            $participantUserId = $activity->user_id ?: auth()->guard('user')->id();
+
+            if ($participantUserId) {
+                $participants['users'] = [$participantUserId];
+            }
+        }
+
+        if (! request()->filled('lead_id')) {
+            $leadId = $activity->leads()->value('leads.id');
+
+            if ($leadId) {
+                request()->merge(['lead_id' => $leadId]);
+            }
+        }
+
+        request()->merge([
+            'participants' => $participants,
+            'type'         => 'meeting',
+        ]);
+    }
+
+    /**
+     * Move linked leads into the Meeting stage after a call becomes a meeting.
+     */
+    protected function moveLinkedLeadsToMeetingStage($activity): void
+    {
+        $activity->loadMissing(['leads.pipeline.stages', 'leads.stage']);
+
+        foreach ($activity->leads as $lead) {
+            $meetingStage = $lead->pipeline?->stages
+                ->firstWhere('code', 'meeting');
+
+            if (
+                ! $meetingStage
+                || (int) $lead->lead_pipeline_stage_id === (int) $meetingStage->id
+            ) {
+                continue;
+            }
+
+            Event::dispatch('lead.update.before', $lead->id);
+
+            $updatedLead = $this->leadRepository->update([
+                'entity_type'            => 'leads',
+                'lead_pipeline_stage_id' => $meetingStage->id,
+            ], $lead->id, ['lead_pipeline_stage_id']);
+
+            Event::dispatch('lead.update.after', $updatedLead);
+        }
+    }
+
+    /**
+     * Move linked leads out of SDR queues for admin review after an SDR ends them.
+     */
+    protected function markLinkedLeadsEnded($activity, string $comment): void
+    {
+        if ($comment === '') {
+            return;
+        }
+
+        $activity->loadMissing('leads');
+
+        foreach ($activity->leads as $lead) {
+            Event::dispatch('lead.update.before', $lead->id);
+
+            $updatedLead = $this->leadRepository->update([
+                'entity_type'                  => 'leads',
+                'lead_disqualification_reason' => 'ended',
+                'lead_disqualification_comment'=> $comment,
+                'lead_disqualified_at'         => Carbon::now(),
+                'next_followup_date'           => null,
+                'followup_notes'               => $comment,
+            ], $lead->id);
+
+            Event::dispatch('lead.update.after', $updatedLead);
+        }
+    }
+
+    /**
+     * Fill backend-only meeting fields for stage movement flow.
+     */
+    protected function prepareMeetingActivityData(array $data): array
+    {
+        if (($data['type'] ?? null) !== 'meeting' || ! empty($data['title'])) {
+            return $data;
+        }
+
+        $lead = ! empty($data['lead_id'])
+            ? $this->leadRepository->find($data['lead_id'])
+            : null;
+
+        $data['title'] = 'Meeting'.($lead?->title ? ' - '.$lead->title : '');
+
+        return $data;
+    }
+
+    /**
+     * Check if at least one user or person participant was selected.
+     */
+    protected function hasActivityParticipants(array $participants): bool
+    {
+        foreach (['users', 'persons'] as $type) {
+            foreach ($participants[$type] ?? [] as $participantId) {
+                if (! empty($participantId)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**

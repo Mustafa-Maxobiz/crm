@@ -17,7 +17,7 @@ class Kernel extends ConsoleKernel
         // Send follow-up reminders daily at 9:00 AM with email notifications
         $schedule->command('leads:send-followup-reminders --email')
             ->dailyAt('09:00')
-            ->timezone('UTC');
+            ->timezone(config('app.timezone'));
     }
 
     /**

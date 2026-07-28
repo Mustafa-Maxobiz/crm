@@ -62,6 +62,11 @@ return new class extends Migration
                         'name'         => 'Hourly Rate',
                         'sort_order'   => 2,
                     ],
+                    [
+                        'attribute_id' => $attributeId,
+                        'name'         => 'Optional',
+                        'sort_order'   => 3,
+                    ],
                 ]);
             }
         }

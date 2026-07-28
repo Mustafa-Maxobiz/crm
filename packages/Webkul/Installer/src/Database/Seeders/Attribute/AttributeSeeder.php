@@ -758,6 +758,11 @@ class AttributeSeeder extends Seeder
                     'name'         => trans('installer::app.seeders.attributes.leads.hourly-rate', [], $defaultLocale),
                     'sort_order'   => 2,
                 ],
+                [
+                    'attribute_id' => $pricingTypeAttributeId,
+                    'name'         => trans('installer::app.seeders.attributes.leads.optional', [], $defaultLocale),
+                    'sort_order'   => 3,
+                ],
             ]);
         }
 

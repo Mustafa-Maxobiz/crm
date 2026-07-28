@@ -159,14 +159,16 @@ class LeadForm extends FormRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
+            $subSourceId = request('lead_sub_source_id') ? (int) request('lead_sub_source_id') : null;
+
             if ($sourceId = request('lead_source_id')) {
-                if (! $this->sourceAccessService->canAccessSourceId((int) $sourceId)) {
+                if (! $this->sourceAccessService->canUseLeadSourceSelection((int) $sourceId, $subSourceId)) {
                     $validator->errors()->add('lead_source_id', trans('admin::app.leads.source-access-denied'));
                 }
             }
 
-            if ($subSourceId = request('lead_sub_source_id')) {
-                if (! $this->sourceAccessService->canAccessSourceId((int) $subSourceId)) {
+            if ($subSourceId) {
+                if (! $this->sourceAccessService->canAccessSourceId($subSourceId)) {
                     $validator->errors()->add('lead_sub_source_id', trans('admin::app.leads.source-access-denied'));
                 }
             }

@@ -2,12 +2,14 @@
     'attachEndpoint',
     'detachEndpoint',
     'addedTags' => [],
+    'leadContext' => null,
 ])
 
 <v-tags
     attach-endpoint="{{ $attachEndpoint }}"
     detach-endpoint="{{ $detachEndpoint }}"
     :added-tags='@json($addedTags)'
+    :lead-context='@json($leadContext)'
 >
     <x-admin::shimmer.tags count="3" />
 </v-tags>
@@ -183,6 +185,118 @@
                     </div>
                 </x-slot>
             </x-admin::dropdown>
+
+            <x-admin::form
+                v-if="leadContext"
+                v-slot="{ meta, errors, handleSubmit }"
+                as="div"
+                ref="notAnswerActivityForm"
+            >
+                <form @submit="handleSubmit($event, saveNotAnswerActivity)">
+                    <x-admin::modal
+                        ref="notAnswerActivityModal"
+                        position="center"
+                        size="medium"
+                    >
+                        <x-slot:header>
+                            <h3 class="text-base font-semibold dark:text-white">
+                                Add Not Answer Call
+                            </h3>
+                        </x-slot>
+
+                        <x-slot:content>
+                            <div class="grid gap-4">
+                                <div class="flex gap-4 max-sm:flex-wrap">
+                                    <x-admin::form.control-group class="w-full">
+                                        <x-admin::form.control-group.label class="required">
+                                            Schedule From
+                                        </x-admin::form.control-group.label>
+
+                                        <x-admin::form.control-group.control
+                                            type="datetime"
+                                            name="schedule_from"
+                                            rules="required"
+                                            label="Schedule From"
+                                        />
+
+                                        <x-admin::form.control-group.error control-name="schedule_from" />
+                                    </x-admin::form.control-group>
+
+                                    <x-admin::form.control-group class="w-full">
+                                        <x-admin::form.control-group.label class="required">
+                                            Schedule To
+                                        </x-admin::form.control-group.label>
+
+                                        <x-admin::form.control-group.control
+                                            type="datetime"
+                                            name="schedule_to"
+                                            rules="required"
+                                            label="Schedule To"
+                                        />
+
+                                        <x-admin::form.control-group.error control-name="schedule_to" />
+                                    </x-admin::form.control-group>
+                                </div>
+
+                                <x-admin::form.control-group>
+                                    <x-admin::form.control-group.label class="required">
+                                        Comment
+                                    </x-admin::form.control-group.label>
+
+                                    <x-admin::form.control-group.control
+                                        type="textarea"
+                                        name="comment"
+                                        rules="required|max:500"
+                                        label="Comment"
+                                        value="Call attempted, no answer."
+                                    />
+
+                                    <x-admin::form.control-group.error control-name="comment" />
+                                </x-admin::form.control-group>
+
+                                <x-admin::form.control-group class="!mb-0">
+                                    <x-admin::form.control-group.label class="required">
+                                        Participants
+                                    </x-admin::form.control-group.label>
+
+                                    <v-activity-participants :participants="defaultNotAnswerParticipants"></v-activity-participants>
+
+                                    <p
+                                        class="mt-1 text-xs text-red-600"
+                                        v-if="notAnswerErrors.participants"
+                                    >
+                                        @{{ notAnswerErrors.participants }}
+                                    </p>
+                                </x-admin::form.control-group>
+                            </div>
+                        </x-slot>
+
+                        <x-slot:footer>
+                            <button
+                                type="button"
+                                class="secondary-button"
+                                @click="$refs.notAnswerActivityModal.close()"
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                type="submit"
+                                class="primary-button"
+                                :disabled="isNotAnswerStoring"
+                            >
+                                <template v-if="isNotAnswerStoring">
+                                    Saving...
+                                </template>
+
+                                <template v-else>
+                                    Save Not Answer
+                                </template>
+                            </button>
+                        </x-slot>
+                    </x-admin::modal>
+                </form>
+            </x-admin::form>
         </div>
     </script>
 
@@ -205,6 +319,11 @@
                     type: Array,
                     default: () => [],
                 },
+
+                leadContext: {
+                    type: Object,
+                    default: null,
+                },
             },
 
             data: function () {
@@ -216,6 +335,12 @@
                     isSearching: false,
 
                     isRemoving: {},
+
+                    isNotAnswerStoring: false,
+
+                    pendingNotAnswerTag: null,
+
+                    notAnswerErrors: {},
 
                     tags: [],
 
@@ -249,6 +374,15 @@
                         },
                     ],
                 }
+            },
+
+            computed: {
+                defaultNotAnswerParticipants() {
+                    return this.leadContext?.participants || {
+                        users: [],
+                        persons: [],
+                    };
+                },
             },
 
             watch: {
@@ -331,6 +465,8 @@
                             tag.color = color.background;
 
                             self.$emitter.emit('add-flash', { type: 'success', message: response.data.message });
+
+                            self.refreshAfterTagChange();
                         })
                         .catch(error => {
                             self.$emitter.emit('add-flash', { type: 'error', message: error.response.data.message });
@@ -352,15 +488,122 @@
 
                             self.isStoring = false;
 
-                            self.tags.push(params);
+                            self.removeDetachedTags(response.data.detached_tag_ids || []);
+
+                            if (! self.tags.some(tag => tag.id === params.id)) {
+                                self.tags.push(params);
+                            }
+
+                            if (response.data.data) {
+                                self.$emitter.emit('on-activity-added', response.data.data);
+                                self.$emitter.emit('activity-created');
+                            }
 
                             self.$emitter.emit('add-flash', { type: 'success', message: response.data.message });
+
+                            self.refreshAfterTagChange();
                         })
                         .catch(error => {
+                            if (
+                                error.response?.status === 409
+                                && error.response?.data?.requires_call_activity
+                                && this.isNotAnswerTag(params)
+                            ) {
+                                self.pendingNotAnswerTag = params;
+                                self.notAnswerErrors = {};
+                                self.isStoring = false;
+                                self.$refs.notAnswerActivityModal.open();
+
+                                return;
+                            }
+
                             self.$emitter.emit('add-flash', { type: 'error', message: error.response.data.message });
 
                             self.isStoring = false;
                         });
+                },
+
+                saveNotAnswerActivity(params) {
+                    if (! this.hasParticipants(params.participants || {})) {
+                        this.notAnswerErrors = {
+                            participants: 'Please select at least one participant.',
+                        };
+
+                        return;
+                    }
+
+                    this.notAnswerErrors = {};
+                    this.isNotAnswerStoring = true;
+
+                    var self = this;
+
+                    this.$axios.post(this.attachEndpoint, {
+                        ...params,
+                        tag_id: this.pendingNotAnswerTag.id,
+                    })
+                        .then(response => {
+                            self.searchedTags = [];
+                            self.searchTerm = '';
+                            self.isNotAnswerStoring = false;
+
+                            self.removeDetachedTags(response.data.detached_tag_ids || []);
+
+                            if (! self.tags.some(tag => tag.id === self.pendingNotAnswerTag.id)) {
+                                self.tags.push(self.pendingNotAnswerTag);
+                            }
+
+                            self.pendingNotAnswerTag = null;
+                            self.$refs.notAnswerActivityModal.close();
+
+                            if (response.data.data) {
+                                self.$emitter.emit('on-activity-added', response.data.data);
+                            }
+
+                            self.$emitter.emit('add-flash', { type: 'success', message: response.data.message });
+                            self.$emitter.emit('activity-created');
+
+                            self.refreshAfterTagChange();
+                        })
+                        .catch(error => {
+                            self.isNotAnswerStoring = false;
+
+                            if (error.response?.status === 422) {
+                                setErrors(error.response.data.errors || {});
+
+                                self.notAnswerErrors = {
+                                    participants: error.response.data.errors?.participants?.[0],
+                                };
+
+                                return;
+                            }
+
+                            self.$emitter.emit('add-flash', { type: 'error', message: error.response?.data?.message || 'Not Answer call could not be saved.' });
+                        });
+                },
+
+                isNotAnswerTag(tag) {
+                    return (tag.name || '').trim().toLowerCase() === 'not answer';
+                },
+
+                removeDetachedTags(tagIds) {
+                    if (! tagIds.length) {
+                        return;
+                    }
+
+                    const detachedIds = tagIds.map(tagId => Number(tagId));
+
+                    this.tags = this.tags.filter(tag => ! detachedIds.includes(Number(tag.id)));
+                    this.searchedTags = this.searchedTags.filter(tag => ! detachedIds.includes(Number(tag.id)));
+                },
+
+                refreshAfterTagChange() {
+                    setTimeout(() => window.location.reload(), 250);
+                },
+
+                hasParticipants(participants) {
+                    return ['users', 'persons'].some(type => {
+                        return (participants[type] || []).some(participantId => !! participantId);
+                    });
                 },
 
                 detachFromEntity(tag) {
@@ -383,6 +626,8 @@
                                     self.tags.splice(index, 1);
 
                                     self.$emitter.emit('add-flash', { type: 'success', message: response.data.message });
+
+                                    self.refreshAfterTagChange();
                                 })
                                 .catch(error => {
                                     self.$emitter.emit('add-flash', { type: 'error', message: error.response.data.message });

@@ -65,32 +65,32 @@
         
             <!-- Editing view -->
             <div
-                class="relative w-full"
+                class="flex w-full items-center gap-1"
                 v-else
             >
-                <x-admin::form.control-group.control
-                    type="select"
-                    ::id="name"
-                    ::name="name"
-                    ::rules="rules"
-                    ::label="label"
-                    class="!h-[34px] !py-0 ltr:pr-20 rtl:pl-20"
-                    ::placeholder="placeholder"
-                    v-model="inputValue"
-                >
-                    <option
-                        v-for="(option, index) in options"
-                        :key="option.id"
-                        :value="option.id"
+                <div class="min-w-0 flex-1">
+                    <x-admin::form.control-group.control
+                        type="select"
+                        ::id="name"
+                        ::name="name"
+                        ::rules="rules"
+                        ::label="label"
+                        class="!h-[34px] !py-0"
+                        ::placeholder="placeholder"
+                        v-model="inputValue"
                     >
-                        @{{ option.name }}
-                    </option>
-                </x-admin::form.control-group.control>
+                        <option
+                            v-for="(option, index) in options"
+                            :key="option.id"
+                            :value="option.id"
+                        >
+                            @{{ option.name }}
+                        </option>
+                    </x-admin::form.control-group.control>
+                </div>
                     
                 <!-- Action Buttons -->
-                <div class="absolute top-1/2 flex -translate-y-1/2 transform items-center gap-0.5 ltr:right-2 rtl:left-2">
-                    <i class="icon-down-arrow text-2xl" />
-
+                <div class="flex shrink-0 items-center gap-0.5">
                     <button
                         type="button"
                         class="flex items-center justify-center bg-green-100 p-1 hover:bg-green-200 ltr:rounded-l-md rtl:rounded-r-md"
@@ -235,6 +235,10 @@
                             })
                             .then((response) => {
                                 this.$emitter.emit('add-flash', { type: 'success', message: response.data.message });
+
+                                if (this.name === 'lead_source_id') {
+                                    setTimeout(() => window.location.reload(), 250);
+                                }
                             })
                             .catch((error) => {
                                 this.inputValue = this.value;

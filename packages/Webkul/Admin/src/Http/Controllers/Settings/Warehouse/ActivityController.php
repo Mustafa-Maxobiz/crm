@@ -28,6 +28,8 @@ class ActivityController extends Controller
     public function index($id)
     {
         $activities = $this->activityRepository
+            ->with(['files', 'participants'])
+            ->select('activities.*')
             ->leftJoin('warehouse_activities', 'activities.id', '=', 'warehouse_activities.activity_id')
             ->where('warehouse_activities.warehouse_id', $id)
             ->get();

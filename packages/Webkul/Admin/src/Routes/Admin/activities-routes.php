@@ -10,6 +10,8 @@ Route::controller(ActivityController::class)->prefix('activities')->group(functi
 
     Route::get('notifications', 'notifications')->name('admin.activities.notifications');
 
+    Route::put('notifications/done-all', 'markAllNotificationsAsDone')->name('admin.activities.notifications.done_all');
+
     Route::put('notifications/{id}/done', 'markNotificationAsDone')->name('admin.activities.notifications.done');
 
     Route::post('create', 'store')->name('admin.activities.store');

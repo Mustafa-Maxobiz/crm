@@ -36,6 +36,19 @@
                         :attach-endpoint="route('admin.leads.tags.attach', $lead->id)"
                         :detach-endpoint="route('admin.leads.tags.detach', $lead->id)"
                         :added-tags="$lead->tags"
+                        :lead-context="[
+                            'id' => $lead->id,
+                            'title' => $lead->title,
+                            'participants' => [
+                                'users' => auth()->guard('user')->user()
+                                    ? [[
+                                        'id' => auth()->guard('user')->id(),
+                                        'name' => auth()->guard('user')->user()->name,
+                                    ]]
+                                    : [],
+                                'persons' => [],
+                            ],
+                        ]"
                     />
 
                     {!! view_render_event('admin.leads.view.tags.after', ['lead' => $lead]) !!}
@@ -84,6 +97,63 @@
                     @endif
 
                     {!! view_render_event('admin.leads.view.actions.after', ['lead' => $lead]) !!}
+                </div>
+
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                    @if ($lead->lead_disqualification_reason)
+                        <span class="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                            @lang('admin::app.leads.disqualification.status'):
+                            @lang('admin::app.leads.disqualification.' . str_replace('_', '-', $lead->lead_disqualification_reason))
+                        </span>
+
+                        @if (app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin())
+                            @if ($lead->lead_disqualification_comment)
+                                <div class="w-full rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
+                                    <span class="block text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                                        @lang('admin::app.leads.disqualification.comment')
+                                    </span>
+
+                                    <p class="mt-1 whitespace-pre-wrap break-words">
+                                        {{ $lead->lead_disqualification_comment }}
+                                    </p>
+                                </div>
+                            @endif
+
+                            <form
+                                method="POST"
+                                action="{{ route('admin.leads.restore_disqualified', $lead->id) }}"
+                            >
+                                @csrf
+
+                                <button
+                                    type="submit"
+                                    class="secondary-button !min-h-[34px] !px-3 text-xs"
+                                >
+                                    @lang('admin::app.leads.disqualification.restore')
+                                </button>
+                            </form>
+                        @endif
+                    @elseif (bouncer()->hasPermission('leads.edit'))
+                        @php
+                            $leadDisqualificationLabels = [
+                                'doNotCall'            => trans('admin::app.leads.disqualification.do-not-call'),
+                                'incorrectInfo'        => trans('admin::app.leads.disqualification.incorrect-info'),
+                                'confirmDoNotCall'     => trans('admin::app.leads.disqualification.confirm-do-not-call'),
+                                'confirmIncorrectInfo' => trans('admin::app.leads.disqualification.confirm-incorrect-info'),
+                                'comment'              => trans('admin::app.leads.disqualification.comment'),
+                                'commentPlaceholder'   => trans('admin::app.leads.disqualification.comment-placeholder'),
+                                'commentRequired'      => trans('admin::app.leads.disqualification.comment-required'),
+                                'disagree'             => trans('admin::app.components.modal.confirm.disagree-btn'),
+                                'agree'                => trans('admin::app.components.modal.confirm.agree-btn'),
+                            ];
+                        @endphp
+
+                        <v-lead-disqualification-actions
+                            action-url="{{ route('admin.leads.disqualify', $lead->id) }}"
+                            csrf-token="{{ csrf_token() }}"
+                            :labels='@json($leadDisqualificationLabels)'
+                        ></v-lead-disqualification-actions>
+                    @endif
                 </div>
             </div>
 
@@ -200,6 +270,112 @@
     </div>
 
     @pushOnce('scripts')
+        <script
+            type="text/x-template"
+            id="v-lead-disqualification-actions-template"
+        >
+            <div class="flex flex-wrap items-center gap-2">
+                <form
+                    ref="disqualificationForm"
+                    method="POST"
+                    :action="actionUrl"
+                    class="hidden"
+                >
+                    <input
+                        type="hidden"
+                        name="_token"
+                        :value="csrfToken"
+                    />
+
+                    <input
+                        type="hidden"
+                        name="reason"
+                        :value="selectedReason"
+                    />
+
+                    <textarea
+                        name="comment"
+                        :value="comment"
+                    ></textarea>
+                </form>
+
+                <button
+                    type="button"
+                    class="secondary-button !min-h-[34px] !px-3 text-xs"
+                    @click="openDisqualificationModal('do_not_call', labels.doNotCall, labels.confirmDoNotCall)"
+                >
+                    @{{ labels.doNotCall }}
+                </button>
+
+                <button
+                    type="button"
+                    class="secondary-button !min-h-[34px] !px-3 text-xs"
+                    @click="openDisqualificationModal('incorrect_info', labels.incorrectInfo, labels.confirmIncorrectInfo)"
+                >
+                    @{{ labels.incorrectInfo }}
+                </button>
+
+                <x-admin::modal
+                    ref="disqualificationModal"
+                    position="center"
+                >
+                    <x-slot:header>
+                        <h3 class="text-base font-semibold dark:text-white">
+                            @{{ selectedTitle }}
+                        </h3>
+                    </x-slot>
+
+                    <x-slot:content>
+                        <div class="grid gap-3">
+                            <p class="text-sm text-gray-600 dark:text-gray-300">
+                                @{{ selectedMessage }}
+                            </p>
+
+                            <x-admin::form.control-group class="!mb-0">
+                                <x-admin::form.control-group.label class="required">
+                                    @{{ labels.comment }}
+                                </x-admin::form.control-group.label>
+
+                                <textarea
+                                    ref="commentInput"
+                                    class="flex min-h-[110px] w-full rounded-md border px-3 py-2 text-sm text-gray-600 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+                                    v-model.trim="comment"
+                                    :placeholder="labels.commentPlaceholder"
+                                ></textarea>
+
+                                <p
+                                    class="mt-1 text-xs text-red-600"
+                                    v-if="commentError"
+                                >
+                                    @{{ commentError }}
+                                </p>
+                            </x-admin::form.control-group>
+                        </div>
+                    </x-slot>
+
+                    <x-slot:footer>
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                class="secondary-button"
+                                @click="$refs.disqualificationModal.close()"
+                            >
+                                @{{ labels.disagree }}
+                            </button>
+
+                            <button
+                                type="button"
+                                class="primary-button"
+                                @click="submitDisqualification"
+                            >
+                                @{{ labels.agree }}
+                            </button>
+                        </div>
+                    </x-slot>
+                </x-admin::modal>
+            </div>
+        </script>
+
         <script
             type="text/x-template"
             id="v-replicate-lead-template"
@@ -406,6 +582,63 @@
         </script>
 
         <script type="module">
+            app.component('v-lead-disqualification-actions', {
+                template: '#v-lead-disqualification-actions-template',
+
+                props: {
+                    actionUrl: {
+                        type: String,
+                        required: true,
+                    },
+
+                    csrfToken: {
+                        type: String,
+                        required: true,
+                    },
+
+                    labels: {
+                        type: Object,
+                        required: true,
+                    },
+                },
+
+                data() {
+                    return {
+                        selectedReason: '',
+                        selectedTitle: '',
+                        selectedMessage: '',
+                        comment: '',
+                        commentError: '',
+                    };
+                },
+
+                methods: {
+                    openDisqualificationModal(reason, title, message) {
+                        this.selectedReason = reason;
+                        this.selectedTitle = title;
+                        this.selectedMessage = message;
+                        this.comment = '';
+                        this.commentError = '';
+
+                        this.$refs.disqualificationModal.open();
+
+                        this.$nextTick(() => {
+                            this.$refs.commentInput?.focus();
+                        });
+                    },
+
+                    submitDisqualification() {
+                        if (! this.comment.trim()) {
+                            this.commentError = this.labels.commentRequired;
+
+                            return;
+                        }
+
+                        this.$refs.disqualificationForm?.submit();
+                    },
+                },
+            });
+
             app.component('v-replicate-lead', {
                 template: '#v-replicate-lead-template',
 

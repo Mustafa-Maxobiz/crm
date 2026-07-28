@@ -68,24 +68,30 @@
     <div class="flex items-center gap-0.5">
         {!! view_render_event('admin.leads.index.view_switcher.pipeline.view_type.before') !!}
 
-        @if (request('view_type'))
+        @if (request('view_type') === 'kanban')
+            <span class="icon-kanban rounded-md bg-gray-100 p-2 text-2xl dark:bg-gray-950"></span>
+
             <a
                 class="flex"
-                href="{{ route('admin.leads.index') }}"
+                href="{{ route('admin.leads.index', [
+                    'pipeline_id' => request('pipeline_id'),
+                    'view_type'   => 'table',
+                ]) }}"
+            >
+                <span class="icon-list p-2 text-2xl"></span>
+            </a>
+        @else
+            <a
+                class="flex"
+                href="{{ route('admin.leads.index', [
+                    'pipeline_id' => request('pipeline_id'),
+                    'view_type'   => 'kanban',
+                ]) }}"
             >
                 <span class="icon-kanban p-2 text-2xl"></span>
             </a>
 
             <span class="icon-list rounded-md bg-gray-100 p-2 text-2xl dark:bg-gray-950"></span>
-        @else
-            <span class="icon-kanban rounded-md bg-white p-2 text-2xl dark:bg-gray-900"></span>
-
-            <a
-                href="{{ route('admin.leads.index', ['view_type' => 'table']) }}"
-                class="flex"
-            >
-                <span class="icon-list p-2 text-2xl"></span>
-            </a>
         @endif
 
         {!! view_render_event('admin.leads.index.view_switcher.pipeline.view_type.after') !!}

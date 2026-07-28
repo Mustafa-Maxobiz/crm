@@ -56,10 +56,11 @@
                         disable: this.disable ?? [],
                         minDate: this.minDate ?? '',
                         maxDate: this.maxDate ?? '',
-                        altFormat: "Y-m-d H:i:S",
+                        altInput: true,
+                        altFormat: "Y-m-d h:i K",
                         dateFormat: "Y-m-d H:i:S",
                         enableTime: true,
-                        time_24hr: true,
+                        time_24hr: false,
                         weekNumbers: true,
 
                         onChange: function(selectedDates, dateStr, instance) {

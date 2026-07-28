@@ -8,7 +8,22 @@
 
 {!! view_render_event('admin.leads.view.stages.after', ['lead' => $lead]) !!}
 
+
 @pushOnce('scripts')
+    @php
+        $hasMeetingActivity = $lead->activities()->where('type', 'meeting')->exists();
+
+        $defaultMeetingParticipants = [
+            'users' => auth()->guard('user')->user()
+                ? [[
+                    'id'   => auth()->guard('user')->id(),
+                    'name' => auth()->guard('user')->user()->name,
+                ]]
+                : [],
+            'persons' => [],
+        ];
+    @endphp
+
     <script type="text/x-template" id="v-lead-stages-template">
         <!-- Stages Container -->
         <div
@@ -177,7 +192,124 @@
                 </form>
             </x-admin::form>
 
-            {!! view_render_event('admin.leads.view.stages.form_controls.after', ['lead' => $lead]) !!}
+                    {!! view_render_event('admin.leads.view.stages.form_controls.after', ['lead' => $lead]) !!}
+
+            <x-admin::form
+                v-slot="{ meta, errors, handleSubmit }"
+                as="div"
+                ref="meetingActivityForm"
+            >
+                <form @submit="handleSubmit($event, createMeetingAndMove)">
+                    <x-admin::modal
+                        ref="meetingActivityModal"
+                        position="center"
+                        size="medium"
+                    >
+                        <x-slot:header>
+                            <h3 class="text-base font-semibold dark:text-white">
+                                Add Meeting
+                            </h3>
+                        </x-slot>
+
+                        <x-slot:content>
+                            <div class="grid gap-4">
+                                <div class="flex gap-4 max-sm:flex-wrap">
+                                    <x-admin::form.control-group class="w-full">
+                                        <x-admin::form.control-group.label class="required">
+                                            Schedule From
+                                        </x-admin::form.control-group.label>
+
+                                        <x-admin::form.control-group.control
+                                            type="datetime"
+                                            name="schedule_from"
+                                            rules="required"
+                                            label="Schedule From"
+                                        />
+
+                                        <x-admin::form.control-group.error control-name="schedule_from" />
+                                    </x-admin::form.control-group>
+
+                                    <x-admin::form.control-group class="w-full">
+                                        <x-admin::form.control-group.label class="required">
+                                            Schedule To
+                                        </x-admin::form.control-group.label>
+
+                                        <x-admin::form.control-group.control
+                                            type="datetime"
+                                            name="schedule_to"
+                                            rules="required"
+                                            label="Schedule To"
+                                        />
+
+                                        <x-admin::form.control-group.error control-name="schedule_to" />
+                                    </x-admin::form.control-group>
+                                </div>
+
+                                <x-admin::form.control-group>
+                                    <x-admin::form.control-group.label class="required">
+                                        Comment
+                                    </x-admin::form.control-group.label>
+
+                                    <x-admin::form.control-group.control
+                                        type="textarea"
+                                        name="comment"
+                                        rules="required|max:500"
+                                        label="Comment"
+                                    />
+
+                                    <x-admin::form.control-group.error control-name="comment" />
+                                </x-admin::form.control-group>
+
+                                <x-admin::form.control-group>
+                                    <x-admin::form.control-group.label class="required">
+                                        Participants
+                                    </x-admin::form.control-group.label>
+
+                                    <v-activity-participants :participants="defaultMeetingParticipants"></v-activity-participants>
+
+                                    <p
+                                        class="mt-1 text-xs text-red-600"
+                                        v-if="meetingErrors.participants"
+                                    >
+                                        @{{ meetingErrors.participants }}
+                                    </p>
+                                </x-admin::form.control-group>
+
+                                <x-admin::form.control-group class="!mb-0">
+                                    <x-admin::form.control-group.label class="required">
+                                        Location
+                                    </x-admin::form.control-group.label>
+
+                                    <x-admin::form.control-group.control
+                                        type="text"
+                                        name="location"
+                                        rules="required"
+                                        label="Location"
+                                    />
+
+                                    <x-admin::form.control-group.error control-name="location" />
+                                </x-admin::form.control-group>
+                            </div>
+                        </x-slot>
+
+                        <x-slot:footer>
+                            <button
+                                type="submit"
+                                class="primary-button"
+                                :disabled="isMeetingStoring"
+                            >
+                                <template v-if="isMeetingStoring">
+                                    Saving...
+                                </template>
+
+                                <template v-else>
+                                    Save Meeting
+                                </template>
+                            </button>
+                        </x-slot>
+                    </x-admin::modal>
+                </form>
+            </x-admin::form>
         </div>
     </script>
 
@@ -193,7 +325,22 @@
 
                     nextStage: null,
 
+                    pendingMeetingStage: null,
+
                     stages: @json($lead->pipeline->stages),
+
+                    lead: @json([
+                        'id'    => $lead->id,
+                        'title' => $lead->title,
+                    ]),
+
+                    hasMeetingActivity: @json($hasMeetingActivity),
+
+                    defaultMeetingParticipants: @json($defaultMeetingParticipants),
+
+                    isMeetingStoring: false,
+
+                    meetingErrors: {},
 
                     stageToggler: '',
                 }
@@ -233,6 +380,15 @@
                         return;
                     }
 
+                    if (stage.code === 'meeting' && ! this.hasMeetingActivity) {
+                        this.pendingMeetingStage = stage;
+                        this.meetingErrors = {};
+
+                        this.$refs.meetingActivityModal.open();
+
+                        return;
+                    }
+
                     this.$refs.stageUpdateModal.close();
 
                     this.isUpdating = true;
@@ -255,6 +411,68 @@
 
                             this.$emitter.emit('add-flash', { type: 'error', message: error.response.data.message });
                         });
+                },
+
+                createMeetingAndMove(params) {
+                    this.meetingErrors = {};
+
+                    if (! this.hasParticipants(params.participants || {})) {
+                        this.meetingErrors = {
+                            participants: 'Please select at least one participant.',
+                        };
+
+                        return;
+                    }
+
+                    this.isMeetingStoring = true;
+
+                    this.$axios
+                        .post("{{ route('admin.activities.store') }}", {
+                            ...params,
+                            type: 'meeting',
+                            activity_status: 'scheduled',
+                            stage_meeting: 1,
+                            lead_id: this.lead.id,
+                        })
+                        .then((response) => {
+                            this.isMeetingStoring = false;
+                            this.hasMeetingActivity = true;
+
+                            this.$emitter.emit('add-flash', { type: 'success', message: response.data.message });
+                            this.$emitter.emit('on-activity-added', response.data.data);
+                            this.$emitter.emit('activity-created');
+
+                            this.$refs.meetingActivityModal.close();
+
+                            const stage = this.pendingMeetingStage;
+
+                            this.pendingMeetingStage = null;
+
+                            if (stage) {
+                                this.update(stage);
+                            }
+                        })
+                        .catch((error) => {
+                            this.isMeetingStoring = false;
+
+                            if (error.response?.status === 422) {
+                                setErrors(error.response.data.errors || {});
+
+                                this.meetingErrors = {
+                                    participants: error.response.data.errors?.participants?.[0],
+                                };
+
+                                return;
+                            }
+
+                            this.$emitter.emit('add-flash', { type: 'error', message: error.response?.data?.message || 'Meeting could not be saved.' });
+                        });
+                },
+
+                hasParticipants(participants) {
+                    return ['users', 'persons'].some(type => {
+                        return (participants[type] || []).some(participantId => !! participantId);
+                    });
                 },
             },
         });

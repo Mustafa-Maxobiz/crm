@@ -161,12 +161,6 @@
                 </span>
             </button>
 
-            <span
-                v-if="hasUnreadNotifications"
-                aria-hidden="true"
-                style="position: absolute; top: 5px; right: 7px; z-index: 20; display: block; width: 8px; height: 8px; border-radius: 9999px; background: #dc2626; border: 2px solid #ffffff; pointer-events: none;"
-            ></span>
-
             <div
                 class="absolute top-11 z-10 w-[360px] overflow-hidden rounded border border-gray-300 bg-white shadow-[0px_10px_20px_0px_#0000001F] ltr:right-0 rtl:left-0 dark:border-gray-800 dark:bg-gray-900 max-sm:fixed max-sm:left-3 max-sm:right-3 max-sm:top-14 max-sm:w-auto"
                 v-show="isOpen"
@@ -182,6 +176,20 @@
                     >
                         @{{ countLabel }}
                     </span>
+                </div>
+
+                <div
+                    class="border-b border-gray-200 px-4 py-2 dark:border-gray-800"
+                    v-if="notifications.length"
+                >
+                    <button
+                        type="button"
+                        class="secondary-button w-full justify-center px-3 py-1.5 text-xs"
+                        :disabled="processingAll"
+                        @click.stop="markAllAsDone"
+                    >
+                        @lang('admin::app.activities.notifications.mark-all-read')
+                    </button>
                 </div>
 
                 <div
@@ -235,7 +243,7 @@
                                 :disabled="processingId === notification.id"
                                 @click.stop="markAsDone(notification)"
                             >
-                                @lang('admin::app.activities.notifications.mark-done')
+                                @{{ notification.type === 'meeting' ? labels.markRead : labels.markDone }}
                             </button>
                         </div>
                     </div>
@@ -274,9 +282,16 @@
 
                     processingId: null,
 
+                    processingAll: false,
+
                     refreshInterval: null,
 
                     timezone: "{{ config('app.timezone') }}",
+
+                    labels: {
+                        markRead: @json(trans('admin::app.activities.notifications.mark-read')),
+                        markDone: @json(trans('admin::app.activities.notifications.mark-done')),
+                    },
                 };
             },
 
@@ -365,6 +380,23 @@
                         })
                         .finally(() => {
                             this.processingId = null;
+                        });
+                },
+
+                markAllAsDone() {
+                    this.processingAll = true;
+
+                    this.$axios
+                        .put("{{ route('admin.activities.notifications.done_all') }}")
+                        .then(response => {
+                            this.notifications = [];
+
+                            this.count = 0;
+
+                            this.$emitter.emit('add-flash', { type: 'success', message: response.data.message });
+                        })
+                        .finally(() => {
+                            this.processingAll = false;
                         });
                 },
 

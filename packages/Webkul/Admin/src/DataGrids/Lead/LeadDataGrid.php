@@ -60,6 +60,8 @@ class LeadDataGrid extends DataGrid
                 'leads.next_followup_date',
                 'leads.followup_count',
                 'leads.last_followup_date',
+                'leads.lead_disqualification_reason',
+                'leads.lead_disqualified_at',
                 'lead_sources.name as lead_source_name',
                 'lead_types.name as lead_type_name',
                 'leads.created_at',
@@ -86,8 +88,16 @@ class LeadDataGrid extends DataGrid
             ->whereNull('leads.deleted_at')
             ->where('leads.lead_pipeline_id', $this->pipeline->id);
 
-        if ($userIds = bouncer()->getAuthorizedUserIds()) {
-            $queryBuilder->whereIn('leads.user_id', $userIds);
+        if (! app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin() && $userIds = bouncer()->getAuthorizedUserIds()) {
+            if ($this->isSdrUser()) {
+                $queryBuilder->where(function ($query) use ($userIds) {
+                    $query
+                        ->whereIn('leads.user_id', $userIds)
+                        ->orWhere('lead_pipeline_stages.code', 'new');
+                });
+            } else {
+                $queryBuilder->whereIn('leads.user_id', $userIds);
+            }
         }
 
         app(\Webkul\Lead\Services\SourceAccessService::class)->applyLeadTableScope($queryBuilder);
@@ -113,10 +123,16 @@ class LeadDataGrid extends DataGrid
         $this->addFilter('next_followup_date', 'leads.next_followup_date');
         $this->addFilter('followup_count', 'leads.followup_count');
         $this->addFilter('last_followup_date', 'leads.last_followup_date');
+        $this->addFilter('lead_disqualification_reason', 'leads.lead_disqualification_reason');
         $this->addFilter('created_at', 'leads.created_at');
         $this->addFilter('rotten_lead', DB::raw('DATEDIFF(NOW(), '.$tablePrefix.'leads.created_at) >= '.$tablePrefix.'lead_pipelines.rotten_days'));
 
         return $queryBuilder;
+    }
+
+    protected function isSdrUser(): bool
+    {
+        return strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr';
     }
 
     /**
@@ -277,6 +293,27 @@ class LeadDataGrid extends DataGrid
                 })
                 ->values()
                 ->all(),
+        ]);
+
+        $this->addColumn([
+            'index'              => 'lead_disqualification_reason',
+            'label'              => trans('admin::app.leads.index.datagrid.disqualification'),
+            'type'               => 'string',
+            'searchable'         => false,
+            'sortable'           => true,
+            'filterable'         => true,
+            'filterable_type'    => 'dropdown',
+            'filterable_options' => [
+                ['label' => trans('admin::app.leads.disqualification.do-not-call'), 'value' => 'do_not_call'],
+                ['label' => trans('admin::app.leads.disqualification.incorrect-info'), 'value' => 'incorrect_info'],
+            ],
+            'closure'            => function ($row) {
+                if (! $row->lead_disqualification_reason) {
+                    return '--';
+                }
+
+                return trans('admin::app.leads.disqualification.'.str_replace('_', '-', $row->lead_disqualification_reason));
+            },
         ]);
 
         $this->addColumn([

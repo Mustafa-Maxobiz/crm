@@ -172,44 +172,61 @@
 
                                     {!! view_render_event('admin.leads.index.kanban.content.stage.body.card.title.after') !!}
 
-                                    <div class="flex flex-wrap gap-1">
-                                        <div
-                                            class="flex items-center gap-1 rounded-xl bg-gray-200 px-2 py-1 text-xs font-medium dark:bg-gray-800 dark:text-white"
-                                            v-if="element.user"
-                                        >
-                                            <span class="icon-settings-user text-sm"></span>
+                                    <div class="flex flex-col gap-1">
+                                        <span class="text-[10px] font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-300">
+                                            Source
+                                        </span>
 
-                                            @{{ element.user.name }}
-                                        </div>
-
-                                        <div class="rounded-xl bg-gray-200 px-2 py-1 text-xs font-medium dark:bg-gray-800 dark:text-white">
-                                            @{{ element.formatted_lead_value }}
-                                        </div>
-
-                                        <div class="rounded-xl bg-gray-200 px-2 py-1 text-xs font-medium dark:bg-gray-800 dark:text-white">
-                                            @{{ element.source.name }}
-                                        </div>
-
-                                        <div class="rounded-xl bg-gray-200 px-2 py-1 text-xs font-medium dark:bg-gray-800 dark:text-white">
-                                            @{{ element.type.name }}
-                                        </div>
-
-                                        <!-- Tags -->
-                                        <template v-for="tag in element.tags">
-                                            {!! view_render_event('admin.leads.index.kanban.content.stage.body.card.tag.before') !!}
-
+                                        <div class="flex flex-wrap gap-1">
                                             <div
-                                                class="rounded-xl bg-gray-200 px-2 py-1 text-xs font-medium dark:bg-gray-800"
-                                                :style="{
-                                                    backgroundColor: tag.color,
-                                                    color: tagTextColor[tag.color]
-                                                }"
+                                                class="flex items-center gap-1 rounded-xl bg-gray-200 px-2 py-1 text-xs font-medium dark:bg-gray-800 dark:text-white"
+                                                v-if="element.user"
                                             >
-                                                @{{ tag.name }}
+                                                <span class="icon-settings-user text-sm"></span>
+
+                                                @{{ element.user.name }}
                                             </div>
 
-                                            {!! view_render_event('admin.leads.index.kanban.content.stage.body.card.tag.after') !!}
-                                        </template>
+                                            <div class="rounded-xl bg-gray-200 px-2 py-1 text-xs font-medium dark:bg-gray-800 dark:text-white">
+                                                @{{ element.formatted_lead_value }}
+                                            </div>
+
+                                            <div class="rounded-xl bg-gray-200 px-2 py-1 text-xs font-medium dark:bg-gray-800 dark:text-white">
+                                                @{{ element.source.name }}
+                                            </div>
+
+                                            <div class="rounded-xl bg-gray-200 px-2 py-1 text-xs font-medium dark:bg-gray-800 dark:text-white">
+                                                @{{ element.type.name }}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        class="flex flex-col gap-1"
+                                        v-if="element.tags.length"
+                                    >
+                                        <span class="text-[10px] font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-300">
+                                            Tags
+                                        </span>
+
+                                        <div class="flex flex-wrap gap-1">
+                                            <!-- Tags -->
+                                            <template v-for="tag in element.tags">
+                                                {!! view_render_event('admin.leads.index.kanban.content.stage.body.card.tag.before') !!}
+
+                                                <div
+                                                    class="rounded-xl bg-gray-200 px-2 py-1 text-xs font-medium dark:bg-gray-800"
+                                                    :style="{
+                                                        backgroundColor: tag.color,
+                                                        color: getTagTextColor(tag.color)
+                                                    }"
+                                                >
+                                                    @{{ tag.name }}
+                                                </div>
+
+                                                {!! view_render_event('admin.leads.index.kanban.content.stage.body.card.tag.after') !!}
+                                            </template>
+                                        </div>
                                     </div>
                                 </a>
 
@@ -733,6 +750,29 @@
                         page: this.stageLeads[stage.sort_order].leads.meta.current_page + 1,
                         limit: 10,
                     });
+                },
+
+                getTagTextColor(color) {
+                    if (! color) {
+                        return '#111827';
+                    }
+
+                    if (this.tagTextColor[color]) {
+                        return this.tagTextColor[color];
+                    }
+
+                    const hex = color.replace('#', '');
+
+                    if (! /^[0-9A-Fa-f]{6}$/.test(hex)) {
+                        return '#111827';
+                    }
+
+                    const red = parseInt(hex.substring(0, 2), 16);
+                    const green = parseInt(hex.substring(2, 4), 16);
+                    const blue = parseInt(hex.substring(4, 6), 16);
+                    const brightness = ((red * 299) + (green * 587) + (blue * 114)) / 1000;
+
+                    return brightness < 150 ? '#FFFFFF' : '#111827';
                 },
 
                 //=======================================================================================

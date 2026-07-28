@@ -7,6 +7,7 @@
     {!! view_render_event('admin.activities.edit.form.before') !!}
 
     <x-admin::form
+        id="activity-edit-form"
         :action="route('admin.activities.update', $activity->id)"
         method="PUT"
     >
@@ -207,13 +208,86 @@
                                     <option value="meeting">
                                         @lang('admin::app.activities.edit.meeting')
                                     </option>
-
-                                    <option value="lunch">
-                                        @lang('admin::app.activities.edit.lunch')
-                                    </option>
                                 </x-admin::form.control-group.control>
 
                                 <x-admin::form.control-group.error control-name="type" />
+                            </x-admin::form.control-group>
+
+                            <!-- Activity Status -->
+                            @php
+                                $activityStatus = old('activity_status');
+
+                                if ($activityStatus === null) {
+                                    $callStatus = $activity->call_status ?? 'scheduled';
+                                    $callStatusAt = $activity->call_status_updated_at ?? $activity->updated_at ?? $activity->schedule_from;
+
+                                    if (
+                                        $callStatus === 'not_answered'
+                                        && $callStatusAt
+                                        && \Carbon\Carbon::parse($callStatusAt)->lte(now()->subHours(2))
+                                    ) {
+                                        $callStatus = 'scheduled';
+                                    }
+
+                                    $activityStatus = $activity->is_done
+                                        ? 'done'
+                                        : ($activity->type === 'meeting'
+                                            ? 'meeting_scheduled'
+                                            : ($callStatus === 'not_answered'
+                                                ? 'not_answered'
+                                                : 'scheduled'));
+                                }
+                            @endphp
+
+                            <x-admin::form.control-group>
+                                <x-admin::form.control-group.label>
+                                    Activity Status
+                                </x-admin::form.control-group.label>
+
+                                <select
+                                    name="activity_status"
+                                    id="activity_status"
+                                    data-initial-status="{{ $activityStatus }}"
+                                    class="custom-select w-full rounded border border-gray-200 px-2.5 py-2 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400"
+                                >
+                                    <option value="scheduled" @selected($activityStatus === 'scheduled')>
+                                        Scheduled
+                                    </option>
+
+                                    <option value="not_answered" @selected($activityStatus === 'not_answered')>
+                                        Not Answered
+                                    </option>
+
+                                    <option value="meeting_scheduled" @selected($activityStatus === 'meeting_scheduled')>
+                                        Meeting Schedule
+                                    </option>
+
+                                    <option value="done" @selected($activityStatus === 'done')>
+                                        End the lead
+                                    </option>
+                                </select>
+
+                                <input
+                                    type="hidden"
+                                    name="end_lead_comment"
+                                    id="end_lead_comment"
+                                    value="{{ old('end_lead_comment') }}"
+                                />
+
+                                <div
+                                    id="meeting-schedule-info"
+                                    class="mt-2 hidden rounded-md border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-700"
+                                >
+                                    Meeting Schedule changes this activity to a meeting. Schedule, comment, lead, participants, and location are required.
+                                </div>
+
+                                <button
+                                    type="button"
+                                    id="end-lead-comment-button"
+                                    class="secondary-button mt-2 hidden !min-h-[34px] !px-3 text-xs"
+                                >
+                                    Add End Comment
+                                </button>
                             </x-admin::form.control-group>
 
                             <!-- Location -->
@@ -242,9 +316,416 @@
         </div>
     </x-admin::form>
 
+    <div
+        id="end-lead-comment-modal"
+        class="fixed inset-0 z-[10002] hidden items-center justify-center bg-black/50 p-4"
+    >
+        <div class="w-full max-w-[520px] rounded-lg bg-white shadow-xl dark:bg-gray-900">
+            <div class="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white">
+                    End the lead
+                </h3>
+
+                <button
+                    type="button"
+                    id="end-lead-comment-close"
+                    class="icon-cross-large rounded-md p-1 text-xl text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                ></button>
+            </div>
+
+            <div class="px-5 py-4">
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Comment <span class="text-red-600">*</span>
+                </label>
+
+                <textarea
+                    id="end-lead-comment-input"
+                    class="min-h-[120px] w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+                    placeholder="Add details before ending this lead."
+                ></textarea>
+
+                <p
+                    id="end-lead-comment-error"
+                    class="mt-1 hidden text-xs text-red-600"
+                >
+                    Please add a comment before ending the lead.
+                </p>
+            </div>
+
+            <div class="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-4 dark:border-gray-800">
+                <button
+                    type="button"
+                    id="end-lead-comment-cancel"
+                    class="secondary-button"
+                >
+                    Cancel
+                </button>
+
+                <button
+                    type="button"
+                    id="end-lead-comment-apply"
+                    class="primary-button"
+                >
+                    Save Comment
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div
+        id="meeting-schedule-modal"
+        class="fixed inset-0 z-[10002] hidden items-center justify-center bg-black/50 p-4"
+    >
+        <div class="w-full max-w-[680px] rounded-lg bg-white shadow-xl dark:bg-gray-900">
+            <div class="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white">
+                    Meeting Schedule
+                </h3>
+
+                <button
+                    type="button"
+                    id="meeting-schedule-close"
+                    class="icon-cross-large rounded-md p-1 text-xl text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                ></button>
+            </div>
+
+            <div class="grid gap-4 px-5 py-4">
+                <div class="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
+                    <div>
+                        <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Schedule From <span class="text-red-600">*</span>
+                        </label>
+
+                        <x-admin::flat-picker.datetime class="!w-full" ::allow-input="true">
+                            <input
+                                id="meeting-schedule-from"
+                                class="flex w-full rounded-md border px-3 py-2 text-sm text-gray-600 transition-all hover:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400"
+                                placeholder="Schedule From"
+                            />
+                        </x-admin::flat-picker.datetime>
+                    </div>
+
+                    <div>
+                        <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Schedule To <span class="text-red-600">*</span>
+                        </label>
+
+                        <x-admin::flat-picker.datetime class="!w-full" ::allow-input="true">
+                            <input
+                                id="meeting-schedule-to"
+                                class="flex w-full rounded-md border px-3 py-2 text-sm text-gray-600 transition-all hover:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400"
+                                placeholder="Schedule To"
+                            />
+                        </x-admin::flat-picker.datetime>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Location <span class="text-red-600">*</span>
+                    </label>
+
+                    <input
+                        type="text"
+                        id="meeting-schedule-location"
+                        class="flex w-full rounded-md border px-3 py-2 text-sm text-gray-600 transition-all hover:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400"
+                        placeholder="Google Meet, Zoom, office, or phone"
+                    />
+                </div>
+
+                <div>
+                    <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Comment <span class="text-red-600">*</span>
+                    </label>
+
+                    <textarea
+                        id="meeting-schedule-comment"
+                        class="min-h-[110px] w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+                        placeholder="Add meeting details."
+                    ></textarea>
+                </div>
+
+                <p
+                    id="meeting-schedule-error"
+                    class="hidden text-xs text-red-600"
+                >
+                    Please add schedule, location, and comment before changing this activity to a meeting.
+                </p>
+            </div>
+
+            <div class="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-4 dark:border-gray-800">
+                <button
+                    type="button"
+                    id="meeting-schedule-cancel"
+                    class="secondary-button"
+                >
+                    Cancel
+                </button>
+
+                <button
+                    type="button"
+                    id="meeting-schedule-apply"
+                    class="primary-button"
+                >
+                    Apply Meeting
+                </button>
+            </div>
+        </div>
+    </div>
+
     {!! view_render_event('admin.activities.edit.form.after') !!}
 
     @pushOnce('scripts')
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                const form = document.getElementById('activity-edit-form');
+                let status = document.getElementById('activity_status');
+                const type = document.getElementById('type');
+                const comment = document.getElementById('comment');
+                const location = document.getElementById('location');
+                const endLeadComment = document.getElementById('end_lead_comment');
+                const meetingInfo = document.getElementById('meeting-schedule-info');
+                const endCommentButton = document.getElementById('end-lead-comment-button');
+                const modal = document.getElementById('end-lead-comment-modal');
+                const modalInput = document.getElementById('end-lead-comment-input');
+                const modalError = document.getElementById('end-lead-comment-error');
+                const modalClose = document.getElementById('end-lead-comment-close');
+                const modalCancel = document.getElementById('end-lead-comment-cancel');
+                const modalApply = document.getElementById('end-lead-comment-apply');
+                const meetingModal = document.getElementById('meeting-schedule-modal');
+                const meetingFromInput = document.getElementById('meeting-schedule-from');
+                const meetingToInput = document.getElementById('meeting-schedule-to');
+                const meetingLocationInput = document.getElementById('meeting-schedule-location');
+                const meetingCommentInput = document.getElementById('meeting-schedule-comment');
+                const meetingError = document.getElementById('meeting-schedule-error');
+                const meetingClose = document.getElementById('meeting-schedule-close');
+                const meetingCancel = document.getElementById('meeting-schedule-cancel');
+                const meetingApply = document.getElementById('meeting-schedule-apply');
+                let meetingModalApplied = false;
+
+                if (! form || ! status) {
+                    return;
+                }
+
+                const scheduleFrom = form.querySelector('[name="schedule_from"]');
+                const scheduleTo = form.querySelector('[name="schedule_to"]');
+                let fallbackStatus = status.dataset.initialStatus === 'done'
+                    ? 'scheduled'
+                    : (status.dataset.initialStatus || 'scheduled');
+                let endLeadCommentApplied = Boolean(endLeadComment?.value?.trim());
+
+                const openEndCommentModal = function () {
+                    if (! modal.classList.contains('hidden')) {
+                        return;
+                    }
+
+                    modalInput.value = endLeadComment?.value || '';
+                    modalError.classList.add('hidden');
+                    modal.classList.remove('hidden');
+                    modal.classList.add('flex');
+                    document.body.style.overflow = 'hidden';
+                    setTimeout(() => modalInput.focus(), 50);
+                };
+
+                const closeEndCommentModal = function (revert = false) {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                    document.body.style.overflow = 'auto';
+
+                    if (revert && ! endLeadCommentApplied) {
+                        status.value = fallbackStatus;
+                        syncStatusFields();
+                    }
+                };
+
+                const setDateValue = function (input, value) {
+                    if (! input) {
+                        return;
+                    }
+
+                    if (input._flatpickr && value) {
+                        input._flatpickr.setDate(value, true, 'Y-m-d H:i:S');
+
+                        return;
+                    }
+
+                    input.value = value || '';
+                };
+
+                const openMeetingScheduleModal = function () {
+                    if (! meetingModal.classList.contains('hidden')) {
+                        return;
+                    }
+
+                    setDateValue(meetingFromInput, scheduleFrom?.value || '');
+                    setDateValue(meetingToInput, scheduleTo?.value || '');
+                    meetingLocationInput.value = location?.value || '';
+                    meetingCommentInput.value = comment?.value || '';
+                    meetingError.classList.add('hidden');
+                    meetingModal.classList.remove('hidden');
+                    meetingModal.classList.add('flex');
+                    document.body.style.overflow = 'hidden';
+                    setTimeout(() => meetingFromInput.focus(), 50);
+                };
+
+                const closeMeetingScheduleModal = function (revert = false) {
+                    meetingModal.classList.add('hidden');
+                    meetingModal.classList.remove('flex');
+                    document.body.style.overflow = 'auto';
+
+                    if (revert && ! meetingModalApplied) {
+                        status.value = fallbackStatus;
+                        syncStatusFields();
+                    }
+                };
+
+                const syncStatusFields = function () {
+                    const isMeetingSchedule = status.value === 'meeting_scheduled';
+                    const isEndLead = status.value === 'done';
+
+                    meetingInfo?.classList.toggle('hidden', ! isMeetingSchedule);
+                    endCommentButton?.classList.toggle('hidden', ! isEndLead);
+
+                    if (isMeetingSchedule) {
+                        type.value = 'meeting';
+                        location?.setAttribute('required', 'required');
+                    } else {
+                        location?.removeAttribute('required');
+                    }
+                };
+
+                const handleStatusChange = function (event = null) {
+                    if (event?.target?.id === 'activity_status') {
+                        status = event.target;
+                    }
+
+                    if (status.value === 'meeting_scheduled') {
+                        meetingModalApplied = false;
+                        openMeetingScheduleModal();
+                        syncStatusFields();
+
+                        return;
+                    }
+
+                    if (status.value === 'done') {
+                        endLeadCommentApplied = false;
+                        endLeadComment.value = '';
+                        openEndCommentModal();
+                        syncStatusFields();
+
+                        return;
+                    }
+
+                    fallbackStatus = status.value || 'scheduled';
+                    endLeadComment.value = '';
+                    endLeadCommentApplied = false;
+                    syncStatusFields();
+                };
+
+                status.addEventListener('change', handleStatusChange);
+                status.addEventListener('input', handleStatusChange);
+
+                document.addEventListener('change', function (event) {
+                    if (event.target?.id === 'activity_status') {
+                        handleStatusChange(event);
+                    }
+                });
+
+                document.addEventListener('input', function (event) {
+                    if (event.target?.id === 'activity_status') {
+                        handleStatusChange(event);
+                    }
+                });
+
+                endCommentButton?.addEventListener('click', openEndCommentModal);
+                modalClose?.addEventListener('click', function () {
+                    closeEndCommentModal(true);
+                });
+                modalCancel?.addEventListener('click', function () {
+                    closeEndCommentModal(true);
+                });
+                meetingClose?.addEventListener('click', function () {
+                    closeMeetingScheduleModal(true);
+                });
+                meetingCancel?.addEventListener('click', function () {
+                    closeMeetingScheduleModal(true);
+                });
+
+                modalApply?.addEventListener('click', function () {
+                    if (! modalInput.value.trim()) {
+                        modalError.classList.remove('hidden');
+
+                        return;
+                    }
+
+                    endLeadComment.value = modalInput.value.trim();
+                    comment.value = modalInput.value.trim();
+                    endLeadCommentApplied = true;
+                    fallbackStatus = 'done';
+                    closeEndCommentModal();
+                });
+
+                meetingApply?.addEventListener('click', function () {
+                    if (
+                        ! meetingFromInput.value.trim()
+                        || ! meetingToInput.value.trim()
+                        || ! meetingLocationInput.value.trim()
+                        || ! meetingCommentInput.value.trim()
+                    ) {
+                        meetingError.classList.remove('hidden');
+
+                        return;
+                    }
+
+                    setDateValue(scheduleFrom, meetingFromInput.value.trim());
+                    setDateValue(scheduleTo, meetingToInput.value.trim());
+                    location.value = meetingLocationInput.value.trim();
+                    comment.value = meetingCommentInput.value.trim();
+                    type.value = 'meeting';
+                    meetingModalApplied = true;
+                    fallbackStatus = 'meeting_scheduled';
+                    closeMeetingScheduleModal();
+                    syncStatusFields();
+                });
+
+                const handleActivityFormSubmit = function (event) {
+                    status = document.getElementById('activity_status') || status;
+
+                    if (
+                        status.value === 'meeting_scheduled'
+                        && (
+                            ! scheduleFrom?.value?.trim()
+                            || ! scheduleTo?.value?.trim()
+                            || ! location?.value?.trim()
+                            || ! comment?.value?.trim()
+                        )
+                    ) {
+                        event.preventDefault();
+                        openMeetingScheduleModal();
+
+                        return;
+                    }
+
+                    if (status.value !== 'done' || endLeadComment?.value?.trim()) {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    openEndCommentModal();
+                };
+
+                form.addEventListener('submit', handleActivityFormSubmit, true);
+
+                document.addEventListener('submit', function (event) {
+                    if (event.target?.id === 'activity-edit-form') {
+                        handleActivityFormSubmit(event);
+                    }
+                }, true);
+
+                syncStatusFields();
+            });
+        </script>
+
         <script
             type="text/x-template"
             id="v-multi-lookup-component-template"

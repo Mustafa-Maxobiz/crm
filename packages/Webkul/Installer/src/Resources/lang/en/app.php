@@ -11,6 +11,7 @@ return [
                 'pricing-type'        => 'Pricing Type',
                 'fixed-price'         => 'Fixed Price',
                 'hourly-rate'         => 'Hourly Rate',
+                'optional'            => 'Optional',
                 'source-sub-type'     => 'Source Sub-Type',
                 'source-link'         => 'Source Link',
                 'invitation'          => 'Invitation',
@@ -118,6 +119,7 @@ return [
             'type' => [
                 'existing-business' => 'Existing Business',
                 'new-business'      => 'New Business',
+                'old-business'      => 'Old Business',
             ],
         ],
 

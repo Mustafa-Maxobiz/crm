@@ -9,6 +9,7 @@ use Illuminate\View\View;
 use Webkul\Admin\DataGrids\Settings\SourceDataGrid;
 use Webkul\Admin\Http\Controllers\Controller;
 use Webkul\Lead\Repositories\SourceRepository;
+use Webkul\Lead\Services\SourceAccessService;
 
 class SourceController extends Controller
 {
@@ -17,7 +18,10 @@ class SourceController extends Controller
      *
      * @return void
      */
-    public function __construct(protected SourceRepository $sourceRepository) {}
+    public function __construct(
+        protected SourceRepository $sourceRepository,
+        protected SourceAccessService $sourceAccessService,
+    ) {}
 
     /**
      * Display a listing of the resource.
@@ -192,17 +196,24 @@ class SourceController extends Controller
      */
     public function getSubSources(int $id): JsonResponse
     {
-        if (! app(\Webkul\Lead\Services\SourceAccessService::class)->canAccessSourceId($id)) {
+        if (! $this->sourceAccessService->canViewSubSourcesForParent($id)) {
             return new JsonResponse(['sub_sources' => []], 403);
         }
 
         $source = $this->sourceRepository->findOrFail($id);
-        
-        // Load child sources (sub-sources)
-        $source->load('childSources');
-        
+
+        $subSourceIds = $this->sourceAccessService->getAccessibleSubSourceIdsForParent($source->id);
+
+        $subSources = $this->sourceRepository
+            ->getModel()
+            ->newQuery()
+            ->whereIn('id', $subSourceIds ?? [])
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
         return new JsonResponse([
-            'sub_sources' => $source->childSources->map(function ($subSource) {
+            'sub_sources' => $subSources->map(function ($subSource) {
                 return [
                     'id' => $subSource->id,
                     'name' => $subSource->name,

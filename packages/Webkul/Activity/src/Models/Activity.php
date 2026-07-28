@@ -50,6 +50,8 @@ class Activity extends Model implements ActivityContract
         'schedule_from',
         'schedule_to',
         'is_done',
+        'call_status',
+        'call_status_updated_at',
         'user_id',
     ];
 

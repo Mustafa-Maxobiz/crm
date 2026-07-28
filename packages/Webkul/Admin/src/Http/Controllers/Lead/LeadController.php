@@ -10,8 +10,13 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
+use Maatwebsite\Excel\Concerns\ToArray;
+use Maatwebsite\Excel\Facades\Excel;
 use Prettus\Repository\Criteria\RequestCriteria;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 use Webkul\Admin\DataGrids\Lead\LeadDataGrid;
 use Webkul\Admin\Http\Controllers\Controller;
 use Webkul\Admin\Http\Requests\LeadForm;
@@ -24,6 +29,7 @@ use Webkul\Contact\Repositories\OrganizationRepository;
 use Webkul\Contact\Repositories\PersonRepository;
 use Webkul\Contact\Repositories\TeamRepository;
 use Webkul\Lead\Helpers\MagicAI;
+use Webkul\Lead\Models\Lead;
 use Webkul\Lead\Repositories\LeadRepository;
 use Webkul\Lead\Repositories\PipelineRepository;
 use Webkul\Lead\Repositories\ProductRepository;
@@ -76,6 +82,12 @@ class LeadController extends Controller
             return datagrid(LeadDataGrid::class)->process();
         }
 
+        if (! request()->has('view_type')) {
+            return redirect()->route('admin.leads.index', array_merge(request()->query(), [
+                'view_type' => 'table',
+            ]));
+        }
+
         if (request('pipeline_id')) {
             $pipeline = $this->pipelineRepository->find(request('pipeline_id'));
         } else {
@@ -85,6 +97,329 @@ class LeadController extends Controller
         return view('admin::leads.index', [
             'pipeline' => $pipeline,
             'columns'  => $this->getKanbanColumns(),
+        ]);
+    }
+
+    /**
+     * Download admin lead import template.
+     */
+    public function importTemplate(): StreamedResponse
+    {
+        abort_unless($this->sourceAccessService->isAdmin(), 403);
+
+        $headers = [
+            'title*',
+            'lead_value*',
+            'source*',
+            'type*',
+            'pricing_type*',
+            'person_name',
+            'email',
+            'phone',
+            'company',
+            'sales_owner_email',
+            'pipeline',
+            'stage',
+            'expected_close_date',
+            'schedule_followup',
+            'next_followup_date',
+            'description',
+            'source_link',
+            'sub_source',
+            'source_sub_type',
+            'tags',
+        ];
+
+        $sample = [
+            'Sample Lead',
+            '5000',
+            'Cold Call',
+            'New Business',
+            'Fixed Price',
+            'John Smith',
+            'john@example.com',
+            '+15551234567',
+            'Sample Company',
+            'sdr@example.com',
+            'Default Pipeline',
+            'New',
+            Carbon::now()->addDays(14)->toDateString(),
+            'yes',
+            Carbon::now()->addDay()->format('Y-m-d H:i:s'),
+            'Imported lead description',
+            'https://example.com/source',
+            '',
+            '',
+            'Cold Call,priority',
+        ];
+
+        return response()->streamDownload(function () use ($headers, $sample) {
+            $stream = fopen('php://output', 'w');
+
+            fputcsv($stream, $headers);
+            fputcsv($stream, $sample);
+
+            fclose($stream);
+        }, 'lead-import-template.csv', [
+            'Content-Type' => 'text/csv',
+        ]);
+    }
+
+    /**
+     * Import leads from CSV/XLSX for admins.
+     */
+    public function import(): RedirectResponse|JsonResponse
+    {
+        abort_unless($this->sourceAccessService->isAdmin(), 403);
+
+        $data = request()->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:10240'],
+        ]);
+
+        try {
+            $sheets = Excel::toArray(new class implements ToArray
+            {
+                public function array(array $array) {}
+            }, $data['file']);
+        } catch (Throwable) {
+            return $this->importResponse(0, [
+                'The uploaded file could not be read. Please upload a valid CSV or XLSX file.',
+            ], 422);
+        }
+
+        $rows = $sheets[0] ?? [];
+
+        if (count($rows) < 2) {
+            return $this->importResponse(0, [
+                'The import file has no data rows.',
+            ], 422);
+        }
+
+        $headers = $this->normalizeImportHeaders(array_shift($rows));
+        $missingHeaders = array_diff($this->requiredImportColumns(), array_keys($headers));
+
+        if (! empty($missingHeaders)) {
+            return $this->importResponse(0, [
+                'Missing required columns: '.implode(', ', array_map(fn ($column) => $column.'*', $missingHeaders)),
+            ], 422);
+        }
+
+        $created = 0;
+        $errors = [];
+
+        foreach ($rows as $index => $row) {
+            $rowNumber = $index + 2;
+
+            if ($this->isEmptyImportRow($row)) {
+                continue;
+            }
+
+            $rowData = $this->mapImportRow($headers, $row);
+            $rowErrors = $this->validateImportRow($rowData);
+
+            if (! empty($rowErrors)) {
+                $errors[] = 'Row '.$rowNumber.': '.implode(' ', $rowErrors);
+
+                continue;
+            }
+
+            try {
+                Event::dispatch('lead.create.before');
+
+                $lead = $this->leadRepository->create($this->prepareImportedLeadData($rowData));
+
+                $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
+                $this->syncSourceTagForLead($lead);
+
+                Event::dispatch('lead.create.after', $lead);
+
+                $created++;
+            } catch (Throwable $exception) {
+                $errors[] = 'Row '.$rowNumber.': '.$exception->getMessage();
+            }
+        }
+
+        return $this->importResponse($created, $errors, $created || empty($errors) ? 200 : 422);
+    }
+
+    /**
+     * Start an AJAX lead import and persist normalized rows for chunked processing.
+     */
+    public function importStart(): JsonResponse
+    {
+        abort_unless($this->sourceAccessService->isAdmin(), 403);
+
+        $data = request()->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:10240'],
+        ]);
+
+        try {
+            $sheets = Excel::toArray(new class implements ToArray
+            {
+                public function array(array $array) {}
+            }, $data['file']);
+        } catch (Throwable) {
+            return response()->json([
+                'message' => 'The uploaded file could not be read. Please upload a valid CSV or XLSX file.',
+            ], 422);
+        }
+
+        $rows = $sheets[0] ?? [];
+
+        if (count($rows) < 2) {
+            return response()->json([
+                'message' => 'The import file has no data rows.',
+            ], 422);
+        }
+
+        $headers = $this->normalizeImportHeaders(array_shift($rows));
+        $missingHeaders = array_diff($this->requiredImportColumns(), array_keys($headers));
+
+        if (! empty($missingHeaders)) {
+            return response()->json([
+                'message' => 'Missing required columns: '.implode(', ', array_map(fn ($column) => $column.'*', $missingHeaders)),
+            ], 422);
+        }
+
+        $importRows = [];
+
+        foreach ($rows as $index => $row) {
+            if ($this->isEmptyImportRow($row)) {
+                continue;
+            }
+
+            $importRows[] = [
+                'row_number' => $index + 2,
+                'data'       => $this->mapImportRow($headers, $row),
+            ];
+        }
+
+        if (empty($importRows)) {
+            return response()->json([
+                'message' => 'The import file has no importable rows.',
+            ], 422);
+        }
+
+        $token = (string) Str::uuid();
+        $directory = storage_path('app/imports/pending');
+
+        if (! is_dir($directory)) {
+            mkdir($directory, 0775, true);
+        }
+
+        file_put_contents($this->pendingImportPath($token), json_encode([
+            'rows'    => $importRows,
+            'created' => 0,
+            'errors'  => [],
+        ], JSON_THROW_ON_ERROR));
+
+        return response()->json([
+            'token'   => $token,
+            'total'   => count($importRows),
+            'message' => count($importRows).' row'.(count($importRows) === 1 ? '' : 's').' ready to import.',
+        ]);
+    }
+
+    /**
+     * Process the next chunk of a pending AJAX lead import.
+     */
+    public function importProcess(): JsonResponse
+    {
+        abort_unless($this->sourceAccessService->isAdmin(), 403);
+
+        $data = request()->validate([
+            'token'  => ['required', 'string'],
+            'offset' => ['required', 'integer', 'min:0'],
+        ]);
+
+        $path = $this->pendingImportPath($data['token']);
+
+        if (! is_file($path)) {
+            return response()->json([
+                'message' => 'Import session expired. Please upload the file again.',
+            ], 404);
+        }
+
+        $payload = json_decode(file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
+        $rows = $payload['rows'] ?? [];
+        $total = count($rows);
+        $offset = (int) $data['offset'];
+        $chunkSize = 1;
+        $chunk = array_slice($rows, $offset, $chunkSize);
+
+        foreach ($chunk as $row) {
+            $rowData = $row['data'] ?? [];
+            $rowErrors = $this->validateImportRow($rowData);
+
+            if (! empty($rowErrors)) {
+                $payload['errors'][] = 'Row '.$row['row_number'].': '.implode(' ', $rowErrors);
+
+                continue;
+            }
+
+            try {
+                Event::dispatch('lead.create.before');
+
+                $lead = $this->leadRepository->create($this->prepareImportedLeadData($rowData));
+
+                $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
+                $this->syncSourceTagForLead($lead);
+
+                Event::dispatch('lead.create.after', $lead);
+
+                $payload['created']++;
+            } catch (Throwable $exception) {
+                $payload['errors'][] = 'Row '.$row['row_number'].': '.$exception->getMessage();
+            }
+        }
+
+        $processed = min($offset + count($chunk), $total);
+        $done = $processed >= $total;
+
+        if ($done) {
+            @unlink($path);
+        } else {
+            file_put_contents($path, json_encode($payload, JSON_THROW_ON_ERROR));
+        }
+
+        return response()->json([
+            'processed' => $processed,
+            'total'     => $total,
+            'created'   => $payload['created'],
+            'errors'    => $payload['errors'],
+            'done'      => $done,
+            'message'   => $payload['created'].' lead'.($payload['created'] === 1 ? '' : 's').' imported.',
+        ]);
+    }
+
+    /**
+     * Display admin-only DNC and incorrect-info leads.
+     */
+    public function disqualified(): View|RedirectResponse
+    {
+        if (! $this->sourceAccessService->isAdmin()) {
+            return redirect()->route('admin.leads.index');
+        }
+
+        $baseQuery = Lead::query()
+            ->with(['person.organization', 'user', 'source', 'subSource'])
+            ->whereNotNull('lead_disqualification_reason')
+            ->orderByDesc('lead_disqualified_at')
+            ->orderByDesc('id');
+
+        return view('admin::leads.disqualified', [
+            'doNotCallLeads' => (clone $baseQuery)
+                ->where('lead_disqualification_reason', 'do_not_call')
+                ->paginate(5, ['*'], 'dnc_page'),
+            'incorrectInfoLeads' => (clone $baseQuery)
+                ->where('lead_disqualification_reason', 'incorrect_info')
+                ->paginate(5, ['*'], 'incorrect_page'),
+            'endedLeads' => (clone $baseQuery)
+                ->where('lead_disqualification_reason', 'ended')
+                ->paginate(5, ['*'], 'ended_page'),
+            'users' => $this->userRepository
+                ->orderBy('name')
+                ->all(['id', 'name', 'email']),
         ]);
     }
 
@@ -121,7 +456,12 @@ class LeadController extends Controller
                     'lead_pipeline_stage_id' => $stage->id,
                 ]);
 
-            if ($userIds = bouncer()->getAuthorizedUserIds()) {
+            $isSharedNewSdrPool = $this->isSdrUser()
+                && $stage->code === 'new';
+
+            $userIds = bouncer()->getAuthorizedUserIds();
+
+            if (! $this->sourceAccessService->isAdmin() && ! $isSharedNewSdrPool && $userIds) {
                 $query->whereIn('leads.user_id', $userIds);
             }
 
@@ -138,7 +478,7 @@ class LeadController extends Controller
 
             $data[$stage->sort_order]['leads'] = [
                 'data' => LeadResource::collection($paginator = $query->with([
-                    'tags',
+                    'tags.user',
                     'type',
                     'source',
                     'subSource',
@@ -148,7 +488,6 @@ class LeadController extends Controller
                     'pipeline',
                     'pipeline.stages',
                     'stage',
-                    'attribute_values',
                 ])->paginate(10)),
 
                 'meta' => [
@@ -252,6 +591,7 @@ class LeadController extends Controller
         $lead = $this->leadRepository->create($data);
 
         $this->syncLeadTags($lead, $data['tags'] ?? []);
+        $this->syncSourceTagForLead($lead);
 
         if (request()->ajax()) {
             return response()->json([
@@ -278,13 +618,17 @@ class LeadController extends Controller
     {
         $lead = $this->leadRepository->findOrFail($id);
 
-        $userIds = bouncer()->getAuthorizedUserIds();
-
-        if ($userIds && ! in_array($lead->user_id, $userIds)) {
+        if (! $this->sourceAccessService->canAccessLead($lead)) {
             return redirect()->route('admin.leads.index');
         }
 
-        if (! $this->sourceAccessService->canAccessLead($lead)) {
+        if ($this->isSdrUser()) {
+            $lead = $this->claimNewLeadForSdr($lead);
+        }
+
+        $userIds = bouncer()->getAuthorizedUserIds();
+
+        if ($userIds && ! in_array($lead->user_id, $userIds)) {
             return redirect()->route('admin.leads.index');
         }
 
@@ -298,6 +642,14 @@ class LeadController extends Controller
     {
         $lead = $this->leadRepository->findOrFail($id);
 
+        if (! $this->sourceAccessService->canAccessLead($lead)) {
+            return redirect()->route('admin.leads.index');
+        }
+
+        if ($this->isSdrUser()) {
+            $lead = $this->claimNewLeadForSdr($lead);
+        }
+
         $userIds = bouncer()->getAuthorizedUserIds();
 
         if (
@@ -307,11 +659,107 @@ class LeadController extends Controller
             return redirect()->route('admin.leads.index');
         }
 
-        if (! $this->sourceAccessService->canAccessLead($lead)) {
-            return redirect()->route('admin.leads.index');
-        }
+        $this->syncSourceTagForLead($lead);
+
+        $lead->load('tags');
 
         return view('admin::leads.view', compact('lead'));
+    }
+
+    protected function isSdrUser(): bool
+    {
+        return strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr';
+    }
+
+    /**
+     * First SDR to open a New lead claims it and moves it into Follow Up.
+     */
+    protected function claimNewLeadForSdr($lead)
+    {
+        return DB::transaction(function () use ($lead) {
+            $lead = Lead::query()
+                ->with(['pipeline.stages', 'stage'])
+                ->lockForUpdate()
+                ->findOrFail($lead->id);
+
+            if (($lead->stage?->code ?? null) !== 'new') {
+                return $lead;
+            }
+
+            $followUpStage = $lead->pipeline?->stages
+                ->firstWhere('code', 'follow-up');
+
+            if (! $followUpStage) {
+                return $lead;
+            }
+
+            Event::dispatch('lead.update.before', $lead->id);
+
+            $payload = [
+                'entity_type'            => 'leads',
+                'user_id'                => auth()->guard('user')->id(),
+                'lead_pipeline_stage_id' => $followUpStage->id,
+            ];
+
+            $attributes = ['user_id', 'lead_pipeline_stage_id'];
+
+            if (empty($lead->next_followup_date)) {
+                $payload['next_followup_date'] = $this->followupScheduleService->calculateNext(
+                    $lead,
+                    Carbon::now(),
+                    (int) ($lead->followup_count ?? 0)
+                );
+
+                $attributes[] = 'next_followup_date';
+            }
+
+            $lead = $this->leadRepository->update($payload, $lead->id, $attributes);
+
+            Event::dispatch('lead.update.after', $lead);
+
+            return $lead->fresh(['pipeline.stages', 'stage']);
+        });
+    }
+
+    /**
+     * Keep the visible source tag aligned with the current lead source.
+     */
+    protected function syncSourceTagForLead($lead): void
+    {
+        $sourceName = DB::table('lead_sources')
+            ->where('id', $lead->lead_source_id)
+            ->value('name');
+
+        if (! in_array($sourceName, ['Cold Call', 'Warm Leads'], true)) {
+            return;
+        }
+
+        $tag = $this->firstOrCreateSourceTag($sourceName);
+        $oppositeTag = $this->firstOrCreateSourceTag(
+            $sourceName === 'Warm Leads' ? 'Cold Call' : 'Warm Leads'
+        );
+
+        $lead->tags()->detach($oppositeTag->id);
+        $lead->tags()->syncWithoutDetaching([$tag->id]);
+    }
+
+    protected function firstOrCreateSourceTag(string $name)
+    {
+        $tag = $this->tagRepository
+            ->getModel()
+            ->newQuery()
+            ->where('name', $name)
+            ->first();
+
+        if ($tag) {
+            return $tag;
+        }
+
+        return $this->tagRepository->create([
+            'name'    => $name,
+            'color'   => $name === 'Warm Leads' ? '#FEE2E2' : '#DBEAFE',
+            'user_id' => auth()->guard('user')->id(),
+        ]);
     }
 
     /**
@@ -340,6 +788,7 @@ class LeadController extends Controller
         $lead = $this->leadRepository->update($data, $id);
 
         $this->syncLeadTags($lead, $data['tags'] ?? []);
+        $this->syncSourceTagForLead($lead);
 
         Event::dispatch('lead.update.after', $lead);
 
@@ -374,6 +823,10 @@ class LeadController extends Controller
 
         $lead = $this->leadRepository->update($data, $id, $attributes);
 
+        if (array_key_exists('lead_source_id', $data)) {
+            $this->syncSourceTagForLead($lead);
+        }
+
         Event::dispatch('lead.update.after', $lead);
 
         return response()->json([
@@ -390,31 +843,254 @@ class LeadController extends Controller
             'lead_pipeline_stage_id' => 'required',
         ]);
 
+        return DB::transaction(function () use ($id) {
+            $lead = Lead::query()
+                ->with(['pipeline.stages', 'stage'])
+                ->lockForUpdate()
+                ->findOrFail($id);
+
+            if (! $this->sourceAccessService->canAccessLead($lead)) {
+                return response()->json([
+                    'message' => trans('admin::app.leads.source-access-denied'),
+                ], 403);
+            }
+
+            $isSharedNewSdrLead = $this->isSdrUser()
+                && ($lead->stage?->code ?? null) === 'new';
+
+            $userIds = bouncer()->getAuthorizedUserIds();
+
+            if (
+                $userIds
+                && ! in_array($lead->user_id, $userIds)
+                && ! $isSharedNewSdrLead
+            ) {
+                return response()->json([
+                    'message' => trans('admin::app.leads.source-access-denied'),
+                ], 403);
+            }
+
+            $stage = $lead->pipeline->stages()
+                ->where('id', request()->input('lead_pipeline_stage_id'))
+                ->firstOrFail();
+
+            if ($response = $this->validateMeetingStageMove($lead, $stage)) {
+                return $response;
+            }
+
+            Event::dispatch('lead.update.before', $id);
+
+            $payload = request()->merge([
+                'entity_type'            => 'leads',
+                'lead_pipeline_stage_id' => $stage->id,
+            ])->only([
+                'closed_at',
+                'lost_reason',
+                'lead_pipeline_stage_id',
+                'entity_type',
+            ]);
+
+            $attributes = ['lead_pipeline_stage_id'];
+
+            if ($isSharedNewSdrLead) {
+                $payload['user_id'] = auth()->guard('user')->id();
+                $attributes[] = 'user_id';
+            }
+
+            $lead = $this->leadRepository->update($payload, $id, $attributes);
+
+            Event::dispatch('lead.update.after', $lead);
+
+            return response()->json([
+                'message' => trans('admin::app.leads.update-success'),
+            ]);
+        });
+    }
+
+    /**
+     * Enforce meeting activity requirements around the Meeting pipeline stage.
+     */
+    protected function validateMeetingStageMove($lead, $targetStage): ?JsonResponse
+    {
+        $currentStage = $lead->stage;
+        $meetingStage = $lead->pipeline->stages()
+            ->where('code', 'meeting')
+            ->first();
+
+        if (! $meetingStage || ! $currentStage) {
+            return null;
+        }
+
+        $hasMeetingActivity = $lead->activities()
+            ->where('type', 'meeting')
+            ->exists();
+
+        if ($targetStage->code === 'meeting' && ! $hasMeetingActivity) {
+            return response()->json([
+                'message' => trans('admin::app.leads.meeting-stage-requires-activity'),
+            ], 422);
+        }
+
+        $movingBeyondMeeting = $targetStage->sort_order > $meetingStage->sort_order;
+
+        if (! $movingBeyondMeeting) {
+            return null;
+        }
+
+        $hasCompletedMeeting = $lead->activities()
+            ->where('type', 'meeting')
+            ->where('is_done', 1)
+            ->exists();
+
+        if (! $hasCompletedMeeting) {
+            return response()->json([
+                'message' => trans('admin::app.leads.meeting-stage-requires-done-activity'),
+            ], 422);
+        }
+
+        return null;
+    }
+
+    /**
+     * Mark a lead as removed from SDR calling queues.
+     */
+    public function disqualify(int $id): RedirectResponse
+    {
+        $data = request()->validate([
+            'reason'  => ['required', 'in:do_not_call,incorrect_info'],
+            'comment' => ['required', 'string', 'max:1000'],
+        ]);
+
         $lead = $this->leadRepository->findOrFail($id);
 
-        $stage = $lead->pipeline->stages()
-            ->where('id', request()->input('lead_pipeline_stage_id'))
-            ->firstOrFail();
+        $userIds = bouncer()->getAuthorizedUserIds();
+
+        if ($userIds && ! in_array($lead->user_id, $userIds)) {
+            return redirect()->route('admin.leads.index');
+        }
+
+        if (! $this->sourceAccessService->canAccessLead($lead)) {
+            return redirect()->route('admin.leads.index');
+        }
 
         Event::dispatch('lead.update.before', $id);
 
-        $payload = request()->merge([
-            'entity_type'            => 'leads',
-            'lead_pipeline_stage_id' => $stage->id,
-        ])->only([
-            'closed_at',
-            'lost_reason',
-            'lead_pipeline_stage_id',
-            'entity_type',
-        ]);
-
-        $lead = $this->leadRepository->update($payload, $id, ['lead_pipeline_stage_id']);
+        $lead = $this->leadRepository->update([
+            'entity_type'                  => 'leads',
+            'lead_disqualification_reason' => $data['reason'],
+            'lead_disqualification_comment'=> trim($data['comment']),
+            'lead_disqualified_at'         => Carbon::now(),
+            'next_followup_date'           => null,
+            'followup_notes'               => trim((string) $lead->followup_notes) ?: trim($data['comment']),
+        ], $id);
 
         Event::dispatch('lead.update.after', $lead);
 
-        return response()->json([
-            'message' => trans('admin::app.leads.update-success'),
+        session()->flash('success', trans('admin::app.leads.disqualified-success', [
+            'reason' => $this->disqualificationLabels()[$data['reason']],
+        ]));
+
+        if ($this->sourceAccessService->isAdmin()) {
+            return redirect()->back();
+        }
+
+        return redirect()->route('admin.leads.index');
+    }
+
+    /**
+     * Restore a disqualified lead to SDR visibility.
+     */
+    public function restoreDisqualified(int $id): RedirectResponse
+    {
+        if (! $this->sourceAccessService->isAdmin()) {
+            return redirect()->route('admin.leads.index');
+        }
+
+        Event::dispatch('lead.update.before', $id);
+
+        $lead = $this->leadRepository->update([
+            'entity_type'                  => 'leads',
+            'lead_disqualification_reason' => null,
+            'lead_disqualification_comment'=> null,
+            'lead_disqualified_at'         => null,
+        ], $id);
+
+        Event::dispatch('lead.update.after', $lead);
+
+        session()->flash('success', trans('admin::app.leads.restored-success'));
+
+        return redirect()->back();
+    }
+
+    /**
+     * Correct an incorrect-info lead and assign it back to a user.
+     */
+    public function reassignIncorrectInfo(int $id): RedirectResponse
+    {
+        return $this->reassignDisqualifiedLead($id, 'incorrect_info');
+    }
+
+    /**
+     * Reassign an ended lead back to a user.
+     */
+    public function reassignEndedLead(int $id): RedirectResponse
+    {
+        return $this->reassignDisqualifiedLead($id, 'ended');
+    }
+
+    /**
+     * Reassign an admin-review lead back to SDR visibility.
+     */
+    protected function reassignDisqualifiedLead(int $id, string $expectedReason): RedirectResponse
+    {
+        if (! $this->sourceAccessService->isAdmin()) {
+            return redirect()->route('admin.leads.index');
+        }
+
+        $data = request()->validate([
+            'user_id' => ['required', 'exists:users,id'],
         ]);
+
+        $lead = $this->leadRepository->findOrFail($id);
+
+        if ($lead->lead_disqualification_reason !== $expectedReason) {
+            session()->flash('error', trans('admin::app.leads.disqualification.reassign-invalid'));
+
+            return redirect()->route('admin.leads.disqualified');
+        }
+
+        Event::dispatch('lead.update.before', $id);
+
+        $lead = $this->leadRepository->update([
+            'entity_type'                    => 'leads',
+            'user_id'                        => $data['user_id'],
+            'lead_disqualification_reason'   => null,
+            'lead_disqualification_comment'  => null,
+            'lead_disqualified_at'           => null,
+        ], $id, [
+            'user_id',
+            'lead_disqualification_reason',
+            'lead_disqualification_comment',
+            'lead_disqualified_at',
+        ]);
+
+        Event::dispatch('lead.update.after', $lead);
+
+        session()->flash('success', trans('admin::app.leads.disqualification.reassigned-success'));
+
+        return redirect()->route('admin.leads.disqualified');
+    }
+
+    /**
+     * Disqualification labels.
+     */
+    protected function disqualificationLabels(): array
+    {
+        return [
+            'do_not_call'    => trans('admin::app.leads.disqualification.do-not-call'),
+            'incorrect_info' => trans('admin::app.leads.disqualification.incorrect-info'),
+            'ended'          => trans('admin::app.leads.disqualification.ended'),
+        ];
     }
 
     /**
@@ -423,15 +1099,27 @@ class LeadController extends Controller
     public function search(): AnonymousResourceCollection
     {
         $userIds = bouncer()->getAuthorizedUserIds();
+        $limit = min(max((int) request('limit', 20), 1), 50);
 
         $results = $this->leadRepository
+            ->with([
+                'tags.user',
+                'type',
+                'source',
+                'subSource',
+                'user',
+                'person.organization',
+                'pipeline.stages',
+                'stage',
+            ])
             ->pushCriteria(app(RequestCriteria::class))
-            ->scopeQuery(function ($query) use ($userIds) {
+            ->scopeQuery(function ($query) use ($userIds, $limit) {
                 if ($userIds) {
                     $query->whereIn('user_id', $userIds);
                 }
 
-                return $this->sourceAccessService->applyLeadQueryScope($query);
+                return $this->sourceAccessService->applyLeadQueryScope($query)
+                    ->limit($limit);
             })
             ->all();
 
@@ -690,6 +1378,22 @@ class LeadController extends Controller
                 'visibility'            => true,
             ],
             [
+                'index'                 => 'lead_disqualification_reason',
+                'label'                 => trans('admin::app.leads.index.datagrid.disqualification'),
+                'type'                  => 'string',
+                'searchable'            => false,
+                'search_field'          => 'in',
+                'filterable'            => true,
+                'filterable_type'       => 'dropdown',
+                'filterable_options'    => [
+                    ['label' => trans('admin::app.leads.disqualification.do-not-call'), 'value' => 'do_not_call'],
+                    ['label' => trans('admin::app.leads.disqualification.incorrect-info'), 'value' => 'incorrect_info'],
+                ],
+                'allow_multiple_values' => true,
+                'sortable'              => true,
+                'visibility'            => true,
+            ],
+            [
                 'index'                 => 'tags.name',
                 'label'                 => trans('admin::app.leads.index.kanban.columns.tags'),
                 'type'                  => 'string',
@@ -812,6 +1516,7 @@ class LeadController extends Controller
             ]));
 
             $this->syncLeadTags($lead, $rawLead['tags'] ?? []);
+            $this->syncSourceTagForLead($lead);
 
             Event::dispatch('lead.create.after', $lead);
 
@@ -850,6 +1555,339 @@ class LeadController extends Controller
             ->all();
 
         $lead->tags()->sync($tagIds);
+    }
+
+    protected function requiredImportColumns(): array
+    {
+        return [
+            'title',
+            'lead_value',
+            'source',
+            'type',
+            'pricing_type',
+        ];
+    }
+
+    protected function importColumnAliases(): array
+    {
+        return [
+            'lead_title'         => 'title',
+            'value'              => 'lead_value',
+            'amount'             => 'lead_value',
+            'lead_source'        => 'source',
+            'lead_type'          => 'type',
+            'owner'              => 'sales_owner_email',
+            'sales_owner'        => 'sales_owner_email',
+            'owner_email'        => 'sales_owner_email',
+            'company_name'       => 'company',
+            'organization'       => 'company',
+            'organization_name'  => 'company',
+            'contact_name'       => 'person_name',
+            'person'             => 'person_name',
+            'contact_email'      => 'email',
+            'contact_phone'      => 'phone',
+            'phone_number'       => 'phone',
+            'expected_close'     => 'expected_close_date',
+            'followup'           => 'next_followup_date',
+            'next_follow_up'     => 'next_followup_date',
+            'next_followup'      => 'next_followup_date',
+            'follow_up_enabled'  => 'schedule_followup',
+            'subsource'          => 'sub_source',
+            'lead_sub_source'    => 'sub_source',
+            'source_subtype'     => 'source_sub_type',
+            'tag'                => 'tags',
+        ];
+    }
+
+    protected function normalizeImportHeaders(array $headers): array
+    {
+        $normalized = [];
+
+        foreach ($headers as $index => $header) {
+            $column = $this->normalizeImportColumnName($header);
+
+            if (! $column) {
+                continue;
+            }
+
+            $normalized[$this->importColumnAliases()[$column] ?? $column] = $index;
+        }
+
+        return $normalized;
+    }
+
+    protected function normalizeImportColumnName($header): string
+    {
+        $header = preg_replace('/^\xEF\xBB\xBF/', '', (string) $header);
+        $header = strtolower(trim(str_replace('*', '', $header)));
+        $header = preg_replace('/[^a-z0-9]+/', '_', $header);
+
+        return trim($header, '_');
+    }
+
+    protected function isEmptyImportRow(array $row): bool
+    {
+        return ! collect($row)->contains(fn ($value) => filled(trim((string) $value)));
+    }
+
+    protected function mapImportRow(array $headers, array $row): array
+    {
+        $data = [];
+
+        foreach ($headers as $column => $index) {
+            $value = $row[$index] ?? null;
+            $data[$column] = is_string($value) ? trim($value) : $value;
+        }
+
+        return $data;
+    }
+
+    protected function validateImportRow(array $row): array
+    {
+        $errors = [];
+
+        foreach ($this->requiredImportColumns() as $column) {
+            if (! filled($row[$column] ?? null)) {
+                $errors[] = $column.' is required.';
+            }
+        }
+
+        if (filled($row['lead_value'] ?? null) && ! is_numeric($row['lead_value'])) {
+            $errors[] = 'lead_value must be numeric.';
+        }
+
+        if (filled($row['email'] ?? null) && ! filter_var($row['email'], FILTER_VALIDATE_EMAIL)) {
+            $errors[] = 'email must be a valid email address.';
+        }
+
+        foreach (['source' => 'lead_sources', 'type' => 'lead_types'] as $column => $table) {
+            if (filled($row[$column] ?? null) && ! $this->resolveImportId($table, $row[$column])) {
+                $errors[] = $column.' "'.$row[$column].'" was not found.';
+            }
+        }
+
+        if (filled($row['pricing_type'] ?? null) && ! $this->resolveAttributeOptionId('pricing_type', $row['pricing_type'])) {
+            $errors[] = 'pricing_type "'.$row['pricing_type'].'" was not found.';
+        }
+
+        if (filled($row['sub_source'] ?? null) && ! $this->resolveImportId('lead_sources', $row['sub_source'])) {
+            $errors[] = 'sub_source "'.$row['sub_source'].'" was not found.';
+        }
+
+        if (filled($row['sales_owner_email'] ?? null) && ! $this->resolveUserId($row['sales_owner_email'])) {
+            $errors[] = 'sales_owner_email "'.$row['sales_owner_email'].'" was not found.';
+        }
+
+        if (filled($row['pipeline'] ?? null) && ! $this->resolveImportId('lead_pipelines', $row['pipeline'])) {
+            $errors[] = 'pipeline "'.$row['pipeline'].'" was not found.';
+        }
+
+        return $errors;
+    }
+
+    protected function prepareImportedLeadData(array $row): array
+    {
+        $pipeline = filled($row['pipeline'] ?? null)
+            ? $this->pipelineRepository->find($this->resolveImportId('lead_pipelines', $row['pipeline']))
+            : $this->pipelineRepository->getDefaultPipeline();
+
+        $stage = filled($row['stage'] ?? null)
+            ? $pipeline->stages()
+                ->where(function ($query) use ($row) {
+                    $query
+                        ->whereRaw('LOWER(name) = ?', [strtolower(trim($row['stage']))])
+                        ->orWhereRaw('LOWER(code) = ?', [strtolower(trim($row['stage']))]);
+                })
+                ->first()
+            : $pipeline->stages()->where('code', 'new')->first();
+
+        $stage ??= $pipeline->stages()->first();
+
+        if (! $stage) {
+            throw new \InvalidArgumentException('No stage was found for the selected pipeline.');
+        }
+
+        $nextFollowupDate = $this->formatImportDateTime($row['next_followup_date'] ?? null);
+        $scheduleFollowup = $nextFollowupDate
+            ? true
+            : $this->booleanImportValue($row['schedule_followup'] ?? null, true);
+
+        return [
+            'entity_type'              => 'leads',
+            'title'                    => trim($row['title']),
+            'description'              => $this->nullableImportValue($row['description'] ?? null),
+            'lead_value'               => (float) $row['lead_value'],
+            'lead_source_id'           => $this->resolveImportId('lead_sources', $row['source']),
+            'lead_sub_source_id'       => filled($row['sub_source'] ?? null)
+                ? $this->resolveImportId('lead_sources', $row['sub_source'])
+                : null,
+            'lead_type_id'             => $this->resolveImportId('lead_types', $row['type']),
+            'pricing_type'             => $this->resolveAttributeOptionId('pricing_type', $row['pricing_type']),
+            'source_sub_type'          => $this->nullableImportValue($row['source_sub_type'] ?? null),
+            'source_link'              => $this->nullableImportValue($row['source_link'] ?? null),
+            'user_id'                  => filled($row['sales_owner_email'] ?? null)
+                ? $this->resolveUserId($row['sales_owner_email'])
+                : null,
+            'lead_pipeline_id'         => $pipeline->id,
+            'lead_pipeline_stage_id'   => $stage->id,
+            'status'                   => 1,
+            'expected_close_date'      => $this->formatImportDate($row['expected_close_date'] ?? null),
+            'schedule_followup'        => $scheduleFollowup,
+            'next_followup_date'       => $nextFollowupDate,
+            'person'                   => [
+                'name'            => $this->nullableImportValue($row['person_name'] ?? null),
+                'organization_name'=> $this->nullableImportValue($row['company'] ?? null),
+                'emails'          => filled($row['email'] ?? null)
+                    ? [['value' => trim($row['email']), 'label' => 'work']]
+                    : [],
+                'contact_numbers' => filled($row['phone'] ?? null)
+                    ? [['value' => trim((string) $row['phone']), 'label' => 'work']]
+                    : [],
+            ],
+        ];
+    }
+
+    protected function resolveImportId(string $table, $value): ?int
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        if (is_numeric($value) && DB::table($table)->where('id', (int) $value)->exists()) {
+            return (int) $value;
+        }
+
+        return DB::table($table)
+            ->whereRaw('LOWER(name) = ?', [strtolower(trim((string) $value))])
+            ->value('id');
+    }
+
+    protected function resolveAttributeOptionId(string $attributeCode, $value): ?int
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        $attributeId = DB::table('attributes')
+            ->where('entity_type', 'leads')
+            ->where('code', $attributeCode)
+            ->value('id');
+
+        if (! $attributeId) {
+            return null;
+        }
+
+        if (is_numeric($value) && DB::table('attribute_options')->where('id', (int) $value)->where('attribute_id', $attributeId)->exists()) {
+            return (int) $value;
+        }
+
+        $normalizedValue = strtolower(trim((string) $value));
+
+        $aliases = [
+            'fixed'  => 'fixed price',
+            'hourly' => 'hourly rate',
+        ];
+
+        $normalizedValue = $aliases[$normalizedValue] ?? $normalizedValue;
+
+        return DB::table('attribute_options')
+            ->where('attribute_id', $attributeId)
+            ->whereRaw('LOWER(name) = ?', [$normalizedValue])
+            ->value('id');
+    }
+
+    protected function resolveUserId($value): ?int
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        if (is_numeric($value) && DB::table('users')->where('id', (int) $value)->exists()) {
+            return (int) $value;
+        }
+
+        $value = strtolower(trim((string) $value));
+
+        return DB::table('users')
+            ->whereRaw('LOWER(email) = ?', [$value])
+            ->orWhereRaw('LOWER(name) = ?', [$value])
+            ->value('id');
+    }
+
+    protected function tagsFromImportRow(array $row): array
+    {
+        return collect(preg_split('/[,;|]/', (string) ($row['tags'] ?? ''), -1, PREG_SPLIT_NO_EMPTY))
+            ->map(fn ($tag) => trim($tag))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    protected function nullableImportValue($value)
+    {
+        return filled($value) ? trim((string) $value) : null;
+    }
+
+    protected function booleanImportValue($value, bool $default = false): bool
+    {
+        if (! filled($value)) {
+            return $default;
+        }
+
+        return in_array(strtolower(trim((string) $value)), ['1', 'yes', 'y', 'true', 'on'], true);
+    }
+
+    protected function formatImportDate($value): ?string
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        return $this->parseImportDate($value)->toDateString();
+    }
+
+    protected function formatImportDateTime($value): ?string
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        return $this->parseImportDate($value)->format('Y-m-d H:i:s');
+    }
+
+    protected function parseImportDate($value): Carbon
+    {
+        if (is_numeric($value)) {
+            return Carbon::instance(\PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $value));
+        }
+
+        return Carbon::parse($value);
+    }
+
+    protected function importResponse(int $created, array $errors = [], int $status = 200): RedirectResponse|JsonResponse
+    {
+        $message = $created.' lead'.($created === 1 ? '' : 's').' imported.';
+
+        if (request()->ajax() || request()->wantsJson()) {
+            return response()->json([
+                'message' => $message,
+                'created' => $created,
+                'errors'  => $errors,
+            ], $status);
+        }
+
+        session()->flash($errors ? ($created ? 'warning' : 'error') : 'success', $errors
+            ? $message.' '.count($errors).' row'.(count($errors) === 1 ? '' : 's').' failed. '.implode(' ', array_slice($errors, 0, 5))
+            : $message);
+
+        return redirect()->route('admin.leads.index');
+    }
+
+    protected function pendingImportPath(string $token): string
+    {
+        $safeToken = preg_replace('/[^a-zA-Z0-9-]/', '', $token);
+
+        return storage_path('app/imports/pending/'.$safeToken.'.json');
     }
 
     /**

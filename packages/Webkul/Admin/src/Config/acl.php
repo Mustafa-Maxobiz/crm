@@ -32,6 +32,11 @@ return [
         'route' => ['admin.leads.delete', 'admin.leads.mass_delete'],
         'sort'  => 4,
     ], [
+        'key'   => 'leads.import',
+        'name'  => 'Import',
+        'route' => ['admin.leads.import', 'admin.leads.import.start', 'admin.leads.import.process', 'admin.leads.import.template'],
+        'sort'  => 5,
+    ], [
         'key'   => 'meta_leads',
         'name'  => 'admin::app.acl.meta-leads',
         'route' => 'admin.meta_leads.index',

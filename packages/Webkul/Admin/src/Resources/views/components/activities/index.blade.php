@@ -418,9 +418,6 @@
                             name: 'meeting',
                             label: "{{ trans('admin::app.components.activities.index.meetings') }}",
                         }, {
-                            name: 'lunch',
-                            label: "{{ trans('admin::app.components.activities.index.lunches') }}",
-                        }, {
                             name: 'file',
                             label: "{{ trans('admin::app.components.activities.index.files') }}",
                         }, {
@@ -454,7 +451,6 @@
                         note: 'icon-note bg-orange-200 text-orange-800 dark:!text-orange-800',
                         call: 'icon-call bg-cyan-200 text-cyan-800 dark:!text-cyan-800',
                         meeting: 'icon-activity bg-blue-200 text-blue-800 dark:!text-blue-800',
-                        lunch: 'icon-activity bg-blue-200 text-blue-800 dark:!text-blue-800',
                         file: 'icon-file bg-green-200 text-green-900 dark:!text-green-900',
                         system: 'icon-system-generate bg-yellow-200 text-yellow-900 dark:!text-yellow-900',
                         default: 'icon-activity bg-blue-200 text-blue-800 dark:!text-blue-800',
@@ -489,12 +485,6 @@
                             image: "{{ vite()->asset('images/empty-placeholders/meetings.svg') }}",
                             title: "{{ trans('admin::app.components.activities.index.empty-placeholders.meetings.title') }}",
                             description: "{{ trans('admin::app.components.activities.index.empty-placeholders.meetings.description') }}",
-                        },
-
-                        lunch: {
-                            image: "{{ vite()->asset('images/empty-placeholders/lunches.svg') }}",
-                            title: "{{ trans('admin::app.components.activities.index.empty-placeholders.lunches.title') }}",
-                            description: "{{ trans('admin::app.components.activities.index.empty-placeholders.lunches.description') }}",
                         },
 
                         file: {
@@ -565,7 +555,7 @@
                             this.isUpdating[activity.id] = true;
 
                             this.$axios.put("{{ route('admin.activities.update', 'replaceId') }}".replace('replaceId', activity.id), {
-                                    'is_done': 1
+                                    'activity_status': 'done'
                                 })
                                 .then((response) => {
                                     this.isUpdating[activity.id] = false;

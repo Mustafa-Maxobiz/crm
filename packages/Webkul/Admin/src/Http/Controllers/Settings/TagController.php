@@ -127,6 +127,7 @@ class TagController extends Controller
     public function search()
     {
         $tags = $this->tagRepository
+            ->with(['user'])
             ->pushCriteria(app(RequestCriteria::class))
             ->all();
 

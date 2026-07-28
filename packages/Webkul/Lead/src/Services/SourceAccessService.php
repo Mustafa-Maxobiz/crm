@@ -10,41 +10,111 @@ use Webkul\User\Contracts\User as UserContract;
 
 class SourceAccessService
 {
+    protected array $effectiveSourceIdsCache = [];
+
+    protected array $effectiveRootSourceIdsCache = [];
+
+    protected array $effectiveOrganizationIdsCache = [];
+
+    protected array $expandedSourceIdsCache = [];
+
     /**
-     * Root source IDs the user may use. Null means all sources.
+     * Source IDs assigned directly to the user/role. Null means all sources.
+     *
+     * @return array<int>|null
+     */
+    public function getEffectiveSourceIds(?UserContract $user = null): ?array
+    {
+        $user = $this->resolveUser($user);
+        $cacheKey = $this->userCacheKey($user);
+
+        if (array_key_exists($cacheKey, $this->effectiveSourceIdsCache)) {
+            return $this->effectiveSourceIdsCache[$cacheKey];
+        }
+
+        if ($this->isAdmin($user)) {
+            return $this->effectiveSourceIdsCache[$cacheKey] = null;
+        }
+
+        if (! $user) {
+            return $this->effectiveSourceIdsCache[$cacheKey] = [];
+        }
+
+        $user->loadMissing(['sources', 'role.sources']);
+
+        $userSourceIds = $user->sources->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $roleSourceIds = $user->role?->sources->pluck('id')->map(fn ($id) => (int) $id)->all() ?? [];
+
+        if (! empty($userSourceIds)) {
+            if (! empty($roleSourceIds)) {
+                return $this->effectiveSourceIdsCache[$cacheKey] = array_values(array_intersect($userSourceIds, $roleSourceIds));
+            }
+
+            return $this->effectiveSourceIdsCache[$cacheKey] = array_values(array_unique($userSourceIds));
+        }
+
+        if (! empty($roleSourceIds)) {
+            return $this->effectiveSourceIdsCache[$cacheKey] = $roleSourceIds;
+        }
+
+        return $this->effectiveSourceIdsCache[$cacheKey] = null;
+    }
+
+    /**
+     * Root source IDs that should be visible in forms. If a user is assigned a
+     * sub-source directly, its parent source must still be visible so the
+     * sub-source dropdown can be reached.
      *
      * @return array<int>|null
      */
     public function getEffectiveRootSourceIds(?UserContract $user = null): ?array
     {
-        if ($this->isAdmin($user)) {
-            return null;
-        }
-
         $user = $this->resolveUser($user);
+        $cacheKey = $this->userCacheKey($user);
 
-        if (! $user) {
-            return [];
+        if (array_key_exists($cacheKey, $this->effectiveRootSourceIdsCache)) {
+            return $this->effectiveRootSourceIdsCache[$cacheKey];
         }
 
-        $user->loadMissing(['sources', 'role.sources']);
+        $sourceIds = $this->getEffectiveSourceIds($user);
 
-        $userSourceIds = $user->sources->pluck('id')->all();
-        $roleSourceIds = $user->role?->sources->pluck('id')->all() ?? [];
-
-        if (! empty($userSourceIds)) {
-            if (! empty($roleSourceIds)) {
-                return array_values(array_intersect($userSourceIds, $roleSourceIds));
-            }
-
-            return array_values(array_unique($userSourceIds));
+        if ($sourceIds === null) {
+            return $this->effectiveRootSourceIdsCache[$cacheKey] = null;
         }
 
-        if (! empty($roleSourceIds)) {
-            return $roleSourceIds;
+        if (empty($sourceIds)) {
+            return $this->effectiveRootSourceIdsCache[$cacheKey] = [];
         }
 
-        return null;
+        $childIds = DB::table('lead_source_parents')
+            ->whereIn('source_id', $sourceIds)
+            ->pluck('source_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $legacyChildIds = DB::table('lead_sources')
+            ->whereIn('id', $sourceIds)
+            ->whereNotNull('parent_id')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $parentIds = DB::table('lead_source_parents')
+            ->whereIn('source_id', $sourceIds)
+            ->pluck('parent_source_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $legacyParentIds = DB::table('lead_sources')
+            ->whereIn('id', $sourceIds)
+            ->whereNotNull('parent_id')
+            ->pluck('parent_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $rootIds = array_diff($sourceIds, array_merge($childIds, $legacyChildIds));
+
+        return $this->effectiveRootSourceIdsCache[$cacheKey] = array_values(array_unique(array_merge($rootIds, $parentIds, $legacyParentIds)));
     }
 
     /**
@@ -54,14 +124,19 @@ class SourceAccessService
      */
     public function getEffectiveOrganizationIds(?UserContract $user = null): ?array
     {
-        if ($this->isAdmin($user)) {
-            return null;
+        $user = $this->resolveUser($user);
+        $cacheKey = $this->userCacheKey($user);
+
+        if (array_key_exists($cacheKey, $this->effectiveOrganizationIdsCache)) {
+            return $this->effectiveOrganizationIdsCache[$cacheKey];
         }
 
-        $user = $this->resolveUser($user);
+        if ($this->isAdmin($user)) {
+            return $this->effectiveOrganizationIdsCache[$cacheKey] = null;
+        }
 
         if (! $user) {
-            return [];
+            return $this->effectiveOrganizationIdsCache[$cacheKey] = [];
         }
 
         $user->loadMissing(['organizations', 'role.organizations']);
@@ -71,17 +146,17 @@ class SourceAccessService
 
         if (! empty($userOrganizationIds)) {
             if (! empty($roleOrganizationIds)) {
-                return array_values(array_intersect($userOrganizationIds, $roleOrganizationIds));
+                return $this->effectiveOrganizationIdsCache[$cacheKey] = array_values(array_intersect($userOrganizationIds, $roleOrganizationIds));
             }
 
-            return array_values(array_unique($userOrganizationIds));
+            return $this->effectiveOrganizationIdsCache[$cacheKey] = array_values(array_unique($userOrganizationIds));
         }
 
         if (! empty($roleOrganizationIds)) {
-            return $roleOrganizationIds;
+            return $this->effectiveOrganizationIdsCache[$cacheKey] = $roleOrganizationIds;
         }
 
-        return null;
+        return $this->effectiveOrganizationIdsCache[$cacheKey] = null;
     }
 
     /**
@@ -91,22 +166,36 @@ class SourceAccessService
      */
     public function getExpandedSourceIds(?UserContract $user = null): ?array
     {
-        $rootIds = $this->getEffectiveRootSourceIds($user);
+        $user = $this->resolveUser($user);
+        $cacheKey = $this->userCacheKey($user);
 
-        if ($rootIds === null) {
-            return null;
+        if (array_key_exists($cacheKey, $this->expandedSourceIdsCache)) {
+            return $this->expandedSourceIdsCache[$cacheKey];
         }
 
-        if (empty($rootIds)) {
-            return [];
+        $sourceIds = $this->getEffectiveSourceIds($user);
+
+        if ($sourceIds === null) {
+            return $this->expandedSourceIdsCache[$cacheKey] = null;
+        }
+
+        if (empty($sourceIds)) {
+            return $this->expandedSourceIdsCache[$cacheKey] = [];
         }
 
         $childIds = DB::table('lead_source_parents')
-            ->whereIn('parent_source_id', $rootIds)
+            ->whereIn('parent_source_id', $sourceIds)
             ->pluck('source_id')
+            ->map(fn ($id) => (int) $id)
             ->all();
 
-        return array_values(array_unique(array_merge($rootIds, $childIds)));
+        $legacyChildIds = DB::table('lead_sources')
+            ->whereIn('parent_id', $sourceIds)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        return $this->expandedSourceIdsCache[$cacheKey] = array_values(array_unique(array_merge($sourceIds, $childIds, $legacyChildIds)));
     }
 
     public function isAdmin(?UserContract $user = null): bool
@@ -127,6 +216,53 @@ class SourceAccessService
         return in_array($sourceId, $allowed, true);
     }
 
+    public function canUseLeadSourceSelection(int $sourceId, ?int $subSourceId = null, ?UserContract $user = null): bool
+    {
+        if ($this->canAccessSourceId($sourceId, $user)) {
+            return true;
+        }
+
+        if (! $subSourceId || ! $this->canAccessSourceId($subSourceId, $user)) {
+            return false;
+        }
+
+        return DB::table('lead_source_parents')
+            ->where('parent_source_id', $sourceId)
+            ->where('source_id', $subSourceId)
+            ->exists()
+            || DB::table('lead_sources')
+                ->where('id', $subSourceId)
+                ->where('parent_id', $sourceId)
+                ->exists();
+    }
+
+    /**
+     * IDs of sub-sources visible under the selected parent source.
+     *
+     * @return array<int>|null
+     */
+    public function getAccessibleSubSourceIdsForParent(int $sourceId, ?UserContract $user = null): ?array
+    {
+        $childIds = $this->getSubSourceIdsForParent($sourceId);
+
+        $allowed = $this->getExpandedSourceIds($user);
+
+        if ($allowed === null) {
+            return $childIds;
+        }
+
+        return array_values(array_intersect($childIds, $allowed));
+    }
+
+    public function canViewSubSourcesForParent(int $sourceId, ?UserContract $user = null): bool
+    {
+        if ($this->canAccessSourceId($sourceId, $user)) {
+            return true;
+        }
+
+        return ! empty($this->getAccessibleSubSourceIdsForParent($sourceId, $user));
+    }
+
     public function canAccessOrganizationId(int $organizationId, ?UserContract $user = null): bool
     {
         $allowed = $this->getEffectiveOrganizationIds($user);
@@ -144,6 +280,10 @@ class SourceAccessService
             return true;
         }
 
+        if ($lead->getAttributes()['lead_disqualification_reason'] ?? null) {
+            return false;
+        }
+
         if (! $this->leadMatchesSourceScope($lead, $user)) {
             return false;
         }
@@ -153,6 +293,8 @@ class SourceAccessService
 
     public function applyLeadQueryScope(Builder $query): Builder
     {
+        $query = $this->applyDisqualificationQueryScope($query);
+
         $query = $this->applySourceQueryScope($query);
 
         return $this->applyOrganizationQueryScope($query);
@@ -160,6 +302,8 @@ class SourceAccessService
 
     public function applyLeadTableScope(QueryBuilder $query): QueryBuilder
     {
+        $query = $this->applyDisqualificationTableScope($query);
+
         $query = $this->applySourceTableScope($query);
 
         return $this->applyOrganizationTableScope($query);
@@ -268,12 +412,17 @@ class SourceAccessService
 
         return $query->where(function ($scopeQuery) use ($allowed) {
             $scopeQuery->whereIn('lead_source_id', $allowed)
-                ->orWhereIn('lead_sub_source_id', $allowed)
-                ->orWhere(function ($emptySourceQuery) {
-                    $emptySourceQuery->whereNull('lead_source_id')
-                        ->whereNull('lead_sub_source_id');
-                });
+                ->orWhereIn('lead_sub_source_id', $allowed);
         });
+    }
+
+    protected function applyDisqualificationQueryScope(Builder $query): Builder
+    {
+        if ($this->isAdmin()) {
+            return $query;
+        }
+
+        return $query->whereNull('leads.lead_disqualification_reason');
     }
 
     protected function applyOrganizationQueryScope(Builder $query): Builder
@@ -305,12 +454,17 @@ class SourceAccessService
 
         return $query->where(function ($scopeQuery) use ($allowed) {
             $scopeQuery->whereIn('leads.lead_source_id', $allowed)
-                ->orWhereIn('leads.lead_sub_source_id', $allowed)
-                ->orWhere(function ($emptySourceQuery) {
-                    $emptySourceQuery->whereNull('leads.lead_source_id')
-                        ->whereNull('leads.lead_sub_source_id');
-                });
+                ->orWhereIn('leads.lead_sub_source_id', $allowed);
         });
+    }
+
+    protected function applyDisqualificationTableScope(QueryBuilder $query): QueryBuilder
+    {
+        if ($this->isAdmin()) {
+            return $query;
+        }
+
+        return $query->whereNull('leads.lead_disqualification_reason');
     }
 
     protected function applyOrganizationTableScope(QueryBuilder $query): QueryBuilder
@@ -326,6 +480,26 @@ class SourceAccessService
         }
 
         return $query->whereIn('persons.organization_id', $allowed);
+    }
+
+    /**
+     * @return array<int>
+     */
+    protected function getSubSourceIdsForParent(int $sourceId): array
+    {
+        $pivotChildIds = DB::table('lead_source_parents')
+            ->where('parent_source_id', $sourceId)
+            ->pluck('source_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $legacyChildIds = DB::table('lead_sources')
+            ->where('parent_id', $sourceId)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        return array_values(array_unique(array_merge($pivotChildIds, $legacyChildIds)));
     }
 
   /**
@@ -390,5 +564,12 @@ class SourceAccessService
     protected function resolveUser(?UserContract $user = null): ?UserContract
     {
         return $user ?? auth()->guard('user')->user();
+    }
+
+    protected function userCacheKey(?UserContract $user = null): string
+    {
+        return $user?->id
+            ? 'user:'.$user->id
+            : 'guest';
     }
 }

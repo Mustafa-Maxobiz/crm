@@ -14,6 +14,12 @@ Route::controller(DashboardController::class)->prefix('dashboard')->group(functi
     Route::get('', 'index')->name('admin.dashboard.index');
 
     Route::get('stats', 'stats')->name('admin.dashboard.stats');
+
+    Route::get('call-summary', 'callSummary')->name('admin.dashboard.call_summary');
+
+    Route::get('lead-sections', 'leadSections')->name('admin.dashboard.lead_sections');
+
+    Route::get('us-timezones', 'usTimezones')->name('admin.dashboard.us_timezones');
 });
 
 /**

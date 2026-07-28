@@ -39,6 +39,9 @@ class Lead extends Model implements LeadContract
         'followup_count',
         'last_followup_date',
         'followup_notes',
+        'lead_disqualification_reason',
+        'lead_disqualification_comment',
+        'lead_disqualified_at',
         'closed_at',
         'user_id',
         'person_id',
@@ -63,6 +66,7 @@ class Lead extends Model implements LeadContract
         'expected_close_date' => 'date:D M d, Y',
         'next_followup_date'  => 'datetime:D M d, Y H:i A',
         'last_followup_date'  => 'datetime:D M d, Y H:i A',
+        'lead_disqualified_at'=> 'datetime:D M d, Y H:i A',
     ];
 
     /**

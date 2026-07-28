@@ -84,39 +84,62 @@ export default {
              * @returns {string} - The formatted date string.
              */
             formatDate: (dateString, format, timezone) => {
-                const date = new Date(dateString);
+                const rawDate = String(dateString || "").trim();
 
-                if (Number.isNaN(date.getTime())) {
+                if (! rawDate) {
                     return "";
                 }
 
-                const options = { timeZone: timezone };
+                const naiveDate = rawDate.match(
+                    /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/
+                );
 
-                const formatter = new Intl.DateTimeFormat("en-US", {
-                    ...options,
-                    hour12: false,
-                    year: "numeric",
-                    month: "numeric",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "numeric",
-                    second: "numeric",
-                });
+                const hasExplicitTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(rawDate);
+                let tzDay;
+                let tzMonth;
+                let tzYear;
+                let tzHour;
+                let tzMinute;
 
-                const parts = formatter.formatToParts(date);
-                const dateParts = {};
+                if (naiveDate && ! hasExplicitTimezone) {
+                    tzYear = parseInt(naiveDate[1], 10);
+                    tzMonth = parseInt(naiveDate[2], 10);
+                    tzDay = parseInt(naiveDate[3], 10);
+                    tzHour = parseInt(naiveDate[4] || "0", 10);
+                    tzMinute = parseInt(naiveDate[5] || "0", 10);
+                } else {
+                    const date = new Date(rawDate);
 
-                parts.forEach((part) => {
-                    if (part.type !== "literal") {
-                        dateParts[part.type] = part.value;
+                    if (Number.isNaN(date.getTime())) {
+                        return "";
                     }
-                });
 
-                const tzDay = parseInt(dateParts.day, 10);
-                const tzMonth = parseInt(dateParts.month, 10);
-                const tzYear = parseInt(dateParts.year, 10);
-                const tzHour = parseInt(dateParts.hour, 10);
-                const tzMinute = parseInt(dateParts.minute, 10);
+                    const formatter = new Intl.DateTimeFormat("en-US", {
+                        timeZone: timezone,
+                        hour12: false,
+                        year: "numeric",
+                        month: "numeric",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "numeric",
+                        second: "numeric",
+                    });
+
+                    const parts = formatter.formatToParts(date);
+                    const dateParts = {};
+
+                    parts.forEach((part) => {
+                        if (part.type !== "literal") {
+                            dateParts[part.type] = part.value;
+                        }
+                    });
+
+                    tzDay = parseInt(dateParts.day, 10);
+                    tzMonth = parseInt(dateParts.month, 10);
+                    tzYear = parseInt(dateParts.year, 10);
+                    tzHour = parseInt(dateParts.hour, 10);
+                    tzMinute = parseInt(dateParts.minute, 10);
+                }
 
                 const formatters = {
                     d: tzDay,

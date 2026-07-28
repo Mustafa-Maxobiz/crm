@@ -16,6 +16,16 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
 
     Route::post('create-by-ai', 'createByAI')->name('admin.leads.create_by_ai');
 
+    Route::get('import/template', 'importTemplate')->name('admin.leads.import.template');
+
+    Route::post('import', 'import')->name('admin.leads.import');
+
+    Route::post('import/start', 'importStart')->name('admin.leads.import.start');
+
+    Route::post('import/process', 'importProcess')->name('admin.leads.import.process');
+
+    Route::get('disqualified', 'disqualified')->name('admin.leads.disqualified');
+
     Route::get('view/{id}', 'view')->name('admin.leads.view');
 
     Route::get('edit/{id}', 'edit')->name('admin.leads.edit');
@@ -25,6 +35,14 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
     Route::put('attributes/edit/{id}', 'updateAttributes')->name('admin.leads.attributes.update');
 
     Route::put('stage/edit/{id}', 'updateStage')->name('admin.leads.stage.update');
+
+    Route::post('disqualify/{id}', 'disqualify')->name('admin.leads.disqualify');
+
+    Route::post('restore/{id}', 'restoreDisqualified')->name('admin.leads.restore_disqualified');
+
+    Route::post('incorrect-info/{id}/reassign', 'reassignIncorrectInfo')->name('admin.leads.incorrect_info.reassign');
+
+    Route::post('ended/{id}/reassign', 'reassignEndedLead')->name('admin.leads.ended.reassign');
 
     Route::get('search', 'search')->name('admin.leads.search');
 
