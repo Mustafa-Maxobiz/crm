@@ -148,7 +148,7 @@
                     }
 
                     if (this.searchTerm.trim()) {
-                        return this.filteredStates.slice(0, 8);
+                        return this.filteredStates.slice(0, 4);
                     }
 
                     const sorted = [...this.filteredStates].sort((first, second) => {
@@ -171,7 +171,7 @@
                     const otherPriority = sorted.filter((state) => ! state.popular && this.isPriorityTime(state));
                     const popularFallback = sorted.filter((state) => state.popular && ! this.isPriorityTime(state));
 
-                    return [...popularPriority, ...otherPriority, ...popularFallback].slice(0, 8);
+                    return [...popularPriority, ...otherPriority, ...popularFallback].slice(0, 4);
                 },
             },
 

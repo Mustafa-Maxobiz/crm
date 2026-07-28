@@ -27,6 +27,23 @@
         </div>
 
         <div class="sdr-dashboard-right-static grid min-w-0 content-start gap-4">
+            <v-sdr-today-summary
+                sections-url="{{ route('admin.dashboard.lead_sections') }}"
+            >
+                <div class="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+                    <div class="mb-3 grid gap-1">
+                        <div class="light-shimmer-bg dark:shimmer h-5 w-40 rounded-md"></div>
+                        <div class="light-shimmer-bg dark:shimmer h-4 w-56 rounded-md"></div>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2.5 max-sm:grid-cols-1">
+                        <div class="light-shimmer-bg dark:shimmer h-[84px] rounded-md"></div>
+                        <div class="light-shimmer-bg dark:shimmer h-[84px] rounded-md"></div>
+                        <div class="light-shimmer-bg dark:shimmer h-[84px] rounded-md"></div>
+                    </div>
+                </div>
+            </v-sdr-today-summary>
+
             <v-sdr-call-summary
                 summary-url="{{ route('admin.dashboard.call_summary') }}"
             >
@@ -62,6 +79,69 @@
     {!! view_render_event('admin.dashboard.sdr.index.content.after') !!}
 
     @pushOnce('scripts')
+        <script
+            type="text/x-template"
+            id="v-sdr-today-summary-template"
+        >
+            <div class="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                <div class="border-b border-gray-200 p-3 dark:border-gray-800">
+                    <div class="grid gap-1">
+                        <p class="text-lg font-semibold text-gray-800 dark:text-white">
+                            Today's Schedule
+                        </p>
+
+                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                            Meetings and follow-ups scheduled for today.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2.5 p-3 max-sm:grid-cols-1">
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Meetings
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-gray-800 dark:text-white">
+                            @{{ summary.meetings }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Scheduled today
+                        </p>
+                    </div>
+
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Follow-ups
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-gray-800 dark:text-white">
+                            @{{ summary.followups }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Due today
+                        </p>
+                    </div>
+
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Total
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-gray-800 dark:text-white">
+                            @{{ summary.total }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            On today's calendar
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </script>
+
         <script
             type="text/x-template"
             id="v-sdr-call-summary-template"
@@ -203,7 +283,7 @@
                         :class="section.tall ? 'min-h-[620px]' : 'min-h-[300px]'"
                     >
                         <div class="border-b border-gray-200 p-3 dark:border-gray-800">
-                            <div class="flex items-center justify-between gap-3">
+                            <div class="flex items-center justify-between gap-3 max-sm:flex-wrap">
                                 <div>
                                     <p class="text-lg font-semibold text-gray-800 dark:text-white">
                                         @{{ section.title }}
@@ -214,7 +294,27 @@
                                     </p>
                                 </div>
 
-                                <span class="sdr-section-count">
+                                <div
+                                    v-if="section.key === 'today-calendar'"
+                                    class="flex flex-wrap items-center gap-1.5"
+                                >
+                                    <span class="sdr-summary-badge meeting">
+                                        Meetings @{{ summary.meetings }}
+                                    </span>
+
+                                    <span class="sdr-summary-badge followup">
+                                        Follow-ups @{{ summary.followups }}
+                                    </span>
+
+                                    <span class="sdr-summary-badge total">
+                                        Total @{{ summary.total }}
+                                    </span>
+                                </div>
+
+                                <span
+                                    v-else
+                                    class="sdr-section-count"
+                                >
                                     @{{ section.items.length }}
                                 </span>
                             </div>
@@ -350,6 +450,11 @@
                 data() {
                     return {
                         todayCalendar: [],
+                        summary: {
+                            meetings: 0,
+                            followups: 0,
+                            total: 0,
+                        },
                         refreshInterval: null,
                         pages: {
                             'today-calendar': 1,
@@ -465,7 +570,14 @@
                     getSections() {
                         this.$axios.get(this.sectionsUrl)
                             .then(response => {
+                                const summary = response.data.summary || {};
+
                                 this.todayCalendar = response.data.today_calendar || [];
+                                this.summary = {
+                                    meetings: summary.meetings || 0,
+                                    followups: summary.followups || 0,
+                                    total: summary.total || 0,
+                                };
                                 this.pages = {
                                     'today-calendar': 1,
                                 };
@@ -474,6 +586,67 @@
                                 console.log(error);
 
                                 this.todayCalendar = [];
+                                this.summary = {
+                                    meetings: 0,
+                                    followups: 0,
+                                    total: 0,
+                                };
+                            });
+                    },
+                },
+            });
+
+            app.component('v-sdr-today-summary', {
+                template: '#v-sdr-today-summary-template',
+
+                props: {
+                    sectionsUrl: {
+                        type: String,
+                        required: true,
+                    },
+                },
+
+                data() {
+                    return {
+                        summary: {
+                            meetings: 0,
+                            followups: 0,
+                            total: 0,
+                        },
+                        refreshInterval: null,
+                    };
+                },
+
+                mounted() {
+                    this.getSummary();
+
+                    this.refreshInterval = setInterval(this.getSummary, 60000);
+                },
+
+                beforeUnmount() {
+                    clearInterval(this.refreshInterval);
+                },
+
+                methods: {
+                    getSummary() {
+                        this.$axios.get(this.sectionsUrl)
+                            .then(response => {
+                                const summary = response.data.summary || {};
+
+                                this.summary = {
+                                    meetings: summary.meetings || 0,
+                                    followups: summary.followups || 0,
+                                    total: summary.total || 0,
+                                };
+                            })
+                            .catch(error => {
+                                console.log(error);
+
+                                this.summary = {
+                                    meetings: 0,
+                                    followups: 0,
+                                    total: 0,
+                                };
                             });
                     },
                 },
@@ -685,6 +858,47 @@
                 justify-content: center;
                 min-width: 34px;
                 padding: 0 10px;
+            }
+
+            .sdr-summary-badge {
+                align-items: center;
+                border-radius: 9999px;
+                display: inline-flex;
+                font-size: 11px;
+                font-weight: 700;
+                height: 28px;
+                padding: 0 10px;
+                white-space: nowrap;
+            }
+
+            .sdr-summary-badge.meeting {
+                background: #dbeafe;
+                color: #1d4ed8;
+            }
+
+            .sdr-summary-badge.followup {
+                background: #fee2e2;
+                color: #b91c1c;
+            }
+
+            .sdr-summary-badge.total {
+                background: #f3f4f6;
+                color: #111827;
+            }
+
+            .dark .sdr-summary-badge.meeting {
+                background: rgba(30, 58, 138, 0.45);
+                color: #bfdbfe;
+            }
+
+            .dark .sdr-summary-badge.followup {
+                background: rgba(127, 29, 29, 0.45);
+                color: #fecaca;
+            }
+
+            .dark .sdr-summary-badge.total {
+                background: rgba(55, 65, 81, 0.6);
+                color: #e5e7eb;
             }
 
             .sdr-row-type-badge {

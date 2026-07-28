@@ -163,18 +163,9 @@ class DashboardController extends Controller
         $userId = auth()->guard('user')->id();
         $todayStart = Carbon::now()->startOfDay();
         $todayEnd = Carbon::now()->endOfDay();
+        $sourceAccessService = app(SourceAccessService::class);
 
-        $todayMeetings = DB::table('activities')
-            ->select(
-                'activities.id',
-                'activities.title',
-                'activities.schedule_from',
-                'activities.schedule_to',
-                'activities.location',
-                'leads.id as lead_id',
-                'persons.name as person_name',
-                'lead_sources.name as source_name'
-            )
+        $meetingsBase = DB::table('activities')
             ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
             ->leftJoin('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
             ->leftJoin('leads', 'lead_activities.lead_id', '=', 'leads.id')
@@ -186,29 +177,58 @@ class DashboardController extends Controller
                 $query
                     ->where('activities.user_id', $userId)
                     ->orWhere('activity_participants.user_id', $userId);
-            })
+            });
+
+        $this->applyVisibleLeadJoinScope($meetingsBase);
+
+        $meetingsCount = (int) (clone $meetingsBase)
+            ->selectRaw('COUNT(DISTINCT activities.id) as aggregate')
+            ->value('aggregate');
+
+        $todayMeetings = (clone $meetingsBase)
+            ->select(
+                'activities.id',
+                'activities.title',
+                'activities.schedule_from',
+                'activities.schedule_to',
+                'activities.location',
+                'leads.id as lead_id',
+                'persons.name as person_name',
+                'lead_sources.name as source_name'
+            )
             ->orderBy('activities.schedule_from')
-            ->limit(8);
-
-        $this->applyVisibleLeadJoinScope($todayMeetings);
-
-        $todayMeetings = $todayMeetings
+            ->limit(8)
             ->get()
+            ->unique('id')
+            ->values()
             ->map(fn ($activity) => [
-                'id'       => 'meeting-'.$activity->id,
-                'type'     => 'Meeting',
-                'source'   => $activity->source_name,
+                'id'           => 'meeting-'.$activity->id,
+                'type'         => 'Meeting',
+                'source'       => $activity->source_name,
                 'source_group' => $this->sourceGroup($activity->source_name),
-                'title'    => $activity->title ?: 'Meeting',
-                'person'   => $activity->person_name,
-                'meta'     => $activity->location ?: 'Scheduled meeting',
-                'time'     => Carbon::parse($activity->schedule_from)->format('h:i A'),
-                'sort_at'  => Carbon::parse($activity->schedule_from)->timestamp,
-                'url'      => route('admin.activities.edit', $activity->id),
-                'lead_url' => $activity->lead_id ? route('admin.leads.view', $activity->lead_id) : null,
+                'title'        => $activity->title ?: 'Meeting',
+                'person'       => $activity->person_name,
+                'meta'         => $activity->location ?: 'Scheduled meeting',
+                'time'         => Carbon::parse($activity->schedule_from)->format('h:i A'),
+                'sort_at'      => Carbon::parse($activity->schedule_from)->timestamp,
+                'url'          => route('admin.activities.edit', $activity->id),
+                'lead_url'     => $activity->lead_id ? route('admin.leads.view', $activity->lead_id) : null,
             ]);
 
-        $todayFollowups = DB::table('leads')
+        $followupsBase = DB::table('leads')
+            ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
+            ->leftJoin('organizations', 'persons.organization_id', '=', 'organizations.id')
+            ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
+            ->whereNull('leads.deleted_at')
+            ->where('leads.user_id', $userId)
+            ->whereNotNull('leads.next_followup_date')
+            ->whereBetween('leads.next_followup_date', [$todayStart, $todayEnd]);
+
+        $sourceAccessService->applyLeadTableScope($followupsBase);
+
+        $followupsCount = (clone $followupsBase)->count('leads.id');
+
+        $todayFollowups = (clone $followupsBase)
             ->select(
                 'leads.id',
                 'leads.title',
@@ -217,35 +237,29 @@ class DashboardController extends Controller
                 'organizations.name as organization_name',
                 'lead_sources.name as source_name'
             )
-            ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
-            ->leftJoin('organizations', 'persons.organization_id', '=', 'organizations.id')
-            ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
-            ->whereNull('leads.deleted_at')
-            ->where('leads.user_id', $userId)
-            ->whereNotNull('leads.next_followup_date')
-            ->whereBetween('leads.next_followup_date', [$todayStart, $todayEnd])
-            ->orderBy('leads.next_followup_date');
-
-        app(SourceAccessService::class)->applyLeadTableScope($todayFollowups);
-
-        $todayFollowups = $todayFollowups
+            ->orderBy('leads.next_followup_date')
             ->limit(8)
             ->get()
             ->map(fn ($lead) => [
-                'id'       => 'followup-'.$lead->id,
-                'type'     => 'Follow-up',
-                'source'   => $lead->source_name,
+                'id'           => 'followup-'.$lead->id,
+                'type'         => 'Follow-up',
+                'source'       => $lead->source_name,
                 'source_group' => $this->sourceGroup($lead->source_name),
-                'title'    => $lead->title,
-                'person'   => $lead->person_name,
-                'meta'     => $lead->organization_name ?: 'Lead follow-up',
-                'time'     => Carbon::parse($lead->next_followup_date)->format('h:i A'),
-                'sort_at'  => Carbon::parse($lead->next_followup_date)->timestamp,
-                'url'      => route('admin.leads.view', $lead->id),
-                'lead_url' => route('admin.leads.view', $lead->id),
+                'title'        => $lead->title,
+                'person'       => $lead->person_name,
+                'meta'         => $lead->organization_name ?: 'Lead follow-up',
+                'time'         => Carbon::parse($lead->next_followup_date)->format('h:i A'),
+                'sort_at'      => Carbon::parse($lead->next_followup_date)->timestamp,
+                'url'          => route('admin.leads.view', $lead->id),
+                'lead_url'     => route('admin.leads.view', $lead->id),
             ]);
 
         return response()->json([
+            'summary' => [
+                'meetings'  => (int) $meetingsCount,
+                'followups' => (int) $followupsCount,
+                'total'     => (int) $meetingsCount + (int) $followupsCount,
+            ],
             'today_calendar' => $todayMeetings
                 ->merge($todayFollowups)
                 ->sortBy('sort_at')
