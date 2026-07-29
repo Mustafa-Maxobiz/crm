@@ -247,7 +247,7 @@
                                         </label>
                                     </x-admin::form.control-group>
 
-                                    <x-admin::form.control-group v-show="scheduleFollowup">
+                                    <x-admin::form.control-group v-if="scheduleFollowup">
                                         <x-admin::form.control-group.label>
                                             @lang('admin::app.leads.create.next-followup-date')
                                         </x-admin::form.control-group.label>
@@ -257,7 +257,6 @@
                                             name="next_followup_date"
                                             :label="trans('admin::app.leads.create.next-followup-date')"
                                             :placeholder="trans('admin::app.leads.create.next-followup-date')"
-                                            ::disabled="! scheduleFollowup"
                                         />
 
                                         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">

@@ -255,12 +255,6 @@
 
                                 <x-admin::attributes
                                     :custom-attributes="$leadQuickAttributes"
-                                    :custom-validations="[
-                                        'expected_close_date' => [
-                                            'date_format:yyyy-MM-dd',
-                                            'after:' . \Carbon\Carbon::yesterday()->format('Y-m-d'),
-                                        ],
-                                    ]"
                                 />
 
                                 <x-admin::form.control-group>

@@ -130,10 +130,13 @@ class LeadForm extends FormRequest
             }
         }
 
-        $this->rules['expected_close_date'] = [
-            'date_format:Y-m-d',
-            'after:'.Carbon::yesterday()->format('Y-m-d'),
-        ];
+        $this->rules['expected_close_date'] = request()->has('quick_add')
+            ? ['nullable', 'date_format:Y-m-d']
+            : [
+                'nullable',
+                'date_format:Y-m-d',
+                'after:'.Carbon::yesterday()->format('Y-m-d'),
+            ];
 
         return [
             ...$this->rules,
