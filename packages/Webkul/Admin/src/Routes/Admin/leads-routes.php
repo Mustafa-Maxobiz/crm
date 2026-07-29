@@ -30,6 +30,8 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
 
     Route::get('edit/{id}', 'edit')->name('admin.leads.edit');
 
+    Route::get('edit/{id}/form-data', 'formData')->name('admin.leads.form_data');
+
     Route::put('edit/{id}', 'update')->name('admin.leads.update');
 
     Route::put('attributes/edit/{id}', 'updateAttributes')->name('admin.leads.attributes.update');

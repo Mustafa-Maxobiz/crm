@@ -69,6 +69,9 @@ class LeadDataGrid extends DataGrid
                 'lead_sources.name as lead_source_name',
                 'lead_types.name as lead_type_name',
                 'leads.created_at',
+                'leads.lead_source_id',
+                'leads.lead_type_id',
+                'leads.lead_pipeline_stage_id',
                 'lead_pipeline_stages.name as stage',
                 'lead_tags.tag_id as tag_id',
                 'users.id as user_id',
@@ -77,7 +80,9 @@ class LeadDataGrid extends DataGrid
                 'persons.contact_numbers',
                 'tags.name as tag_name',
                 'industry_options.name as industry',
+                'industry_values.integer_value as industry_option_id',
                 'service_options.name as service_offered',
+                'service_values.integer_value as service_option_id',
                 DB::raw('(
                     SELECT GROUP_CONCAT(products.name SEPARATOR ", ")
                     FROM lead_products
@@ -441,6 +446,7 @@ class LeadDataGrid extends DataGrid
     {
         if (bouncer()->hasPermission('leads.view')) {
             $this->addAction([
+                'index'  => 'view',
                 'icon'   => 'icon-eye',
                 'title'  => trans('admin::app.leads.index.datagrid.view'),
                 'method' => 'GET',
@@ -448,8 +454,27 @@ class LeadDataGrid extends DataGrid
             ]);
         }
 
+        if (bouncer()->hasPermission('leads.edit')) {
+            $this->addAction([
+                'index'  => 'edit',
+                'icon'   => 'icon-edit',
+                'title'  => trans('admin::app.leads.index.datagrid.edit'),
+                'method' => 'GET',
+                'url'    => fn ($row) => route('admin.leads.form_data', $row->id),
+            ]);
+
+            $this->addAction([
+                'index'  => 'note',
+                'icon'   => 'icon-note',
+                'title'  => trans('admin::app.leads.index.datagrid.add-note'),
+                'method' => 'GET',
+                'url'    => fn ($row) => route('admin.activities.store'),
+            ]);
+        }
+
         if (bouncer()->hasPermission('leads.delete')) {
             $this->addAction([
+                'index'  => 'delete',
                 'icon'   => 'icon-delete',
                 'title'  => trans('admin::app.leads.index.datagrid.delete'),
                 'method' => 'delete',

@@ -4,7 +4,6 @@ namespace Webkul\Admin\Http\Controllers\Lead;
 
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Webkul\Activity\Repositories\ActivityRepository;
 use Webkul\Admin\Http\Controllers\Controller;
@@ -41,8 +40,6 @@ class TagController extends Controller
             return $response;
         }
 
-        $sourceSync = $this->syncLeadSourceFromSourceTag($lead, $tag);
-
         if (! $lead->tags->contains(request()->input('tag_id'))) {
             $lead->tags()->attach(request()->input('tag_id'));
         }
@@ -50,9 +47,7 @@ class TagController extends Controller
         Event::dispatch('leads.tag.create.after', $lead);
 
         return response()->json([
-            'message'          => trans('admin::app.leads.view.tags.create-success'),
-            'detached_tag_ids' => $sourceSync['detached_tag_ids'],
-            'source_changed'   => $sourceSync['source_changed'],
+            'message' => trans('admin::app.leads.view.tags.create-success'),
         ]);
     }
 
@@ -144,77 +139,6 @@ class TagController extends Controller
         $activity->leads()->syncWithoutDetaching([$lead->id]);
 
         return null;
-    }
-
-    /**
-     * Source tags are exclusive and control the lead source.
-     *
-     * @return array{detached_tag_ids: array<int>, source_changed: bool}
-     */
-    protected function syncLeadSourceFromSourceTag($lead, $tag): array
-    {
-        $sourceName = $this->sourceNameForTag($tag);
-
-        if (! $sourceName) {
-            return [
-                'detached_tag_ids' => [],
-                'source_changed'   => false,
-            ];
-        }
-
-        $sourceId = DB::table('lead_sources')
-            ->where('name', $sourceName)
-            ->value('id');
-
-        if (! $sourceId) {
-            return [
-                'detached_tag_ids' => [],
-                'source_changed'   => false,
-            ];
-        }
-
-        $oppositeTag = $this->tagRepository
-            ->getModel()
-            ->newQuery()
-            ->where('name', $this->oppositeSourceTagName($sourceName))
-            ->first();
-
-        $detachedTagIds = [];
-
-        if ($oppositeTag) {
-            $lead->tags()->detach($oppositeTag->id);
-            $detachedTagIds[] = (int) $oppositeTag->id;
-        }
-
-        $sourceChanged = (int) $lead->lead_source_id !== (int) $sourceId;
-
-        if ($sourceChanged) {
-            $this->leadRepository->update([
-                'entity_type'    => 'leads',
-                'lead_source_id' => $sourceId,
-            ], $lead->id, ['lead_source_id']);
-        }
-
-        return [
-            'detached_tag_ids' => $detachedTagIds,
-            'source_changed'   => $sourceChanged,
-        ];
-    }
-
-    protected function sourceNameForTag($tag): ?string
-    {
-        return match (strtolower(trim((string) $tag?->name))) {
-            'cold lead', 'cold call', 'cold calls' => 'Cold Call',
-            'warm lead', 'warm leads'              => 'Warm Leads',
-            default                                => null,
-        };
-    }
-
-    protected function oppositeSourceTagName(string $sourceName): string
-    {
-        return $sourceName === 'Warm Leads'
-            ? 'Cold Lead'
-            : 'Warm Lead';
     }
 
     /**

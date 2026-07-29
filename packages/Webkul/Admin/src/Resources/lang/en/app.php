@@ -2212,8 +2212,20 @@ return [
                 'no'                  => 'No',
                 'yes'                 => 'Yes',
                 'delete'              => 'Delete',
+                'edit'                => 'Edit',
+                'view'                => 'View',
+                'add-note'            => 'Add Note',
                 'mass-delete'         => 'Mass Delete',
                 'mass-update'         => 'Mass Update',
+            ],
+
+            'modals' => [
+                'edit-title'       => 'Edit Lead',
+                'edit-save-btn'    => 'Save Lead',
+                'note-title'       => 'Add Note',
+                'note-save-btn'    => 'Save Note',
+                'note-comment'     => 'Comment',
+                'loading'          => 'Loading...',
             ],
 
             'kanban' => [

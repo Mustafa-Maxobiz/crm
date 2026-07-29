@@ -26,6 +26,7 @@ return [
         'name'  => 'admin::app.acl.edit',
         'route' => [
             'admin.leads.edit',
+            'admin.leads.form_data',
             'admin.leads.update',
             'admin.leads.mass_update',
             'admin.leads.tags.attach',

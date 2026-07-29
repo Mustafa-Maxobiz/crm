@@ -229,7 +229,7 @@ class LeadController extends Controller
                 $lead = $this->leadRepository->create($this->prepareImportedLeadData($rowData));
 
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
-                $this->syncSourceTagForLead($lead);
+
 
                 Event::dispatch('lead.create.after', $lead);
 
@@ -363,7 +363,7 @@ class LeadController extends Controller
                 $lead = $this->leadRepository->create($this->prepareImportedLeadData($rowData));
 
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
-                $this->syncSourceTagForLead($lead);
+
 
                 Event::dispatch('lead.create.after', $lead);
 
@@ -591,7 +591,7 @@ class LeadController extends Controller
         $lead = $this->leadRepository->create($data);
 
         $this->syncLeadTags($lead, $data['tags'] ?? []);
-        $this->syncSourceTagForLead($lead);
+
 
         if (request()->ajax()) {
             return response()->json([
@@ -636,6 +636,87 @@ class LeadController extends Controller
     }
 
     /**
+     * Return lead form values for the table edit modal.
+     */
+    public function formData(int $id): JsonResponse|RedirectResponse
+    {
+        $lead = $this->leadRepository->findOrFail($id);
+
+        if (! $this->sourceAccessService->canAccessLead($lead)) {
+            abort(403);
+        }
+
+        if ($this->isSdrUser()) {
+            $lead = $this->claimNewLeadForSdr($lead);
+        }
+
+        $userIds = bouncer()->getAuthorizedUserIds();
+
+        if ($userIds && ! in_array($lead->user_id, $userIds)) {
+            abort(403);
+        }
+
+        $lead->load(['person.organization', 'tags', 'pipeline.stages']);
+
+        $data = $lead->attributesToArray();
+
+        foreach (['expected_close_date', 'next_followup_date', 'last_followup_date', 'closed_at', 'lead_disqualified_at'] as $dateField) {
+            $raw = $lead->getAttributes()[$dateField] ?? null;
+
+            if (! $raw) {
+                $data[$dateField] = null;
+
+                continue;
+            }
+
+            try {
+                $parsed = Carbon::parse($raw);
+                $data[$dateField] = in_array($dateField, ['expected_close_date'], true)
+                    ? $parsed->format('Y-m-d')
+                    : $parsed->format('Y-m-d H:i:s');
+            } catch (\Throwable $e) {
+                $data[$dateField] = $raw;
+            }
+        }
+
+        $data['entity_type'] = 'leads';
+        $data['quick_add'] = 1;
+        $data['tags'] = $lead->tags->pluck('name')->values()->all();
+        $data['person'] = $lead->person
+            ? [
+                'id'               => $lead->person->id,
+                'name'             => $lead->person->name,
+                'emails'           => $lead->person->emails ?: [['value' => '', 'label' => 'work']],
+                'contact_numbers'  => $lead->person->contact_numbers ?: [['value' => '', 'label' => 'work']],
+                'organization_id'  => $lead->person->organization_id,
+                'organization'     => $lead->person->organization,
+                'address'          => $lead->person->address,
+                'website'          => $lead->person->website ?? '',
+            ]
+            : [
+                'id'              => null,
+                'name'            => '',
+                'emails'          => [['value' => '', 'label' => 'work']],
+                'contact_numbers' => [['value' => '', 'label' => 'work']],
+                'organization_id' => null,
+                'organization'    => null,
+                'address'         => null,
+                'website'         => '',
+            ];
+
+        $data['stages'] = $lead->pipeline
+            ? $lead->pipeline->stages->map(fn ($stage) => [
+                'id'   => $stage->id,
+                'name' => $stage->name,
+            ])->values()->all()
+            : [];
+
+        return response()->json([
+            'data' => $data,
+        ]);
+    }
+
+    /**
      * Display a resource.
      */
     public function view(int $id)
@@ -659,7 +740,7 @@ class LeadController extends Controller
             return redirect()->route('admin.leads.index');
         }
 
-        $this->syncSourceTagForLead($lead);
+
 
         $lead->load('tags');
 
@@ -724,42 +805,6 @@ class LeadController extends Controller
     /**
      * Keep the visible source tag aligned with the current lead source.
      */
-    protected function syncSourceTagForLead($lead): void
-    {
-        $sourceName = DB::table('lead_sources')
-            ->where('id', $lead->lead_source_id)
-            ->value('name');
-
-        if (! in_array($sourceName, ['Cold Call', 'Warm Leads'], true)) {
-            return;
-        }
-
-        $tagName = $sourceName === 'Warm Leads' ? 'Warm Lead' : 'Cold Lead';
-        $oppositeTagName = $sourceName === 'Warm Leads' ? 'Cold Lead' : 'Warm Lead';
-
-        $tag = $this->findSourceTag($tagName);
-        $oppositeTag = $this->findSourceTag($oppositeTagName);
-
-        if (! $tag) {
-            return;
-        }
-
-        if ($oppositeTag) {
-            $lead->tags()->detach($oppositeTag->id);
-        }
-
-        $lead->tags()->syncWithoutDetaching([$tag->id]);
-    }
-
-    protected function findSourceTag(string $name)
-    {
-        return $this->tagRepository
-            ->getModel()
-            ->newQuery()
-            ->where('name', $name)
-            ->first();
-    }
-
     /**
      * Update the specified resource in storage.
      */
@@ -786,7 +831,7 @@ class LeadController extends Controller
         $lead = $this->leadRepository->update($data, $id);
 
         $this->syncLeadTags($lead, $data['tags'] ?? []);
-        $this->syncSourceTagForLead($lead);
+
 
         Event::dispatch('lead.update.after', $lead);
 
@@ -822,7 +867,7 @@ class LeadController extends Controller
         $lead = $this->leadRepository->update($data, $id, $attributes);
 
         if (array_key_exists('lead_source_id', $data)) {
-            $this->syncSourceTagForLead($lead);
+    
         }
 
         Event::dispatch('lead.update.after', $lead);
@@ -1514,7 +1559,7 @@ class LeadController extends Controller
             ]));
 
             $this->syncLeadTags($lead, $rawLead['tags'] ?? []);
-            $this->syncSourceTagForLead($lead);
+    
 
             Event::dispatch('lead.create.after', $lead);
 

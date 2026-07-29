@@ -325,13 +325,17 @@
                     }
 
                     if (this.available.actions.length) {
-                        tracks.push('72px');
+                        tracks.push(this.available.actions.length > 2 ? '160px' : '72px');
                     }
+
+                    const actionsWidth = this.available.actions.length
+                        ? (this.available.actions.length > 2 ? 160 : 72)
+                        : 0;
 
                     const minWidth =
                         (this.available.massActions.length ? 40 : 0)
                         + (visibleColumns * dataColumnMin)
-                        + (this.available.actions.length ? 72 : 0)
+                        + actionsWidth
                         + ((tracks.length - 1) * 10); // gap-2.5
 
                     return {
