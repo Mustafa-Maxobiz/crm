@@ -30,6 +30,7 @@ return [
             'admin.leads.update',
             'admin.leads.mass_update',
             'admin.leads.tags.attach',
+            'admin.leads.tags.replace',
             'admin.leads.tags.detach',
         ],
         'sort'  => 3,

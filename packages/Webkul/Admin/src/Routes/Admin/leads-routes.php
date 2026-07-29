@@ -73,6 +73,8 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
     Route::controller(TagController::class)->prefix('{id}/tags')->group(function () {
         Route::post('', 'attach')->name('admin.leads.tags.attach');
 
+        Route::patch('', 'replace')->name('admin.leads.tags.replace');
+
         Route::delete('', 'detach')->name('admin.leads.tags.detach');
     });
 

@@ -297,9 +297,10 @@ class DashboardController extends Controller
 
     protected function sourceGroup(?string $sourceName): string
     {
-        return strcasecmp((string) $sourceName, 'Warm Leads') === 0
-            ? 'warm'
-            : 'cold';
+        // Warm Lead is a tag; "warm" leads are any source other than Cold Call.
+        return strcasecmp((string) $sourceName, 'Cold Call') === 0
+            ? 'cold'
+            : 'warm';
     }
 
     protected function periodRange(string $period, ?string $startDate = null, ?string $endDate = null): array

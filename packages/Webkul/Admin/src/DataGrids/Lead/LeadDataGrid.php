@@ -21,6 +21,20 @@ class LeadDataGrid extends DataGrid
     protected $pipeline;
 
     /**
+     * Default sort column.
+     *
+     * @var string
+     */
+    protected $sortColumn = 'leads.created_at';
+
+    /**
+     * Default sort order.
+     *
+     * @var string
+     */
+    protected $sortOrder = 'desc';
+
+    /**
      * Create data grid instance.
      *
      * @return void
@@ -89,6 +103,13 @@ class LeadDataGrid extends DataGrid
                     INNER JOIN products ON products.id = lead_products.product_id
                     WHERE lead_products.lead_id = leads.id
                 ) as product_names'),
+                DB::raw('(
+                    SELECT COUNT(*)
+                    FROM lead_activities
+                    INNER JOIN activities ON activities.id = lead_activities.activity_id
+                    WHERE lead_activities.lead_id = leads.id
+                      AND activities.type = "meeting"
+                ) as meeting_activity_count'),
             )
             ->leftJoin('users', 'leads.user_id', '=', 'users.id')
             ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
@@ -123,6 +144,16 @@ class LeadDataGrid extends DataGrid
             ->groupBy('leads.id')
             ->whereNull('leads.deleted_at')
             ->where('leads.lead_pipeline_id', $this->pipeline->id);
+
+        $coldCallSourceId = DB::table('lead_sources')->where('name', 'Cold Call')->value('id');
+
+        // Non-Cold Call sources first, then Cold Call / empty source.
+        if ($coldCallSourceId) {
+            $queryBuilder->orderByRaw(
+                'CASE WHEN leads.lead_source_id IS NULL OR leads.lead_source_id = ? THEN 1 ELSE 0 END ASC',
+                [$coldCallSourceId]
+            );
+        }
 
         if (! app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin() && $userIds = bouncer()->getAuthorizedUserIds()) {
             if ($this->isSdrUser()) {

@@ -52,6 +52,45 @@ class TagController extends Controller
     }
 
     /**
+     * Replace the current tag on a lead with a new one.
+     */
+    public function replace(int $id): JsonResponse
+    {
+        $this->validate(request(), [
+            'tag_id'     => ['required', 'integer', 'exists:tags,id'],
+            'old_tag_id' => ['nullable', 'integer', 'exists:tags,id'],
+        ]);
+
+        Event::dispatch('leads.tag.create.before', $id);
+
+        $lead = $this->leadRepository->findOrFail($id);
+        $newTagId = (int) request()->input('tag_id');
+        $oldTagId = request()->filled('old_tag_id')
+            ? (int) request()->input('old_tag_id')
+            : null;
+
+        $tag = $this->tagRepository->find($newTagId);
+
+        if ($response = $this->prepareNotAnsweredCallActivity($lead, $tag)) {
+            return $response;
+        }
+
+        if ($oldTagId && $oldTagId !== $newTagId) {
+            $lead->tags()->detach($oldTagId);
+        }
+
+        if (! $lead->tags()->where('tags.id', $newTagId)->exists()) {
+            $lead->tags()->attach($newTagId);
+        }
+
+        Event::dispatch('leads.tag.create.after', $lead->fresh('tags'));
+
+        return response()->json([
+            'message' => trans('admin::app.leads.view.tags.create-success'),
+        ]);
+    }
+
+    /**
      * Remove the specified resource from storage.
      *
      * @param  int  $leadId

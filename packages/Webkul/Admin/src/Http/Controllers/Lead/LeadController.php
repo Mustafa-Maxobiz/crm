@@ -230,6 +230,7 @@ class LeadController extends Controller
 
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
 
+                $this->syncSourceTagForLead($lead);
 
                 Event::dispatch('lead.create.after', $lead);
 
@@ -364,6 +365,7 @@ class LeadController extends Controller
 
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
 
+                $this->syncSourceTagForLead($lead);
 
                 Event::dispatch('lead.create.after', $lead);
 
@@ -592,6 +594,7 @@ class LeadController extends Controller
 
         $this->syncLeadTags($lead, $data['tags'] ?? []);
 
+        $this->syncSourceTagForLead($lead);
 
         if (request()->ajax()) {
             return response()->json([
@@ -803,8 +806,47 @@ class LeadController extends Controller
     }
 
     /**
-     * Keep the visible source tag aligned with the current lead source.
+     * Auto-assign Warm/Cold Lead tag from the lead source.
+     * Non-Cold Call sources get Warm Lead; Cold Call gets Cold Lead.
+     * Does not change the source when tags change.
      */
+    protected function syncSourceTagForLead($lead): void
+    {
+        $sourceName = DB::table('lead_sources')
+            ->where('id', $lead->lead_source_id)
+            ->value('name');
+
+        if (! $sourceName) {
+            return;
+        }
+
+        $isColdCall = $sourceName === 'Cold Call';
+        $tagName = $isColdCall ? 'Cold Lead' : 'Warm Lead';
+        $oppositeTagName = $isColdCall ? 'Warm Lead' : 'Cold Lead';
+
+        $tag = $this->findSourceTag($tagName);
+        $oppositeTag = $this->findSourceTag($oppositeTagName);
+
+        if (! $tag) {
+            return;
+        }
+
+        if ($oppositeTag) {
+            $lead->tags()->detach($oppositeTag->id);
+        }
+
+        $lead->tags()->syncWithoutDetaching([$tag->id]);
+    }
+
+    protected function findSourceTag(string $name)
+    {
+        return $this->tagRepository
+            ->getModel()
+            ->newQuery()
+            ->where('name', $name)
+            ->first();
+    }
+
     /**
      * Update the specified resource in storage.
      */
@@ -832,6 +874,7 @@ class LeadController extends Controller
 
         $this->syncLeadTags($lead, $data['tags'] ?? []);
 
+        $this->syncSourceTagForLead($lead);
 
         Event::dispatch('lead.update.after', $lead);
 
@@ -867,7 +910,7 @@ class LeadController extends Controller
         $lead = $this->leadRepository->update($data, $id, $attributes);
 
         if (array_key_exists('lead_source_id', $data)) {
-    
+            $this->syncSourceTagForLead($lead);
         }
 
         Event::dispatch('lead.update.after', $lead);
@@ -942,6 +985,25 @@ class LeadController extends Controller
 
             $lead = $this->leadRepository->update($payload, $id, $attributes);
 
+            if ($stage->code === 'follow-up' && request()->filled('followup_mode')) {
+                $mode = request()->input('followup_mode');
+
+                if ($mode === 'custom') {
+                    $this->validate(request(), [
+                        'next_followup_date' => ['required', 'date', 'after:now'],
+                    ]);
+
+                    $this->followupScheduleService->applyNextFollowup(
+                        $lead,
+                        Carbon::parse(request()->input('next_followup_date'))
+                    );
+                } elseif ($mode === 'auto') {
+                    $this->followupScheduleService->applyNextFollowup($lead, null, true);
+                }
+
+                $lead = $lead->refresh();
+            }
+
             Event::dispatch('lead.update.after', $lead);
 
             return response()->json([
@@ -970,7 +1032,8 @@ class LeadController extends Controller
 
         if ($targetStage->code === 'meeting' && ! $hasMeetingActivity) {
             return response()->json([
-                'message' => trans('admin::app.leads.meeting-stage-requires-activity'),
+                'message'                    => trans('admin::app.leads.meeting-stage-requires-activity'),
+                'requires_meeting_activity'  => true,
             ], 422);
         }
 
@@ -1559,7 +1622,8 @@ class LeadController extends Controller
             ]));
 
             $this->syncLeadTags($lead, $rawLead['tags'] ?? []);
-    
+
+            $this->syncSourceTagForLead($lead);
 
             Event::dispatch('lead.create.after', $lead);
 
