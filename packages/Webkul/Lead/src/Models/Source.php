@@ -81,6 +81,20 @@ class Source extends Model implements SourceContract
     }
 
     /**
+     * Get only sub-sources (pivot children or legacy parent_id).
+     */
+    public function scopeChildren($query)
+    {
+        return $query->where(function ($builder) {
+            $builder->whereExists(function ($subQuery) {
+                $subQuery->select(\DB::raw(1))
+                    ->from('lead_source_parents')
+                    ->whereColumn('lead_source_parents.source_id', 'lead_sources.id');
+            })->orWhereNotNull('parent_id');
+        })->orderBy('sort_order');
+    }
+
+    /**
      * Get only sub-sources (sources with parent_id).
      */
     public function scopeSubSources($query)

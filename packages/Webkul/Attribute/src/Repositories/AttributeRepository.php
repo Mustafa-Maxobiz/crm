@@ -144,13 +144,19 @@ class AttributeRepository extends Repository
             return $userRepository->where('users.name', 'like', '%'.urldecode($query).'%')->get();
         }
 
-        // Handle scope if specified (e.g., 'roots' for root sources only)
+        // Handle scope if specified (e.g., 'roots' / 'children' for sources)
         $repository = app($lookup['repository']);
 
         if (isset($lookup['scope'])) {
             $queryBuilder = $repository->getModel()->newQuery()->{$lookup['scope']}();
 
-            $this->applySourceScopeToQuery($queryBuilder);
+            if (Str::contains($lookup['repository'], 'SourceRepository')) {
+                if ($lookup['scope'] === 'roots') {
+                    $this->applyRootSourceScopeToQuery($queryBuilder);
+                } else {
+                    $this->applyExpandedSourceScopeToQuery($queryBuilder);
+                }
+            }
 
             return $queryBuilder
                 ->where($lookup['label_column'] ?? 'name', 'like', '%'.urldecode($query).'%')
@@ -161,7 +167,7 @@ class AttributeRepository extends Repository
         if (Str::contains($lookup['repository'], 'SourceRepository')) {
             $queryBuilder = $repository->getModel()->newQuery();
 
-            $this->applySourceScopeToQuery($queryBuilder);
+            $this->applyExpandedSourceScopeToQuery($queryBuilder);
 
             return $queryBuilder
                 ->where($lookup['label_column'] ?? 'name', 'like', '%'.urldecode($query).'%')
@@ -214,13 +220,30 @@ class AttributeRepository extends Repository
         }
     }
 
-    protected function applySourceScopeToQuery($queryBuilder): void
+    protected function applyRootSourceScopeToQuery($queryBuilder): void
     {
         $rootIds = app(SourceAccessService::class)->getEffectiveRootSourceIds();
 
         if ($rootIds !== null) {
             $queryBuilder->whereIn('lead_sources.id', $rootIds);
         }
+    }
+
+    protected function applyExpandedSourceScopeToQuery($queryBuilder): void
+    {
+        $sourceIds = app(SourceAccessService::class)->getExpandedSourceIds();
+
+        if ($sourceIds !== null) {
+            $queryBuilder->whereIn('lead_sources.id', $sourceIds);
+        }
+    }
+
+    /**
+     * @deprecated Use applyRootSourceScopeToQuery / applyExpandedSourceScopeToQuery.
+     */
+    protected function applySourceScopeToQuery($queryBuilder): void
+    {
+        $this->applyRootSourceScopeToQuery($queryBuilder);
     }
 
     protected function applyOrganizationScopeToQuery($queryBuilder): void

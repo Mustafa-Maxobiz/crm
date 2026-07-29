@@ -18,6 +18,12 @@ return [
         'scope'        => 'roots',
     ],
 
+    'lead_sub_sources' => [
+        'name'         => 'Lead Sub Sources',
+        'repository'   => 'Webkul\Lead\Repositories\SourceRepository',
+        'scope'        => 'children',
+    ],
+
     'lead_types' => [
         'name'         => 'Lead Types',
         'repository'   => 'Webkul\Lead\Repositories\TypeRepository',

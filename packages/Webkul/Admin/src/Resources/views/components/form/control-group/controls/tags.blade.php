@@ -11,7 +11,7 @@
     >
         <div 
             class="flex min-h-[38px] w-full items-center rounded border border-gray-200 px-2.5 py-1.5 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 dark:border-gray-800 dark:text-white dark:hover:border-gray-400"
-            :class="[errors[`temp-${name}`] ? 'border !border-red-600 hover:border-red-600' : '']"
+            :class="[validationErrors[`temp-${name}`] ? 'border !border-red-600 hover:border-red-600' : '']"
         >
             <ul
                 class="relative flex flex-wrap items-center gap-1"
@@ -171,6 +171,10 @@
                 showSuggestions() {
                     return this.input.trim().length >= 2 && this.suggestions.length > 0;
                 },
+
+                validationErrors() {
+                    return this.errors || {};
+                },
             },
 
             watch: {
@@ -181,7 +185,7 @@
 
             methods: {
                 addTag() {
-                    if (this.errors['temp-' + this.name]) {
+                    if (this.validationErrors['temp-' + this.name]) {
                         return;
                     }
 

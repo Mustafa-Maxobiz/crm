@@ -101,7 +101,7 @@ class AttributeSeeder extends Seeder
                 'name'            => trans('installer::app.seeders.attributes.leads.sub-source', [], $defaultLocale),
                 'type'            => 'select',
                 'entity_type'     => 'leads',
-                'lookup_type'     => 'lead_sources',
+                'lookup_type'     => 'lead_sub_sources',
                 'validation'      => null,
                 'sort_order'      => '4.05',
                 'is_required'     => '0',

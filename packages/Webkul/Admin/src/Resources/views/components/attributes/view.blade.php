@@ -17,6 +17,7 @@
                         'value'     => isset($entity) ? $entity[$attribute->code] : null,
                         'allowEdit' => $allowEdit,
                         'url'       => $url,
+                        'entity'    => $entity,
                     ])
                 </div>
             </div>

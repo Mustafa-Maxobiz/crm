@@ -8,18 +8,11 @@
 
     $pipeline = app(\Webkul\Lead\Repositories\PipelineRepository::class)->getDefaultPipeline();
 
-    $isAdmin = auth()->guard('user')->user()?->role?->permission_type === 'all';
-
-    $inlineOptions = [];
-
-    if ($isAdmin) {
-        $inlineOptions['lead_source_name'] = [
-            'field'   => 'lead_source_id',
-            'items'   => app(\Webkul\Lead\Repositories\SourceRepository::class)->all(['id as value', 'name as label'])->toArray(),
-        ];
-    }
-
-    $inlineOptions += [
+    $inlineOptions = [
+        'lead_source_name' => [
+            'field' => 'lead_source_id',
+            'items' => app(\Webkul\Lead\Repositories\SourceRepository::class)->getRootDropdownOptions(),
+        ],
         'lead_type_name' => [
             'field'   => 'lead_type_id',
             'items'   => app(\Webkul\Lead\Repositories\TypeRepository::class)->all(['id as value', 'name as label'])->toArray(),

@@ -900,6 +900,23 @@ class LeadController extends Controller
     {
         $data = request()->all();
 
+        if (array_key_exists('lead_source_id', $data) || array_key_exists('lead_sub_source_id', $data)) {
+            $sourceId = ! empty($data['lead_source_id']) ? (int) $data['lead_source_id'] : null;
+            $subSourceId = ! empty($data['lead_sub_source_id']) ? (int) $data['lead_sub_source_id'] : null;
+
+            if ($sourceId && ! $this->sourceAccessService->canUseLeadSourceSelection($sourceId, $subSourceId)) {
+                return response()->json([
+                    'message' => trans('admin::app.leads.source-access-denied'),
+                ], 403);
+            }
+
+            if ($subSourceId && ! $this->sourceAccessService->canAccessSourceId($subSourceId)) {
+                return response()->json([
+                    'message' => trans('admin::app.leads.source-access-denied'),
+                ], 403);
+            }
+        }
+
         $attributes = $this->attributeRepository->findWhere([
             'entity_type' => 'leads',
             ['code', 'NOTIN', ['title', 'description']],
