@@ -69,6 +69,7 @@
 
                                     <p class="mt-1">
                                         Required columns are marked with * in the template. Blank optional columns are imported as null. Blank schedule_followup uses auto schedule.
+                                        Bulk imports always use <strong>Cold Call</strong> as the source and get the <strong>Cold Lead</strong> tag.
                                     </p>
 
                                     <p class="mt-2 text-xs font-semibold text-red-600 dark:text-red-400">
@@ -76,7 +77,7 @@
                                     </p>
 
                                     <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                                        Required: title*, lead_value*, source*, type*, pricing_type*
+                                        Required: title*, lead_value*, type*, pricing_type*
                                     </p>
                                 </div>
 

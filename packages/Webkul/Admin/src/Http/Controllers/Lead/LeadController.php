@@ -110,7 +110,6 @@ class LeadController extends Controller
         $headers = [
             'title*',
             'lead_value*',
-            'source*',
             'type*',
             'pricing_type*',
             'person_name',
@@ -125,7 +124,6 @@ class LeadController extends Controller
             'next_followup_date',
             'description',
             'source_link',
-            'sub_source',
             'source_sub_type',
             'tags',
         ];
@@ -133,7 +131,6 @@ class LeadController extends Controller
         $sample = [
             'Sample Lead',
             '5000',
-            'Cold Call',
             'New Business',
             'Fixed Price',
             'John Smith',
@@ -149,8 +146,7 @@ class LeadController extends Controller
             'Imported lead description',
             'https://example.com/source',
             '',
-            '',
-            'Cold Call,priority',
+            'priority',
         ];
 
         return response()->streamDownload(function () use ($headers, $sample) {
@@ -1686,7 +1682,6 @@ class LeadController extends Controller
         return [
             'title',
             'lead_value',
-            'source',
             'type',
             'pricing_type',
         ];
@@ -1784,7 +1779,7 @@ class LeadController extends Controller
             $errors[] = 'email must be a valid email address.';
         }
 
-        foreach (['source' => 'lead_sources', 'type' => 'lead_types'] as $column => $table) {
+        foreach (['type' => 'lead_types'] as $column => $table) {
             if (filled($row[$column] ?? null) && ! $this->resolveImportId($table, $row[$column])) {
                 $errors[] = $column.' "'.$row[$column].'" was not found.';
             }
@@ -1792,10 +1787,6 @@ class LeadController extends Controller
 
         if (filled($row['pricing_type'] ?? null) && ! $this->resolveAttributeOptionId('pricing_type', $row['pricing_type'])) {
             $errors[] = 'pricing_type "'.$row['pricing_type'].'" was not found.';
-        }
-
-        if (filled($row['sub_source'] ?? null) && ! $this->resolveImportId('lead_sources', $row['sub_source'])) {
-            $errors[] = 'sub_source "'.$row['sub_source'].'" was not found.';
         }
 
         if (filled($row['sales_owner_email'] ?? null) && ! $this->resolveUserId($row['sales_owner_email'])) {
@@ -1836,15 +1827,16 @@ class LeadController extends Controller
             ? true
             : $this->booleanImportValue($row['schedule_followup'] ?? null, true);
 
+        // Bulk imports are always Cold Call / Cold Lead (no sub-source).
+        $coldCallSourceId = $this->resolveColdCallSourceId();
+
         return [
             'entity_type'              => 'leads',
             'title'                    => trim($row['title']),
             'description'              => $this->nullableImportValue($row['description'] ?? null),
             'lead_value'               => (float) $row['lead_value'],
-            'lead_source_id'           => $this->resolveImportId('lead_sources', $row['source']),
-            'lead_sub_source_id'       => filled($row['sub_source'] ?? null)
-                ? $this->resolveImportId('lead_sources', $row['sub_source'])
-                : null,
+            'lead_source_id'           => $coldCallSourceId,
+            'lead_sub_source_id'       => null,
             'lead_type_id'             => $this->resolveImportId('lead_types', $row['type']),
             'pricing_type'             => $this->resolveAttributeOptionId('pricing_type', $row['pricing_type']),
             'source_sub_type'          => $this->nullableImportValue($row['source_sub_type'] ?? null),
@@ -1869,6 +1861,22 @@ class LeadController extends Controller
                     : [],
             ],
         ];
+    }
+
+    /**
+     * Bulk-imported leads always use the Cold Call source.
+     */
+    protected function resolveColdCallSourceId(): int
+    {
+        $sourceId = DB::table('lead_sources')
+            ->whereRaw('LOWER(name) = ?', ['cold call'])
+            ->value('id');
+
+        if (! $sourceId) {
+            throw new \InvalidArgumentException('Cold Call source was not found. Please create it before importing leads.');
+        }
+
+        return (int) $sourceId;
     }
 
     protected function resolveImportId(string $table, $value): ?int
