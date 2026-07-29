@@ -187,15 +187,18 @@ class PersonRepository extends Repository
             $data['emails'][0]['value'] ?? null,
         ]);
 
-        $data['unique_id'] = implode('|', $uniqueIdParts);
-
         if (isset($data['contact_numbers'])) {
             $data['contact_numbers'] = collect($data['contact_numbers'])->filter(fn ($number) => ! is_null($number['value']))->toArray();
 
             if (! empty($data['contact_numbers'][0]['value'])) {
-                $data['unique_id'] .= '|'.$data['contact_numbers'][0]['value'];
+                $uniqueIdParts[] = $data['contact_numbers'][0]['value'];
             }
         }
+
+        // Generate unique_id, fallback to random string if all parts are empty
+        $data['unique_id'] = empty($uniqueIdParts) 
+            ? 'person_' . uniqid() 
+            : implode('|', $uniqueIdParts);
 
         if (array_key_exists('website', $data) && empty($data['website'])) {
             $data['website'] = null;
