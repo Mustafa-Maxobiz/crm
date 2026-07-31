@@ -12,7 +12,6 @@ use Webkul\Admin\Http\Requests\MassDestroyRequest;
 use Webkul\Admin\Http\Resources\TagResource;
 use Webkul\Lead\Services\SourceAccessService;
 use Webkul\Tag\Repositories\TagRepository;
-use Webkul\Tag\StaticTags;
 
 class TagController extends Controller
 {
@@ -37,8 +36,6 @@ class TagController extends Controller
 
         return view('admin::settings.tags.index', [
             'canManageTags' => $this->sourceAccessService->isAdmin(),
-            'tagsCount'     => $this->tagRepository->count(),
-            'maxTags'       => StaticTags::maxAllowed(),
         ]);
     }
 
@@ -48,14 +45,6 @@ class TagController extends Controller
     public function store(): JsonResponse
     {
         $this->ensureAdminCanManageTags();
-
-        if ($this->tagRepository->count() >= StaticTags::maxAllowed()) {
-            return new JsonResponse([
-                'message' => trans('admin::app.settings.tags.index.max-allowed', [
-                    'max' => StaticTags::maxAllowed(),
-                ]),
-            ], 422);
-        }
 
         $this->validate(request(), [
             'name' => ['required', 'unique:tags,name', 'max:50'],

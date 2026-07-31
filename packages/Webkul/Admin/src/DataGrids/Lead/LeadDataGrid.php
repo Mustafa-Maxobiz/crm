@@ -145,15 +145,30 @@ class LeadDataGrid extends DataGrid
             ->whereNull('leads.deleted_at')
             ->where('leads.lead_pipeline_id', $this->pipeline->id);
 
+        // Warm Lead first, then Cold Lead / Cold Call, then newest.
         $coldCallSourceId = DB::table('lead_sources')->where('name', 'Cold Call')->value('id');
 
-        // Non-Cold Call sources first, then Cold Call / empty source.
-        if ($coldCallSourceId) {
-            $queryBuilder->orderByRaw(
-                'CASE WHEN leads.lead_source_id IS NULL OR leads.lead_source_id = ? THEN 1 ELSE 0 END ASC',
-                [$coldCallSourceId]
-            );
-        }
+        $queryBuilder->orderByRaw(
+            'CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM lead_tags
+                    INNER JOIN tags ON tags.id = lead_tags.tag_id
+                    WHERE lead_tags.lead_id = leads.id
+                      AND tags.name = ?
+                ) THEN 0
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM lead_tags
+                    INNER JOIN tags ON tags.id = lead_tags.tag_id
+                    WHERE lead_tags.lead_id = leads.id
+                      AND tags.name = ?
+                ) THEN 1
+                WHEN leads.lead_source_id IS NULL OR leads.lead_source_id = ? THEN 1
+                ELSE 0
+            END ASC',
+            ['Warm Lead', 'Cold Lead', $coldCallSourceId ?: 0]
+        );
 
         if (! app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin() && $userIds = bouncer()->getAuthorizedUserIds()) {
             if ($this->isSdrUser()) {
@@ -206,6 +221,7 @@ class LeadDataGrid extends DataGrid
             'index'      => 'id',
             'label'      => trans('admin::app.leads.index.datagrid.id'),
             'type'       => 'integer',
+            'searchable' => true,
             'sortable'   => true,
             'filterable' => true,
         ]);

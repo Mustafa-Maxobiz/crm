@@ -220,6 +220,7 @@ return [
         Webkul\Warehouse\Providers\WarehouseServiceProvider::class,
         Webkul\WebForm\Providers\WebFormServiceProvider::class,
         Webkul\MetaLead\Providers\MetaLeadServiceProvider::class,
+        Webkul\SmrtPhone\Providers\SmrtPhoneServiceProvider::class,
     ])->toArray(),
 
     /*

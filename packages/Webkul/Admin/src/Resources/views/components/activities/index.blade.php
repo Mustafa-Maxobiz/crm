@@ -4,6 +4,7 @@
     'activeType'          => 'all',
     'types'               => null,
     'extraTypes'          => null,
+    'prospectTimezone'    => null,
 ])
 
 {!! view_render_event('admin.components.activities.before') !!}
@@ -13,6 +14,7 @@
     endpoint="{{ $endpoint }}"
     email-detach-endpoint="{{ $emailDetachEndpoint }}"
     active-type="{{ $activeType }}"
+    prospect-timezone="{{ $prospectTimezone }}"
     @if($types):types='@json($types)'@endif
     @if($extraTypes):extra-types='@json($extraTypes)'@endif
     ref="activities"
@@ -155,7 +157,16 @@
                                                 >
                                                     @lang('admin::app.components.activities.index.scheduled-on'):
 
-                                                    @{{ $admin.formatDate(activity.schedule_from, 'd MMM yyyy, h:mm A', timezone) + ' - ' + $admin.formatDate(activity.schedule_to, 'd MMM yyyy, h:mm A', timezone) }}
+                                                    <span class="block">
+                                                        @{{ formatScheduleRange(activity.schedule_from, activity.schedule_to, timezone) }}
+                                                    </span>
+
+                                                    <span
+                                                        v-if="prospectTimezone"
+                                                        class="mt-0.5 block text-sm text-gray-500 dark:text-gray-400"
+                                                    >
+                                                        @{{ formatScheduleRange(activity.schedule_from, activity.schedule_to, prospectTimezone) }}
+                                                    </span>
                                                 </p>
 
                                                 <!-- Activity Participants -->
@@ -434,6 +445,11 @@
                     type: Array,
                     default: [],
                 },
+
+                prospectTimezone: {
+                    type: String,
+                    default: '',
+                },
             },
 
             data() {
@@ -535,6 +551,16 @@
             },
 
             methods: {
+                formatScheduleRange(from, to, timezone) {
+                    const start = this.$admin.formatDate(from, 'd MMM yyyy, h:mm A', timezone);
+                    const end = this.$admin.formatDate(to, 'd MMM yyyy, h:mm A', timezone);
+                    const zoneLabel = timezone
+                        ? ` (${String(timezone).replace('America/', '').replace('Pacific/', '').replaceAll('_', ' ')})`
+                        : '';
+
+                    return `${start} - ${end}${zoneLabel}`;
+                },
+
                 get() {
                     this.isLoading = true;
 

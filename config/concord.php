@@ -20,6 +20,7 @@ return [
         \Webkul\WebForm\Providers\ModuleServiceProvider::class,
         \Webkul\DataTransfer\Providers\ModuleServiceProvider::class,
         \Webkul\MetaLead\Providers\ModuleServiceProvider::class,
+        \Webkul\SmrtPhone\Providers\ModuleServiceProvider::class,
     ],
 
     'register_route_models' => true,

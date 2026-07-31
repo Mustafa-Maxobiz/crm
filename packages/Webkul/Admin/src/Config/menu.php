@@ -35,6 +35,17 @@ return [
     ],
 
     /**
+     * smrtPhone Call Logs.
+     */
+    [
+        'key'        => 'smrtphone',
+        'name'       => 'admin::app.layouts.smrtphone',
+        'route'      => 'admin.smrtphone.index',
+        'sort'       => 3,
+        'icon-class' => 'icon-call',
+    ],
+
+    /**
      * Quotes.
      */
     [

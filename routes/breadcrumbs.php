@@ -43,6 +43,17 @@ Breadcrumbs::for('meta_leads.view', function (BreadcrumbTrail $trail, $metaLead)
     $trail->push($metaLead->full_name ?: '#'.$metaLead->id, route('admin.meta_leads.view', $metaLead->id));
 });
 
+// Dashboard > smrtPhone Call Logs
+Breadcrumbs::for('smrtphone', function (BreadcrumbTrail $trail) {
+    $trail->parent('dashboard');
+    $trail->push(trans('admin::app.layouts.smrtphone'), route('admin.smrtphone.index'));
+});
+
+Breadcrumbs::for('smrtphone.view', function (BreadcrumbTrail $trail, $callLog) {
+    $trail->parent('smrtphone');
+    $trail->push('#'.$callLog->id, route('admin.smrtphone.view', $callLog->id));
+});
+
 // Dashboard > Quotes
 Breadcrumbs::for('quotes', function (BreadcrumbTrail $trail) {
     $trail->parent('dashboard');

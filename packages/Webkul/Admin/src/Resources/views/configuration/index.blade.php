@@ -94,14 +94,15 @@
                     class="peer block w-full rounded-lg border bg-white px-10 py-1.5 leading-6 text-gray-600 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400 dark:focus:border-gray-400"
                     :class="{'border-gray-400': isDropdownOpen}"
                     placeholder="@lang('admin::app.configuration.index.search')"
-                    v-model.lazy="searchTerm"
+                    v-model="searchTerm"
+                    @input="queueSearch"
+                    @keyup.enter="searchNow"
                     @click="searchTerm.length >= 2 ? isDropdownOpen = true : {}"
-                    v-debounce="2000"
                 >
 
                 <div
                     class="app-search-spinner absolute top-1/2 -translate-y-1/2 ltr:right-3 rtl:left-3"
-                    :class="{'is-visible': isLoading}"
+                    :class="{'is-visible': isPending || isLoading}"
                 ></div>
 
                 <div
@@ -144,32 +145,58 @@
 
                         isLoading: false,
 
+                        isPending: false,
+
                         searchTerm: '',
 
                         searchedResults: [],
-                    };
-                },
 
-                watch: {
-                    searchTerm(newVal, oldVal) {
-                        this.search();
-                    },
+                        debounceTimer: null,
+
+                        debounceMs: 2000,
+                    };
                 },
 
                 created() {
                     window.addEventListener('click', this.handleFocusOut);
                 },
 
-                beforeDestroy() {
+                beforeUnmount() {
+                    clearTimeout(this.debounceTimer);
                     window.removeEventListener('click', this.handleFocusOut);
                 },
 
                 methods: {
+                    queueSearch() {
+                        clearTimeout(this.debounceTimer);
+
+                        if (! (this.searchTerm || '').trim()) {
+                            this.isPending = false;
+                            this.search();
+
+                            return;
+                        }
+
+                        this.isPending = true;
+
+                        this.debounceTimer = setTimeout(() => {
+                            this.isPending = false;
+                            this.search();
+                        }, this.debounceMs);
+                    },
+
+                    searchNow() {
+                        clearTimeout(this.debounceTimer);
+                        this.isPending = false;
+                        this.search();
+                    },
+
                     search() {
                         if (this.searchTerm.length <= 1) {
                             this.searchedResults = [];
 
                             this.isDropdownOpen = false;
+                            this.isLoading = false;
 
                             return;
                         }
@@ -186,7 +213,9 @@
 
                                 this.isLoading = false;
                             })
-                            .catch((error) => {});
+                            .catch((error) => {
+                                this.isLoading = false;
+                            });
                     },
 
                     handleFocusOut(e) {
@@ -211,8 +240,7 @@
                     pointer-events: none;
                 }
 
-                .app-search-spinner.is-visible,
-                input.is-pending ~ .app-search-spinner {
+                .app-search-spinner.is-visible {
                     display: block;
                 }
 

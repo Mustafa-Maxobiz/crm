@@ -19,6 +19,7 @@ class LeadRepository extends Repository
      * Searchable fields.
      */
     protected $fieldSearchable = [
+        'id',
         'title',
         'description',
         'source_link',

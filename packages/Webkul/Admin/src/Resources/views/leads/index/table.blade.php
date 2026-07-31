@@ -476,7 +476,7 @@
                                         <x-admin::form.control-group.control
                                             type="datetime"
                                             name="schedule_to"
-                                            rules="required"
+                                            rules="required|after_datetime:@schedule_from"
                                             label="Schedule To"
                                         />
 

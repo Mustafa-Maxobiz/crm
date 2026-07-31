@@ -22,70 +22,64 @@
             :search="search"
             :get-searched-values="getSearchedValues"
         >
-            <template v-if="isLoading">
-                <x-admin::shimmer.datagrid.toolbar.search />
-            </template>
+            <div class="datagrid-toolbar-search-row flex w-full min-w-0 flex-1 items-center gap-x-1.5">
+                <!-- Search Panel -->
+                <div class="datagrid-toolbar-search flex min-w-0 flex-1 items-center">
+                    <div class="relative w-full">
+                        <div class="icon-search absolute top-1.5 flex items-center text-2xl ltr:left-3 rtl:right-3"></div>
 
-            <template v-else>
-                <div class="datagrid-toolbar-search-row flex w-full min-w-0 flex-1 items-center gap-x-1.5">
-                    <!-- Search Panel -->
-                    <div class="datagrid-toolbar-search flex min-w-0 flex-1 items-center">
-                        <div class="relative w-full">
-                            <div class="icon-search absolute top-1.5 flex items-center text-2xl ltr:left-3 rtl:right-3"></div>
+                        <input
+                            type="text"
+                            name="search"
+                            v-model="searchTerm"
+                            class="block w-full rounded-lg border bg-white py-1.5 leading-6 text-gray-600 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400 dark:focus:border-gray-400 ltr:pl-10 ltr:pr-10 rtl:pl-10 rtl:pr-10"
+                            placeholder="@lang('admin::app.components.datagrid.toolbar.search.title')"
+                            autocomplete="off"
+                            @input="queueSearch"
+                            @keyup.enter="searchNow"
+                        >
 
-                            <input
-                                type="text"
-                                name="search"
-                                v-model="searchTerm"
-                                class="block w-full rounded-lg border bg-white py-1.5 leading-6 text-gray-600 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400 dark:focus:border-gray-400 ltr:pl-10 ltr:pr-10 rtl:pl-10 rtl:pr-10"
-                                placeholder="@lang('admin::app.components.datagrid.toolbar.search.title')"
-                                autocomplete="off"
-                                @input="queueSearch"
-                                @keyup.enter="searchNow"
-                            >
-
-                            <div
-                                v-if="isPending || isLoading"
-                                class="absolute top-1/2 -translate-y-1/2 ltr:right-3 rtl:left-3"
-                                title="Searching..."
-                            >
-                                <div class="datagrid-search-spinner"></div>
-                            </div>
+                        <div
+                            v-if="isPending || isLoading"
+                            class="absolute top-1/2 -translate-y-1/2 ltr:right-3 rtl:left-3"
+                            title="Searching..."
+                        >
+                            <div class="app-search-spinner"></div>
                         </div>
                     </div>
-
-                    <!-- Filter Panel -->
-                    <x-admin::datagrid.toolbar.filter>
-                        <template #filter="{
-                            available,
-                            applied,
-                            filters,
-                            applyFilter,
-                            applyColumnValues,
-                            findAppliedColumn,
-                            hasAnyAppliedColumnValues,
-                            getAppliedColumnValues,
-                            removeAppliedColumnValue,
-                            removeAppliedColumnAllValues
-                        }">
-                            <slot
-                                name="filter"
-                                :available="available"
-                                :applied="applied"
-                                :filters="filters"
-                                :apply-filter="applyFilter"
-                                :apply-column-values="applyColumnValues"
-                                :find-applied-column="findAppliedColumn"
-                                :has-any-applied-column-values="hasAnyAppliedColumnValues"
-                                :get-applied-column-values="getAppliedColumnValues"
-                                :remove-applied-column-value="removeAppliedColumnValue"
-                                :remove-applied-column-all-values="removeAppliedColumnAllValues"
-                            >
-                            </slot>
-                        </template>
-                    </x-admin::datagrid.toolbar.filter>
                 </div>
-            </template>
+
+                <!-- Filter Panel -->
+                <x-admin::datagrid.toolbar.filter>
+                    <template #filter="{
+                        available,
+                        applied,
+                        filters,
+                        applyFilter,
+                        applyColumnValues,
+                        findAppliedColumn,
+                        hasAnyAppliedColumnValues,
+                        getAppliedColumnValues,
+                        removeAppliedColumnValue,
+                        removeAppliedColumnAllValues
+                    }">
+                        <slot
+                            name="filter"
+                            :available="available"
+                            :applied="applied"
+                            :filters="filters"
+                            :apply-filter="applyFilter"
+                            :apply-column-values="applyColumnValues"
+                            :find-applied-column="findAppliedColumn"
+                            :has-any-applied-column-values="hasAnyAppliedColumnValues"
+                            :get-applied-column-values="getAppliedColumnValues"
+                            :remove-applied-column-value="removeAppliedColumnValue"
+                            :remove-applied-column-all-values="removeAppliedColumnAllValues"
+                        >
+                        </slot>
+                    </template>
+                </x-admin::datagrid.toolbar.filter>
+            </div>
         </slot>
     </script>
 

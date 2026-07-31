@@ -371,12 +371,20 @@
                                         </p>
                                     </div>
 
-                                    <div class="flex items-start justify-end">
+                                    <div class="flex flex-col items-end gap-1">
                                         <span
                                             class="sdr-row-time-badge"
-                                            v-if="item.time"
+                                            v-if="item.time_local || item.time"
                                         >
-                                            @{{ item.time }}
+                                            @{{ item.time_local || item.time }}
+                                        </span>
+
+                                        <span
+                                            class="sdr-row-time-badge sdr-row-time-badge-us"
+                                            v-if="item.time_us"
+                                            title="Prospect US timezone"
+                                        >
+                                            @{{ item.time_us }}
                                         </span>
                                     </div>
                                 </div>
@@ -999,7 +1007,7 @@
 
             .sdr-row-time-badge {
                 align-items: center;
-                align-self: flex-start;
+                align-self: flex-end;
                 background: #fff7ed;
                 border: 1px solid #fed7aa;
                 border-radius: 9999px;
@@ -1013,6 +1021,12 @@
                 line-height: 1;
                 padding: 0 10px;
                 white-space: nowrap;
+            }
+
+            .sdr-row-time-badge-us {
+                background: #eff6ff;
+                border-color: #bfdbfe;
+                color: #1d4ed8;
             }
 
             .dark .sdr-section-count {
@@ -1060,6 +1074,12 @@
                 background: rgba(124, 45, 18, 0.28);
                 border-color: rgba(251, 146, 60, 0.35);
                 color: #fdba74;
+            }
+
+            .dark .sdr-row-time-badge-us {
+                background: rgba(30, 64, 175, 0.28);
+                border-color: rgba(147, 197, 253, 0.35);
+                color: #93c5fd;
             }
 
             @media (max-width: 1279px) {

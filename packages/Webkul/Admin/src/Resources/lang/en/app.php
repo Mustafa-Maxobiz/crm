@@ -43,6 +43,7 @@ return [
         'deleted-leads'    => 'Deleted Leads',
         'followup-schedule'=> 'Follow-up Schedule',
         'meta-leads'       => 'Meta Leads',
+        'smrtphone'        => 'smrtPhone Calls',
         'export'           => 'Export',
         'mass-delete'      => 'Mass Delete',
         'permanent-delete' => 'Permanent Delete',
@@ -305,7 +306,7 @@ return [
                 ],
 
                 'search' => [
-                    'title' => 'Search by title, description, contact, source...',
+                    'title' => 'Search by ID, title, description, contact, source...',
                 ],
             ],
 
@@ -1386,7 +1387,7 @@ return [
                 'delete-failed'  => 'Tag can not be deleted.',
                 'admin-only'     => 'Only administrators can create or update tags.',
                 'max-allowed'    => 'A maximum of :max tags is allowed.',
-                'static-info'    => 'Tags are limited to :max static options. Other users can only choose existing tags.',
+                'static-info'    => 'Administrators can create and manage tags here. Other users can only choose from existing tags.',
 
                 'datagrid' => [
                     'delete'      => 'Delete',
@@ -2251,7 +2252,7 @@ return [
 
                 'toolbar' => [
                     'search' => [
-                        'title' => 'Search by title, description, contact, source...',
+                        'title' => 'Search by ID, title, description, contact, source...',
                     ],
 
                     'filters' => [
@@ -2632,6 +2633,7 @@ return [
         'dashboard'            => 'Dashboard',
         'leads'                => 'Leads',
         'meta-leads'           => 'Meta Leads',
+        'smrtphone'            => 'smrtPhone Calls',
         'quotes'               => 'Quotes',
         'quote'                => 'Quote',
         'mail'                 => [
@@ -2799,6 +2801,67 @@ return [
         'no-records' => 'Nothing to export',
         'xls'        => 'XLS',
         'xlsx'       => 'XLSX',
+    ],
+
+    'smrtphone' => [
+        'directions' => [
+            'inbound'  => 'Inbound',
+            'outbound' => 'Outbound',
+            'unknown'  => 'Unknown',
+        ],
+
+        'index' => [
+            'title'          => 'smrtPhone Call Logs',
+            'subtitle'       => 'Call history synced automatically from smrtPhone webhooks.',
+            'delete-success' => 'Call log deleted successfully.',
+            'delete-failed'  => 'Unable to delete call log.',
+
+            'datagrid' => [
+                'id'         => 'ID',
+                'direction'  => 'Direction',
+                'contact'    => 'Contact',
+                'phone'      => 'Phone',
+                'agent'      => 'Agent',
+                'status'     => 'Status',
+                'outcome'    => 'Outcome',
+                'lead'       => 'Lead',
+                'source'     => 'Source',
+                'dialer'     => 'smrtDialer',
+                'called-at'  => 'Called At',
+                'view'       => 'View Details',
+                'view-lead'  => 'View CRM Lead',
+                'delete'     => 'Delete',
+                'mass-delete'=> 'Delete',
+            ],
+        ],
+
+        'view' => [
+            'title'            => 'Call #:id',
+            'heading'          => ':direction Call #:id',
+            'subtitle'         => 'Full call details received from smrtPhone.',
+            'call-details'     => 'Call Details',
+            'crm-links'        => 'CRM Links',
+            'external-call-id' => 'smrtPhone Call ID',
+            'event'            => 'Event',
+            'from'             => 'From',
+            'to'               => 'To',
+            'caller-id'        => 'Caller ID Name',
+            'device'           => 'Device',
+            'person'           => 'Person',
+            'crm-lead'         => 'CRM Lead',
+            'activity'         => 'Activity',
+            'notes'            => 'Call Notes',
+            'ai-insights'      => 'AI Insights',
+            'ai-summary'       => 'Summary',
+            'ai-keywords'      => 'Keywords',
+            'ai-transcript'    => 'Transcript',
+            'raw-payload'      => 'Raw Webhook Payload',
+            'open-crm-lead'    => 'Open CRM Lead',
+            'open-person'      => 'Open Person',
+            'play-recording'   => 'Play Recording',
+            'delete'           => 'Delete Call Log',
+            'delete-confirm'   => 'Are you sure you want to delete this call log? Linked CRM activities will not be deleted.',
+        ],
     ],
 
     'meta-leads' => [

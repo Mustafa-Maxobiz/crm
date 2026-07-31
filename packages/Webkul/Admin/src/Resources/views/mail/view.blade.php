@@ -614,8 +614,9 @@
                                 <!-- Input Box -->
                                 <input
                                     type="text"
-                                    v-model.lazy="searchTerm"
-                                    v-debounce="2000"
+                                    v-model="searchTerm"
+                                    @input="queueSearch"
+                                    @keyup.enter="searchNow"
                                     class="w-full rounded border border-gray-200 px-2.5 py-2 pr-10 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400 dark:focus:border-gray-400"
                                     placeholder="Search..."
                                     ref="searchInput"
@@ -627,9 +628,9 @@
                                         <!-- Loader (optional, based on condition) -->
                                         <div
                                             class="relative"
-                                            v-if="isSearching"
+                                            v-if="isPending || isSearching"
                                         >
-                                            <x-admin::spinner />
+                                            <div class="app-search-spinner"></div>
                                         </div>
 
                                         <!-- Search Icon -->
@@ -836,8 +837,9 @@
                                     <!-- Input Box -->
                                     <input
                                         type="text"
-                                        v-model.lazy="searchTerm"
-                                        v-debounce="2000"
+                                        v-model="searchTerm"
+                                        @input="queueSearch"
+                                        @keyup.enter="searchNow"
                                         class="w-full rounded border border-gray-200 px-2.5 py-2 pr-10 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400 dark:focus:border-gray-400"
                                         placeholder="@lang('admin::app.mail.view.search')"
                                         ref="searchInput"
@@ -849,9 +851,9 @@
                                             <!-- Loader (optional, based on condition) -->
                                             <div
                                                 class="relative"
-                                                v-if="isSearching"
+                                                v-if="isPending || isSearching"
                                             >
-                                                <x-admin::spinner />
+                                                <div class="app-search-spinner"></div>
                                             </div>
 
                                             <!-- Search Icon -->
@@ -1487,6 +1489,12 @@
 
                         isSearching: false,
 
+                        isPending: false,
+
+                        debounceTimer: null,
+
+                        debounceMs: 2000,
+
                         cancelToken: null,
                     };
                 },
@@ -1501,30 +1509,44 @@
                     window.addEventListener('click', this.handleFocusOut);
                 },
 
-                beforeDestroy() {
+                beforeUnmount() {
+                    clearTimeout(this.debounceTimer);
                     window.removeEventListener('click', this.handleFocusOut);
                 },
 
-                watch: {
-                    searchTerm(newVal, oldVal) {
-                        this.search();
-                    },
-                },
-
                 computed: {
-                    /**
-                     * Filter the searchedResults based on the search query.
-                     *
-                     * @return {Array}
-                     */
                     persons() {
                         return this.searchedResults.filter(item =>
                             item.name.toLowerCase().includes(this.searchTerm.toLowerCase())
                         );
-                    }
+                    },
                 },
 
                 methods: {
+                    queueSearch() {
+                        clearTimeout(this.debounceTimer);
+
+                        if (! (this.searchTerm || '').trim()) {
+                            this.isPending = false;
+                            this.search();
+
+                            return;
+                        }
+
+                        this.isPending = true;
+
+                        this.debounceTimer = setTimeout(() => {
+                            this.isPending = false;
+                            this.search();
+                        }, this.debounceMs);
+                    },
+
+                    searchNow() {
+                        clearTimeout(this.debounceTimer);
+                        this.isPending = false;
+                        this.search();
+                    },
+
                     /**
                      * Toggle the popup.
                      *
@@ -1651,6 +1673,12 @@
 
                         isSearching: false,
 
+                        isPending: false,
+
+                        debounceTimer: null,
+
+                        debounceMs: 2000,
+
                         cancelToken: null,
                     };
                 },
@@ -1665,22 +1693,12 @@
                     window.addEventListener('click', this.handleFocusOut);
                 },
 
-                beforeDestroy() {
+                beforeUnmount() {
+                    clearTimeout(this.debounceTimer);
                     window.removeEventListener('click', this.handleFocusOut);
                 },
 
-                watch: {
-                    searchTerm(newVal, oldVal) {
-                        this.search();
-                    },
-                },
-
                 computed: {
-                    /**
-                     * Filter the searchedResults based on the search query.
-                     *
-                     * @return {Array}
-                     */
                     leads() {
                         return this.searchedResults.filter(item =>
                             item.title.toLowerCase().includes(this.searchTerm.toLowerCase())
@@ -1689,6 +1707,30 @@
                 },
 
                 methods: {
+                    queueSearch() {
+                        clearTimeout(this.debounceTimer);
+
+                        if (! (this.searchTerm || '').trim()) {
+                            this.isPending = false;
+                            this.search();
+
+                            return;
+                        }
+
+                        this.isPending = true;
+
+                        this.debounceTimer = setTimeout(() => {
+                            this.isPending = false;
+                            this.search();
+                        }, this.debounceMs);
+                    },
+
+                    searchNow() {
+                        clearTimeout(this.debounceTimer);
+                        this.isPending = false;
+                        this.search();
+                    },
+
                     /**
                      * Toggle the popup.
                      *

@@ -50,8 +50,9 @@
                             type="text"
                             class="w-full px-1 py-1 dark:bg-gray-900 dark:text-gray-300"
                             placeholder="@lang('admin::app.components.activities.actions.activity.participants.placeholder')"
-                            v-model.lazy="searchTerm"
-                            v-debounce="2000"
+                            v-model="searchTerm"
+                            @input="queueSearch"
+                            @keyup.enter="searchNow"
                         />
 
                         {!! view_render_event('admin.components.activities.actions.activity.participants.search_term.after') !!}
@@ -59,15 +60,18 @@
                 </ul>
 
                 <div>
-                    <template v-if="! isSearching.users && ! isSearching.persons">
+                    <template v-if="isPending || isSearching.users || isSearching.persons">
+                        <div
+                            class="app-search-spinner absolute right-2 top-2"
+                            title="Searching..."
+                        ></div>
+                    </template>
+
+                    <template v-else>
                         <span
                             class="absolute right-1.5 top-1.5 text-2xl"
                             :class="[searchTerm.length >= 2 ? 'icon-up-arrow' : 'icon-down-arrow']"
                         ></span>
-                    </template>
-
-                    <template v-else>
-                        <x-admin::spinner class="absolute right-2 top-2" />
                     </template>
                 </div>
             </div>
@@ -154,6 +158,12 @@
 
                     searchTerm: '',
 
+                    isPending: false,
+
+                    debounceTimer: null,
+
+                    debounceMs: 2000,
+
                     addedParticipants: {
                         users: [],
                         
@@ -174,19 +184,42 @@
                 }
             },
 
-            watch: {
-                searchTerm(newVal, oldVal) {
-                    this.search('users');
-                    
-                    this.search('persons');
-                },
-            },
-
             mounted() {
                 this.addedParticipants = this.participants;
             },
 
+            beforeUnmount() {
+                clearTimeout(this.debounceTimer);
+            },
+
             methods: {
+                queueSearch() {
+                    clearTimeout(this.debounceTimer);
+
+                    if (! (this.searchTerm || '').trim()) {
+                        this.isPending = false;
+                        this.search('users');
+                        this.search('persons');
+
+                        return;
+                    }
+
+                    this.isPending = true;
+
+                    this.debounceTimer = setTimeout(() => {
+                        this.isPending = false;
+                        this.search('users');
+                        this.search('persons');
+                    }, this.debounceMs);
+                },
+
+                searchNow() {
+                    clearTimeout(this.debounceTimer);
+                    this.isPending = false;
+                    this.search('users');
+                    this.search('persons');
+                },
+
                 search(userType) {
                     if (this.searchTerm.length <= 1) {
                         this.searchedParticipants[userType] = [];
@@ -242,4 +275,28 @@
             },
         });
     </script>
+@endPushOnce
+@pushOnce('styles')
+    <style>
+        .app-search-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #d1d5db;
+            border-top-color: #f97316;
+            border-radius: 9999px;
+            animation: app-search-spin 0.7s linear infinite;
+            pointer-events: none;
+        }
+
+        .dark .app-search-spinner {
+            border-color: #4b5563;
+            border-top-color: #fb923c;
+        }
+
+        @keyframes app-search-spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
 @endPushOnce

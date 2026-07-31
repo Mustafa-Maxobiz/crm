@@ -59,11 +59,26 @@ return [
         'name'  => 'admin::app.acl.edit',
         'route' => ['admin.meta_leads.mass_update', 'admin.meta_leads.update_status'],
         'sort'  => 2,
-    ], [
+    ],     [
         'key'   => 'meta_leads.delete',
         'name'  => 'admin::app.acl.delete',
         'route' => ['admin.meta_leads.delete', 'admin.meta_leads.mass_delete'],
         'sort'  => 3,
+    ], [
+        'key'   => 'smrtphone',
+        'name'  => 'admin::app.acl.smrtphone',
+        'route' => 'admin.smrtphone.index',
+        'sort'  => 3,
+    ], [
+        'key'   => 'smrtphone.view',
+        'name'  => 'admin::app.acl.view',
+        'route' => 'admin.smrtphone.view',
+        'sort'  => 1,
+    ], [
+        'key'   => 'smrtphone.delete',
+        'name'  => 'admin::app.acl.delete',
+        'route' => ['admin.smrtphone.delete', 'admin.smrtphone.mass_delete'],
+        'sort'  => 2,
     ], [
         'key'   => 'quotes',
         'name'  => 'admin::app.acl.quotes',

@@ -243,7 +243,7 @@
                                 :disabled="processingId === notification.id"
                                 @click.stop="markAsDone(notification)"
                             >
-                                @{{ notification.type === 'meeting' ? labels.markRead : labels.markDone }}
+                                @{{ ['call', 'meeting'].includes(notification.type) ? labels.markRead : labels.markDone }}
                             </button>
                         </div>
                     </div>
@@ -420,7 +420,6 @@
                     const icons = {
                         call: 'icon-call bg-cyan-200 text-cyan-800 dark:!text-cyan-800',
                         meeting: 'icon-activity bg-blue-200 text-blue-800 dark:!text-blue-800',
-                        lunch: 'icon-activity bg-blue-200 text-blue-800 dark:!text-blue-800',
                         followup: 'icon-notification bg-yellow-200 text-yellow-900 dark:!text-yellow-900',
                     };
 

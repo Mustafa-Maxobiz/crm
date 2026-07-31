@@ -6,7 +6,12 @@
         : null;
 
     $followupScheduleService = app(\Webkul\Lead\Services\FollowupScheduleService::class);
+    $usStateTimezoneService = app(\Webkul\Lead\Services\UsStateTimezoneService::class);
+    $prospectTimezone = $usStateTimezoneService->timezoneFromPerson($lead->person);
+    $nextFollowupDual = $usStateTimezoneService->formatDual($lead->next_followup_date, $prospectTimezone);
+    $lastFollowupDual = $usStateTimezoneService->formatDual($lead->last_followup_date, $prospectTimezone);
     $autoNextPreview = $followupScheduleService->calculateNext($lead);
+    $autoNextDual = $usStateTimezoneService->formatDual($autoNextPreview, $prospectTimezone);
     $autoPhaseLabel = $followupScheduleService->describeNextPhase($lead);
 @endphp
 
@@ -51,7 +56,10 @@
                             <span class="font-medium">{{ $autoPhaseLabel }}</span>
                             —
                             @lang('admin::app.leads.view.followup.auto-next'):
-                            {{ $autoNextPreview->format('M d, Y h:i A') }}
+                            {{ $autoNextDual['local'] }}
+                            @if ($autoNextDual['us'])
+                                <span class="mt-0.5 block text-gray-500 dark:text-gray-400">{{ $autoNextDual['us'] }}</span>
+                            @endif
                         </p>
                     @else
                         <p class="mt-2 font-medium text-red-600 dark:text-red-400">
@@ -71,7 +79,10 @@
                         <p class="text-sm text-gray-600 dark:text-gray-400">@lang('admin::app.leads.view.followup.next')</p>
                         <p class="text-lg font-semibold dark:text-white">
                             @if ($lead->next_followup_date)
-                                {{ \Carbon\Carbon::parse($lead->next_followup_date)->format('M d, Y h:i A') }}
+                                <span class="block">{{ $nextFollowupDual['local'] }}</span>
+                                @if ($nextFollowupDual['us'])
+                                    <span class="mt-1 block text-sm font-medium text-gray-500 dark:text-gray-400">{{ $nextFollowupDual['us'] }}</span>
+                                @endif
                             @else
                                 <span class="text-gray-400">@lang('admin::app.leads.view.followup.not-set')</span>
                             @endif

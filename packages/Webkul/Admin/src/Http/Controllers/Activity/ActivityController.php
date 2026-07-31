@@ -83,12 +83,17 @@ class ActivityController extends Controller
             ->orderBy('leads.next_followup_date')
             ->get()
             ->map(function ($lead) {
+                $dueAt = Carbon::parse($lead->next_followup_date);
+                $isUpcoming = $dueAt->greaterThan(Carbon::now());
+
                 return [
                     'id'            => $lead->id,
-                    'title'         => 'Follow-up: '.$lead->title,
+                    'title'         => $isUpcoming
+                        ? 'Follow-up in 15 min: '.$lead->title
+                        : 'Follow-up: '.$lead->title,
                     'type'          => 'followup',
                     'comment'       => $lead->followup_notes,
-                    'schedule_from' => Carbon::parse($lead->next_followup_date)->toIso8601String(),
+                    'schedule_from' => $dueAt->toIso8601String(),
                     'schedule_to'   => null,
                     'lead_title'    => $lead->title,
                     'person_name'   => $lead->person?->name,
@@ -96,7 +101,7 @@ class ActivityController extends Controller
                 ];
             });
 
-        $meetingNotifications = $this->dueMeetingNotifications();
+        $meetingNotifications = $this->dueActivityNotifications();
 
         $notifications = $followupNotifications
             ->merge($meetingNotifications)
@@ -116,8 +121,8 @@ class ActivityController extends Controller
     public function markNotificationAsDone(string $id): JsonResponse
     {
         DB::transaction(function () use ($id) {
-            if (preg_match('/^meeting-(before|start)-(\d+)$/', $id, $matches)) {
-                $this->markMeetingNotificationRead((int) $matches[2], $matches[1]);
+            if (preg_match('/^(?:activity|meeting)-(before|start)-(\d+)$/', $id, $matches)) {
+                $this->markActivityNotificationRead((int) $matches[2], $matches[1]);
 
                 return;
             }
@@ -155,11 +160,13 @@ class ActivityController extends Controller
                 ->get()
                 ->each(fn ($lead) => $this->completeFollowupNotification($lead));
 
-            $this->dueMeetingNotifications()
+            $this->dueActivityNotifications()
                 ->each(function ($notification) {
-                    [$prefix, $reminderType, $activityId] = explode('-', $notification['id']);
+                    if (! preg_match('/^(?:activity|meeting)-(before|start)-(\d+)$/', $notification['id'], $matches)) {
+                        return;
+                    }
 
-                    $this->markMeetingNotificationRead((int) $activityId, $reminderType);
+                    $this->markActivityNotificationRead((int) $matches[2], $matches[1]);
                 });
         });
 
@@ -177,9 +184,11 @@ class ActivityController extends Controller
             'type'          => 'required',
             'comment'       => ['required_if:type,note', 'required_if:stage_meeting,1'],
             'schedule_from' => 'required_unless:type,note,file',
-            'schedule_to'   => 'required_unless:type,note,file',
+            'schedule_to'   => 'required_unless:type,note,file|nullable|after:schedule_from',
             'location'      => 'required_if:stage_meeting,1',
             'file'          => 'required_if:type,file',
+        ], [
+            'schedule_to.after' => 'Schedule To must be later than Schedule From.',
         ]);
 
         if (request('stage_meeting') && ! $this->hasActivityParticipants(request('participants', []))) {
@@ -249,6 +258,7 @@ class ActivityController extends Controller
 
     /**
      * Base query for pending follow-up notifications shown in the header.
+     * Includes follow-ups due within the next 15 minutes (and already due/overdue).
      */
     protected function dueFollowupNotificationQuery()
     {
@@ -259,7 +269,7 @@ class ActivityController extends Controller
             ->newQuery()
             ->select('leads.*')
             ->whereNotNull('leads.next_followup_date')
-            ->where('leads.next_followup_date', '<=', Carbon::now());
+            ->where('leads.next_followup_date', '<=', Carbon::now()->addMinutes(15));
 
         if (! is_null($userIds)) {
             $query->where(function ($query) use ($userIds) {
@@ -271,9 +281,10 @@ class ActivityController extends Controller
     }
 
     /**
-     * Meeting reminders due in the current 15-minute notification window.
+     * Activity reminders due in the current 15-minute notification window.
+     * Covers scheduled CRM activities (call, meeting) for SDRs and other users.
      */
-    protected function dueMeetingNotifications()
+    protected function dueActivityNotifications()
     {
         $now = Carbon::now();
         $windowStart = $now->copy()->subMinutes(15);
@@ -283,6 +294,7 @@ class ActivityController extends Controller
         $query = DB::table('activities')
             ->select(
                 'activities.id',
+                'activities.type',
                 'activities.title',
                 'activities.comment',
                 'activities.location',
@@ -294,12 +306,13 @@ class ActivityController extends Controller
             ->leftJoin('lead_activities', 'lead_activities.activity_id', '=', 'activities.id')
             ->leftJoin('leads', 'leads.id', '=', 'lead_activities.lead_id')
             ->leftJoin('persons', 'persons.id', '=', 'leads.person_id')
-            ->where('activities.type', 'meeting')
+            ->whereIn('activities.type', ['call', 'meeting'])
             ->where('activities.is_done', 0)
             ->whereNotNull('activities.schedule_from')
             ->whereBetween('activities.schedule_from', [$windowStart, $windowEnd])
             ->groupBy(
                 'activities.id',
+                'activities.type',
                 'activities.title',
                 'activities.comment',
                 'activities.location',
@@ -309,57 +322,59 @@ class ActivityController extends Controller
                 'persons.name',
             );
 
-        $this->applyMeetingNotificationAccessScope($query);
+        $this->applyActivityNotificationAccessScope($query);
 
-        $meetings = $query
+        $activities = $query
             ->orderBy('activities.schedule_from')
             ->get();
 
-        if ($meetings->isEmpty()) {
+        if ($activities->isEmpty()) {
             return collect();
         }
 
         $readReminders = DB::table('activity_notification_reads')
             ->where('user_id', $currentUserId)
-            ->whereIn('activity_id', $meetings->pluck('id')->all())
+            ->whereIn('activity_id', $activities->pluck('id')->all())
             ->get(['activity_id', 'reminder_type'])
             ->groupBy('activity_id')
             ->map(fn ($rows) => $rows->pluck('reminder_type')->all());
 
-        return $meetings
-            ->map(function ($meeting) use ($now, $readReminders) {
-                $startsAt = Carbon::parse($meeting->schedule_from);
+        return $activities
+            ->map(function ($activity) use ($now, $readReminders) {
+                $startsAt = Carbon::parse($activity->schedule_from);
                 $reminderType = $startsAt->greaterThan($now) ? 'before' : 'start';
 
-                if (in_array($reminderType, $readReminders[$meeting->id] ?? [], true)) {
+                if (in_array($reminderType, $readReminders[$activity->id] ?? [], true)) {
                     return null;
                 }
 
+                $typeLabel = ucfirst($activity->type ?: 'activity');
+
                 return [
-                    'id'            => "meeting-{$reminderType}-{$meeting->id}",
+                    'id'            => "activity-{$reminderType}-{$activity->id}",
                     'title'         => $reminderType === 'before'
-                        ? 'Meeting starts in 15 min: '.$meeting->title
-                        : 'Meeting now: '.$meeting->title,
-                    'type'          => 'meeting',
-                    'comment'       => $meeting->comment,
+                        ? "{$typeLabel} starts in 15 min: ".$activity->title
+                        : "{$typeLabel} now: ".$activity->title,
+                    'type'          => $activity->type ?: 'activity',
+                    'comment'       => $activity->comment,
                     'schedule_from' => $startsAt->toIso8601String(),
-                    'schedule_to'   => $meeting->schedule_to ? Carbon::parse($meeting->schedule_to)->toIso8601String() : null,
-                    'lead_title'    => $meeting->lead_title,
-                    'person_name'   => $meeting->person_name,
-                    'edit_url'      => route('admin.activities.edit', $meeting->id),
+                    'schedule_to'   => $activity->schedule_to ? Carbon::parse($activity->schedule_to)->toIso8601String() : null,
+                    'lead_title'    => $activity->lead_title,
+                    'person_name'   => $activity->person_name,
+                    'edit_url'      => route('admin.activities.edit', $activity->id),
                 ];
             })
             ->filter()
             ->values();
     }
 
-    protected function markMeetingNotificationRead(int $activityId, string $reminderType): void
+    protected function markActivityNotificationRead(int $activityId, string $reminderType): void
     {
         $query = DB::table('activities')
             ->where('activities.id', $activityId)
-            ->where('activities.type', 'meeting');
+            ->whereIn('activities.type', ['call', 'meeting']);
 
-        $this->applyMeetingNotificationAccessScope($query);
+        $this->applyActivityNotificationAccessScope($query);
 
         if (! $query->exists()) {
             abort(404);
@@ -379,7 +394,10 @@ class ActivityController extends Controller
         );
     }
 
-    protected function applyMeetingNotificationAccessScope($query): void
+    /**
+     * Limit reminders to activities the user owns, participates in, or that belong to their leads.
+     */
+    protected function applyActivityNotificationAccessScope($query): void
     {
         $userIds = bouncer()->getAuthorizedUserIds();
 
@@ -395,6 +413,14 @@ class ActivityController extends Controller
                         ->from('activity_participants')
                         ->whereColumn('activity_participants.activity_id', 'activities.id')
                         ->whereIn('activity_participants.user_id', $userIds);
+                })
+                ->orWhereExists(function ($leadOwnerQuery) use ($userIds) {
+                    $leadOwnerQuery
+                        ->select(DB::raw(1))
+                        ->from('lead_activities')
+                        ->join('leads', 'leads.id', '=', 'lead_activities.lead_id')
+                        ->whereColumn('lead_activities.activity_id', 'activities.id')
+                        ->whereIn('leads.user_id', $userIds);
                 });
         });
     }
@@ -607,12 +633,13 @@ class ActivityController extends Controller
         if ($status === 'meeting_scheduled') {
             request()->validate([
                 'schedule_from' => ['required'],
-                'schedule_to'   => ['required'],
+                'schedule_to'   => ['required', 'after:schedule_from'],
                 'lead_id'       => ['required'],
                 'comment'       => ['required', 'string', 'max:1000'],
                 'location'      => ['required', 'string', 'max:255'],
             ], [
-                'comment.required' => 'Please add meeting details before scheduling the meeting.',
+                'comment.required'      => 'Please add meeting details before scheduling the meeting.',
+                'schedule_to.after'     => 'Schedule To must be later than Schedule From.',
             ]);
 
             if (! $this->hasActivityParticipants(request('participants', []))) {

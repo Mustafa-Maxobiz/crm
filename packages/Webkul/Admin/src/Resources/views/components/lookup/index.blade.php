@@ -60,8 +60,9 @@
                 <div class="relative flex items-center">
                     <input
                         type="text"
-                        v-model.lazy="searchTerm"
-                        v-debounce="2000"
+                        v-model="searchTerm"
+                        @input="queueSearch"
+                        @keyup.enter="searchNow"
                         class="w-full rounded border border-gray-200 px-2.5 py-2 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400 dark:focus:border-gray-400"
                         placeholder="@lang('admin::app.components.lookup.search')"
                         ref="searchInput"
@@ -69,13 +70,11 @@
 
                     <!-- Search Icon (absolute positioned) -->
                     <span class="absolute flex items-center ltr:right-2 rtl:left-2">
-                        <!-- Loader (optional, based on condition) -->
                         <div
-                            class="relative"
-                            v-if="isSearching"
-                        >
-                            <x-admin::spinner />
-                        </div>
+                            v-if="isPending || isSearching"
+                            class="app-search-spinner"
+                            title="Searching..."
+                        ></div>
                     </span>
                 </div>
 
@@ -175,6 +174,12 @@
 
                     isSearching: false,
 
+                    isPending: false,
+
+                    debounceTimer: null,
+
+                    debounceMs: 2000,
+
                     cancelToken: null,
                 };
             },
@@ -191,14 +196,9 @@
                 window.addEventListener('click', this.handleFocusOut);
             },
 
-            beforeDestroy() {
+            beforeUnmount() {
+                clearTimeout(this.debounceTimer);
                 window.removeEventListener('click', this.handleFocusOut);
-            },
-
-            watch: {
-                searchTerm(newVal, oldVal) {
-                    this.search(this.preload);
-                },
             },
 
             computed: {
@@ -215,6 +215,30 @@
             },
 
             methods: {
+                queueSearch() {
+                    clearTimeout(this.debounceTimer);
+
+                    if (! (this.searchTerm || '').trim()) {
+                        this.isPending = false;
+                        this.search(this.preload);
+
+                        return;
+                    }
+
+                    this.isPending = true;
+
+                    this.debounceTimer = setTimeout(() => {
+                        this.isPending = false;
+                        this.search(this.preload);
+                    }, this.debounceMs);
+                },
+
+                searchNow() {
+                    clearTimeout(this.debounceTimer);
+                    this.isPending = false;
+                    this.search(this.preload);
+                },
+
                 /**
                  * Toggle the popup.
                  *
@@ -324,4 +348,29 @@
             },
         });
     </script>
+@endPushOnce
+
+@pushOnce('styles')
+    <style>
+        .app-search-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #d1d5db;
+            border-top-color: #f97316;
+            border-radius: 9999px;
+            animation: app-search-spin 0.7s linear infinite;
+            pointer-events: none;
+        }
+
+        .dark .app-search-spinner {
+            border-color: #4b5563;
+            border-top-color: #fb923c;
+        }
+
+        @keyframes app-search-spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
 @endPushOnce

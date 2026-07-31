@@ -24,7 +24,7 @@
                 :class="{'border-gray-400': isDropdownOpen}"
                 placeholder="@lang('admin::app.components.layouts.header.mega-search.title')"
                 v-model="searchTerm"
-                @input="onSearchInput"
+                @input="queueSearch"
                 @keyup.enter="searchNow"
                 @click="searchTerm.length >= 2 ? isDropdownOpen = true : {}"
             >
@@ -371,20 +371,7 @@
                             title: '@lang('admin::app.components.layouts.header.mega-search.tabs.leads')',
                             is_active: true,
                             endpoint: '{{ route('admin.leads.search') }}',
-                            query_params: [
-                                {
-                                    search: 'title',
-                                    searchFields: 'title:like',
-                                },
-                                {
-                                    search: 'user.name',
-                                    searchFields: 'user.name:like',
-                                },
-                                {
-                                    search: 'person.name',
-                                    searchFields: 'person.name:like',
-                                },
-                            ],
+                            useQuery: true,
                         },
 
                         quotes: {
@@ -515,7 +502,11 @@
             },
 
             methods: {
-                onSearchInput() {
+                /**
+                 * Wait for typing to pause, then search.
+                 * Clearing the field resets immediately (no debounce).
+                 */
+                queueSearch() {
                     clearTimeout(this.debounceTimer);
 
                     if (! (this.searchTerm || '').trim()) {
@@ -533,6 +524,9 @@
                     }, this.debounceMs);
                 },
 
+                /**
+                 * Search immediately (Enter).
+                 */
                 searchNow() {
                     clearTimeout(this.debounceTimer);
                     this.isPending = false;
@@ -591,6 +585,14 @@
                         this.params = null;
 
                         this.search(`${tab.endpoint}?query=${newTerm}`);
+
+                        return;
+                    }
+
+                    if (tab.useQuery) {
+                        this.params = { query: newTerm };
+
+                        this.search(tab.endpoint);
 
                         return;
                     }

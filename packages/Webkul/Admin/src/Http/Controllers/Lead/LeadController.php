@@ -467,6 +467,8 @@ class LeadController extends Controller
 
             $this->applyKanbanSearch($query, request()->query('lead_search'));
 
+            $this->applyWarmLeadPriority($query);
+
             // Apply sorting
             $query->orderBy($sortBy, $sortOrder);
 
@@ -516,7 +518,8 @@ class LeadController extends Controller
 
         $query->where(function ($query) use ($search) {
             $query
-                ->where('title', 'like', "%{$search}%")
+                ->where('id', 'like', "%{$search}%")
+                ->orWhere('title', 'like', "%{$search}%")
                 ->orWhere('description', 'like', "%{$search}%")
                 ->orWhere('source_link', 'like', "%{$search}%")
                 ->orWhere('lead_value', 'like', "%{$search}%")
@@ -543,6 +546,36 @@ class LeadController extends Controller
                     $query->where('name', 'like', "%{$search}%");
                 });
         });
+    }
+
+    /**
+     * Warm Lead tags / non-Cold Call sources first, then Cold Lead / Cold Call.
+     */
+    protected function applyWarmLeadPriority(mixed $query): void
+    {
+        $coldCallSourceId = DB::table('lead_sources')->where('name', 'Cold Call')->value('id');
+
+        $query->orderByRaw(
+            'CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM lead_tags
+                    INNER JOIN tags ON tags.id = lead_tags.tag_id
+                    WHERE lead_tags.lead_id = leads.id
+                      AND tags.name = ?
+                ) THEN 0
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM lead_tags
+                    INNER JOIN tags ON tags.id = lead_tags.tag_id
+                    WHERE lead_tags.lead_id = leads.id
+                      AND tags.name = ?
+                ) THEN 1
+                WHEN leads.lead_source_id IS NULL OR leads.lead_source_id = ? THEN 1
+                ELSE 0
+            END ASC',
+            ['Warm Lead', 'Cold Lead', $coldCallSourceId ?: 0]
+        );
     }
 
     /**
@@ -1213,14 +1246,15 @@ class LeadController extends Controller
     }
 
     /**
-     * Search person results.
+     * Search lead results.
      */
     public function search(): AnonymousResourceCollection
     {
         $userIds = bouncer()->getAuthorizedUserIds();
         $limit = min(max((int) request('limit', 20), 1), 50);
+        $queryTerm = trim((string) request('query', ''));
 
-        $results = $this->leadRepository
+        $repository = $this->leadRepository
             ->with([
                 'tags.user',
                 'type',
@@ -1230,15 +1264,29 @@ class LeadController extends Controller
                 'person.organization',
                 'pipeline.stages',
                 'stage',
-            ])
-            ->pushCriteria(app(RequestCriteria::class))
-            ->scopeQuery(function ($query) use ($userIds, $limit) {
+            ]);
+
+        /**
+         * Prefer plain `query` (mega-search / lookups). Fall back to RequestCriteria
+         * only when legacy `search` + `searchFields` params are used.
+         */
+        if ($queryTerm === '' && request()->filled('search')) {
+            $repository->pushCriteria(app(RequestCriteria::class));
+        }
+
+        $results = $repository
+            ->scopeQuery(function ($query) use ($userIds, $limit, $queryTerm) {
                 if ($userIds) {
                     $query->whereIn('user_id', $userIds);
                 }
 
-                return $this->sourceAccessService->applyLeadQueryScope($query)
-                    ->limit($limit);
+                $this->sourceAccessService->applyLeadQueryScope($query);
+
+                if ($queryTerm !== '') {
+                    $this->applyKanbanSearch($query, $queryTerm);
+                }
+
+                return $query->limit($limit);
             })
             ->all();
 

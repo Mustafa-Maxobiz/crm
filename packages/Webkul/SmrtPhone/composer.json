@@ -1,0 +1,25 @@
+{
+    "name": "krayin/laravel-smrtphone",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "MaxoBiz",
+            "email": "dev@maxobiz.com"
+        }
+    ],
+    "require": {},
+    "autoload": {
+        "psr-4": {
+            "Webkul\\SmrtPhone\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Webkul\\SmrtPhone\\Providers\\SmrtPhoneServiceProvider"
+            ],
+            "aliases": {}
+        }
+    },
+    "minimum-stability": "dev"
+}

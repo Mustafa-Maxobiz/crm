@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use Webkul\Admin\Helpers\Dashboard;
 use Webkul\Lead\Services\SourceAccessService;
+use Webkul\Lead\Services\UsStateTimezoneService;
 
 class DashboardController extends Controller
 {
@@ -32,7 +33,10 @@ class DashboardController extends Controller
      *
      * @return void
      */
-    public function __construct(protected Dashboard $dashboardHelper) {}
+    public function __construct(
+        protected Dashboard $dashboardHelper,
+        protected UsStateTimezoneService $usStateTimezoneService,
+    ) {}
 
     /**
      * Display a listing of the resource.
@@ -43,7 +47,7 @@ class DashboardController extends Controller
     {
         if ($this->isSdrUser()) {
             return view('admin::dashboard.sdr.index')->with([
-                'stateTimezones' => $this->usStateTimezones(),
+                'stateTimezones' => $this->usStateTimezoneService->allStates(),
             ]);
         }
 
@@ -164,6 +168,10 @@ class DashboardController extends Controller
         $todayStart = Carbon::now()->startOfDay();
         $todayEnd = Carbon::now()->endOfDay();
         $sourceAccessService = app(SourceAccessService::class);
+        $addressAttributeId = DB::table('attributes')
+            ->where('code', 'address')
+            ->where('entity_type', 'persons')
+            ->value('id');
 
         $meetingsBase = DB::table('activities')
             ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
@@ -171,6 +179,16 @@ class DashboardController extends Controller
             ->leftJoin('leads', 'lead_activities.lead_id', '=', 'leads.id')
             ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
             ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
+            ->leftJoin('attribute_values as person_address', function ($join) use ($addressAttributeId) {
+                $join->on('person_address.entity_id', '=', 'persons.id')
+                    ->where('person_address.entity_type', '=', 'persons');
+
+                if ($addressAttributeId) {
+                    $join->where('person_address.attribute_id', '=', $addressAttributeId);
+                } else {
+                    $join->whereRaw('1 = 0');
+                }
+            })
             ->where('activities.type', 'meeting')
             ->whereBetween('activities.schedule_from', [$todayStart, $todayEnd])
             ->where(function ($query) use ($userId) {
@@ -194,31 +212,51 @@ class DashboardController extends Controller
                 'activities.location',
                 'leads.id as lead_id',
                 'persons.name as person_name',
-                'lead_sources.name as source_name'
+                'lead_sources.name as source_name',
+                'person_address.json_value as person_address'
             )
             ->orderBy('activities.schedule_from')
             ->limit(8)
             ->get()
             ->unique('id')
             ->values()
-            ->map(fn ($activity) => [
-                'id'           => 'meeting-'.$activity->id,
-                'type'         => 'Meeting',
-                'source'       => $activity->source_name,
-                'source_group' => $this->sourceGroup($activity->source_name),
-                'title'        => $activity->title ?: 'Meeting',
-                'person'       => $activity->person_name,
-                'meta'         => $activity->location ?: 'Scheduled meeting',
-                'time'         => Carbon::parse($activity->schedule_from)->format('h:i A'),
-                'sort_at'      => Carbon::parse($activity->schedule_from)->timestamp,
-                'url'          => route('admin.activities.edit', $activity->id),
-                'lead_url'     => $activity->lead_id ? route('admin.leads.view', $activity->lead_id) : null,
-            ]);
+            ->map(function ($activity) {
+                $dual = $this->usStateTimezoneService->formatDualTime(
+                    $activity->schedule_from,
+                    $this->usStateTimezoneService->timezoneFromAddress($activity->person_address)
+                );
+
+                return [
+                    'id'           => 'meeting-'.$activity->id,
+                    'type'         => 'Meeting',
+                    'source'       => $activity->source_name,
+                    'source_group' => $this->sourceGroup($activity->source_name),
+                    'title'        => $activity->title ?: 'Meeting',
+                    'person'       => $activity->person_name,
+                    'meta'         => $activity->location ?: 'Scheduled meeting',
+                    'time'         => $dual['label'],
+                    'time_local'   => $dual['local'],
+                    'time_us'      => $dual['us'],
+                    'sort_at'      => Carbon::parse($activity->schedule_from)->timestamp,
+                    'url'          => route('admin.activities.edit', $activity->id),
+                    'lead_url'     => $activity->lead_id ? route('admin.leads.view', $activity->lead_id) : null,
+                ];
+            });
 
         $followupsBase = DB::table('leads')
             ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
             ->leftJoin('organizations', 'persons.organization_id', '=', 'organizations.id')
             ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
+            ->leftJoin('attribute_values as person_address', function ($join) use ($addressAttributeId) {
+                $join->on('person_address.entity_id', '=', 'persons.id')
+                    ->where('person_address.entity_type', '=', 'persons');
+
+                if ($addressAttributeId) {
+                    $join->where('person_address.attribute_id', '=', $addressAttributeId);
+                } else {
+                    $join->whereRaw('1 = 0');
+                }
+            })
             ->whereNull('leads.deleted_at')
             ->where('leads.user_id', $userId)
             ->whereNotNull('leads.next_followup_date')
@@ -235,24 +273,34 @@ class DashboardController extends Controller
                 'leads.next_followup_date',
                 'persons.name as person_name',
                 'organizations.name as organization_name',
-                'lead_sources.name as source_name'
+                'lead_sources.name as source_name',
+                'person_address.json_value as person_address'
             )
             ->orderBy('leads.next_followup_date')
             ->limit(8)
             ->get()
-            ->map(fn ($lead) => [
-                'id'           => 'followup-'.$lead->id,
-                'type'         => 'Follow-up',
-                'source'       => $lead->source_name,
-                'source_group' => $this->sourceGroup($lead->source_name),
-                'title'        => $lead->title,
-                'person'       => $lead->person_name,
-                'meta'         => $lead->organization_name ?: 'Lead follow-up',
-                'time'         => Carbon::parse($lead->next_followup_date)->format('h:i A'),
-                'sort_at'      => Carbon::parse($lead->next_followup_date)->timestamp,
-                'url'          => route('admin.leads.view', $lead->id),
-                'lead_url'     => route('admin.leads.view', $lead->id),
-            ]);
+            ->map(function ($lead) {
+                $dual = $this->usStateTimezoneService->formatDualTime(
+                    $lead->next_followup_date,
+                    $this->usStateTimezoneService->timezoneFromAddress($lead->person_address)
+                );
+
+                return [
+                    'id'           => 'followup-'.$lead->id,
+                    'type'         => 'Follow-up',
+                    'source'       => $lead->source_name,
+                    'source_group' => $this->sourceGroup($lead->source_name),
+                    'title'        => $lead->title,
+                    'person'       => $lead->person_name,
+                    'meta'         => $lead->organization_name ?: 'Lead follow-up',
+                    'time'         => $dual['label'],
+                    'time_local'   => $dual['local'],
+                    'time_us'      => $dual['us'],
+                    'sort_at'      => Carbon::parse($lead->next_followup_date)->timestamp,
+                    'url'          => route('admin.leads.view', $lead->id),
+                    'lead_url'     => route('admin.leads.view', $lead->id),
+                ];
+            });
 
         return response()->json([
             'summary' => [
@@ -273,7 +321,7 @@ class DashboardController extends Controller
     public function usTimezones(): View
     {
         return view('admin::dashboard.sdr.timezones')->with([
-            'stateTimezones' => $this->usStateTimezones(),
+            'stateTimezones' => $this->usStateTimezoneService->allStates(),
         ]);
     }
 
@@ -324,59 +372,4 @@ class DashboardController extends Controller
         };
     }
 
-    protected function usStateTimezones(): array
-    {
-        return [
-            ['state' => 'Alabama', 'abbr' => 'AL', 'timezone' => 'America/Chicago', 'popular' => false],
-            ['state' => 'Alaska', 'abbr' => 'AK', 'timezone' => 'America/Anchorage', 'popular' => false],
-            ['state' => 'Arizona', 'abbr' => 'AZ', 'timezone' => 'America/Phoenix', 'popular' => true],
-            ['state' => 'Arkansas', 'abbr' => 'AR', 'timezone' => 'America/Chicago', 'popular' => false],
-            ['state' => 'California', 'abbr' => 'CA', 'timezone' => 'America/Los_Angeles', 'popular' => true],
-            ['state' => 'Colorado', 'abbr' => 'CO', 'timezone' => 'America/Denver', 'popular' => true],
-            ['state' => 'Connecticut', 'abbr' => 'CT', 'timezone' => 'America/New_York', 'popular' => false],
-            ['state' => 'Delaware', 'abbr' => 'DE', 'timezone' => 'America/New_York', 'popular' => false],
-            ['state' => 'Florida', 'abbr' => 'FL', 'timezone' => 'America/New_York', 'popular' => true],
-            ['state' => 'Georgia', 'abbr' => 'GA', 'timezone' => 'America/New_York', 'popular' => true],
-            ['state' => 'Hawaii', 'abbr' => 'HI', 'timezone' => 'Pacific/Honolulu', 'popular' => false],
-            ['state' => 'Idaho', 'abbr' => 'ID', 'timezone' => 'America/Boise', 'popular' => false],
-            ['state' => 'Illinois', 'abbr' => 'IL', 'timezone' => 'America/Chicago', 'popular' => true],
-            ['state' => 'Indiana', 'abbr' => 'IN', 'timezone' => 'America/Indiana/Indianapolis', 'popular' => false],
-            ['state' => 'Iowa', 'abbr' => 'IA', 'timezone' => 'America/Chicago', 'popular' => false],
-            ['state' => 'Kansas', 'abbr' => 'KS', 'timezone' => 'America/Chicago', 'popular' => false],
-            ['state' => 'Kentucky', 'abbr' => 'KY', 'timezone' => 'America/New_York', 'popular' => false],
-            ['state' => 'Louisiana', 'abbr' => 'LA', 'timezone' => 'America/Chicago', 'popular' => false],
-            ['state' => 'Maine', 'abbr' => 'ME', 'timezone' => 'America/New_York', 'popular' => false],
-            ['state' => 'Maryland', 'abbr' => 'MD', 'timezone' => 'America/New_York', 'popular' => false],
-            ['state' => 'Massachusetts', 'abbr' => 'MA', 'timezone' => 'America/New_York', 'popular' => true],
-            ['state' => 'Michigan', 'abbr' => 'MI', 'timezone' => 'America/Detroit', 'popular' => true],
-            ['state' => 'Minnesota', 'abbr' => 'MN', 'timezone' => 'America/Chicago', 'popular' => false],
-            ['state' => 'Mississippi', 'abbr' => 'MS', 'timezone' => 'America/Chicago', 'popular' => false],
-            ['state' => 'Missouri', 'abbr' => 'MO', 'timezone' => 'America/Chicago', 'popular' => false],
-            ['state' => 'Montana', 'abbr' => 'MT', 'timezone' => 'America/Denver', 'popular' => false],
-            ['state' => 'Nebraska', 'abbr' => 'NE', 'timezone' => 'America/Chicago', 'popular' => false],
-            ['state' => 'Nevada', 'abbr' => 'NV', 'timezone' => 'America/Los_Angeles', 'popular' => true],
-            ['state' => 'New Hampshire', 'abbr' => 'NH', 'timezone' => 'America/New_York', 'popular' => false],
-            ['state' => 'New Jersey', 'abbr' => 'NJ', 'timezone' => 'America/New_York', 'popular' => true],
-            ['state' => 'New Mexico', 'abbr' => 'NM', 'timezone' => 'America/Denver', 'popular' => false],
-            ['state' => 'New York', 'abbr' => 'NY', 'timezone' => 'America/New_York', 'popular' => true],
-            ['state' => 'North Carolina', 'abbr' => 'NC', 'timezone' => 'America/New_York', 'popular' => true],
-            ['state' => 'North Dakota', 'abbr' => 'ND', 'timezone' => 'America/Chicago', 'popular' => false],
-            ['state' => 'Ohio', 'abbr' => 'OH', 'timezone' => 'America/New_York', 'popular' => true],
-            ['state' => 'Oklahoma', 'abbr' => 'OK', 'timezone' => 'America/Chicago', 'popular' => false],
-            ['state' => 'Oregon', 'abbr' => 'OR', 'timezone' => 'America/Los_Angeles', 'popular' => true],
-            ['state' => 'Pennsylvania', 'abbr' => 'PA', 'timezone' => 'America/New_York', 'popular' => true],
-            ['state' => 'Rhode Island', 'abbr' => 'RI', 'timezone' => 'America/New_York', 'popular' => false],
-            ['state' => 'South Carolina', 'abbr' => 'SC', 'timezone' => 'America/New_York', 'popular' => false],
-            ['state' => 'South Dakota', 'abbr' => 'SD', 'timezone' => 'America/Chicago', 'popular' => false],
-            ['state' => 'Tennessee', 'abbr' => 'TN', 'timezone' => 'America/Chicago', 'popular' => true],
-            ['state' => 'Texas', 'abbr' => 'TX', 'timezone' => 'America/Chicago', 'popular' => true],
-            ['state' => 'Utah', 'abbr' => 'UT', 'timezone' => 'America/Denver', 'popular' => true],
-            ['state' => 'Vermont', 'abbr' => 'VT', 'timezone' => 'America/New_York', 'popular' => false],
-            ['state' => 'Virginia', 'abbr' => 'VA', 'timezone' => 'America/New_York', 'popular' => true],
-            ['state' => 'Washington', 'abbr' => 'WA', 'timezone' => 'America/Los_Angeles', 'popular' => true],
-            ['state' => 'West Virginia', 'abbr' => 'WV', 'timezone' => 'America/New_York', 'popular' => false],
-            ['state' => 'Wisconsin', 'abbr' => 'WI', 'timezone' => 'America/Chicago', 'popular' => false],
-            ['state' => 'Wyoming', 'abbr' => 'WY', 'timezone' => 'America/Denver', 'popular' => false],
-        ];
-    }
 }

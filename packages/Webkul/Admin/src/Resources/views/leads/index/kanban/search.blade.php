@@ -34,7 +34,7 @@
                 class="absolute top-1/2 -translate-y-1/2 ltr:right-3 rtl:left-3"
                 title="Searching..."
             >
-                <div class="datagrid-search-spinner"></div>
+                <div class="app-search-spinner"></div>
             </div>
         </div>
     </script>

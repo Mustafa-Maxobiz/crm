@@ -76,11 +76,19 @@
                                 <x-admin::flat-picker.datetime class="!w-full" ::allow-input="true">
                                     <input
                                         name="schedule_to"
+                                        id="activity-schedule-to"
                                         value="{{ old('schedule_to') ?? $activity->schedule_to }}"
                                         class="flex w-full rounded-md border px-3 py-2 text-sm text-gray-600 transition-all hover:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400"
                                         placeholder="@lang('admin::app.activities.edit.schedule_to')"
                                     />
                                 </x-admin::flat-picker.datetime>
+
+                                <p
+                                    id="activity-schedule-range-error"
+                                    class="mt-1 hidden text-xs text-red-600"
+                                >
+                                    Schedule To must be later than Schedule From.
+                                </p>
                             </div>
                         </div>
                     </x-admin::form.control-group>
@@ -417,6 +425,13 @@
                                 placeholder="Schedule To"
                             />
                         </x-admin::flat-picker.datetime>
+
+                        <p
+                            id="meeting-schedule-range-error"
+                            class="mt-1 hidden text-xs text-red-600"
+                        >
+                            Schedule To must be later than Schedule From.
+                        </p>
                     </div>
                 </div>
 
@@ -498,6 +513,8 @@
                 const meetingLocationInput = document.getElementById('meeting-schedule-location');
                 const meetingCommentInput = document.getElementById('meeting-schedule-comment');
                 const meetingError = document.getElementById('meeting-schedule-error');
+                const meetingRangeError = document.getElementById('meeting-schedule-range-error');
+                const activityScheduleRangeError = document.getElementById('activity-schedule-range-error');
                 const meetingClose = document.getElementById('meeting-schedule-close');
                 const meetingCancel = document.getElementById('meeting-schedule-cancel');
                 const meetingApply = document.getElementById('meeting-schedule-apply');
@@ -509,6 +526,33 @@
 
                 const scheduleFrom = form.querySelector('[name="schedule_from"]');
                 const scheduleTo = form.querySelector('[name="schedule_to"]');
+
+                const isScheduleToAfterFrom = function (fromValue, toValue) {
+                    if (! fromValue || ! toValue) {
+                        return true;
+                    }
+
+                    const fromTime = new Date(fromValue).getTime();
+                    const toTime = new Date(toValue).getTime();
+
+                    if (Number.isNaN(fromTime) || Number.isNaN(toTime)) {
+                        return true;
+                    }
+
+                    return toTime > fromTime;
+                };
+
+                const syncScheduleRangeError = function (fromInput, toInput, errorEl) {
+                    if (! errorEl) {
+                        return true;
+                    }
+
+                    const isValid = isScheduleToAfterFrom(fromInput?.value, toInput?.value);
+
+                    errorEl.classList.toggle('hidden', isValid);
+
+                    return isValid;
+                };
                 let fallbackStatus = status.dataset.initialStatus === 'done'
                     ? 'scheduled'
                     : (status.dataset.initialStatus || 'scheduled');
@@ -673,9 +717,18 @@
                         || ! meetingCommentInput.value.trim()
                     ) {
                         meetingError.classList.remove('hidden');
+                        meetingError.textContent = 'Please add schedule, location, and comment before changing this activity to a meeting.';
 
                         return;
                     }
+
+                    if (! syncScheduleRangeError(meetingFromInput, meetingToInput, meetingRangeError)) {
+                        meetingError.classList.add('hidden');
+
+                        return;
+                    }
+
+                    meetingError.classList.add('hidden');
 
                     setDateValue(scheduleFrom, meetingFromInput.value.trim());
                     setDateValue(scheduleTo, meetingToInput.value.trim());
@@ -688,8 +741,33 @@
                     syncStatusFields();
                 });
 
+                const bindScheduleRangeWatchers = function (fromInput, toInput, errorEl) {
+                    if (! fromInput || ! toInput) {
+                        return;
+                    }
+
+                    const validate = function () {
+                        syncScheduleRangeError(fromInput, toInput, errorEl);
+                    };
+
+                    ['change', 'input', 'blur'].forEach((eventName) => {
+                        fromInput.addEventListener(eventName, validate);
+                        toInput.addEventListener(eventName, validate);
+                    });
+                };
+
+                bindScheduleRangeWatchers(scheduleFrom, scheduleTo, activityScheduleRangeError);
+                bindScheduleRangeWatchers(meetingFromInput, meetingToInput, meetingRangeError);
+
                 const handleActivityFormSubmit = function (event) {
                     status = document.getElementById('activity_status') || status;
+
+                    if (! syncScheduleRangeError(scheduleFrom, scheduleTo, activityScheduleRangeError)) {
+                        event.preventDefault();
+                        scheduleTo?.focus();
+
+                        return;
+                    }
 
                     if (
                         status.value === 'meeting_scheduled'
@@ -770,23 +848,27 @@
                                 type="text"
                                 class="w-full px-1 py-1 dark:bg-gray-900 dark:text-gray-300"
                                 placeholder="@lang('admin::app.activities.edit.participants')"
-                                v-model.lazy="searchTerm"
-                                v-debounce="2000"
+                                v-model="searchTerm"
+                                @input="queueSearch"
+                                @keyup.enter="searchNow"
                             />
                         </li>
                     </ul>
 
                     <!-- Search and Spinner Icon -->
                     <div>
-                        <template v-if="! isSearching.users && ! isSearching.persons">
+                        <template v-if="isPending || isSearching.users || isSearching.persons">
+                            <div
+                                class="app-search-spinner absolute top-2 ltr:right-2 rtl:left-2"
+                                title="Searching..."
+                            ></div>
+                        </template>
+
+                        <template v-else>
                             <span
                                 class="absolute top-1.5 text-2xl ltr:right-1.5 rtl:left-1.5"
                                 :class="[searchTerm.length >= 2 ? 'icon-up-arrow' : 'icon-down-arrow']"
                             ></span>
-                        </template>
-
-                        <template v-else>
-                            <x-admin::spinner class="absolute top-2 ltr:right-2 rtl:left-2" />
                         </template>
                     </div>
                 </div>
@@ -850,6 +932,12 @@
 
                         searchTerm: '',
 
+                        isPending: false,
+
+                        debounceTimer: null,
+
+                        debounceMs: 2000,
+
                         addedParticipants: {
                             users: [],
 
@@ -870,14 +958,6 @@
                     };
                 },
 
-                watch: {
-                    searchTerm(newVal, oldVal) {
-                        this.search('users');
-
-                        this.search('persons');
-                    },
-                },
-
                 created() {
                     @json($activity->participants).forEach(participant => {
                         if (participant.user) {
@@ -888,7 +968,38 @@
                     });
                 },
 
+                beforeUnmount() {
+                    clearTimeout(this.debounceTimer);
+                },
+
                 methods: {
+                    queueSearch() {
+                        clearTimeout(this.debounceTimer);
+
+                        if (! (this.searchTerm || '').trim()) {
+                            this.isPending = false;
+                            this.search('users');
+                            this.search('persons');
+
+                            return;
+                        }
+
+                        this.isPending = true;
+
+                        this.debounceTimer = setTimeout(() => {
+                            this.isPending = false;
+                            this.search('users');
+                            this.search('persons');
+                        }, this.debounceMs);
+                    },
+
+                    searchNow() {
+                        clearTimeout(this.debounceTimer);
+                        this.isPending = false;
+                        this.search('users');
+                        this.search('persons');
+                    },
+
                     search(userType) {
                         if (this.searchTerm.length <= 1) {
                             this.searchedParticipants[userType] = [];
@@ -940,5 +1051,30 @@
                 },
             });
         </script>
+    @endPushOnce
+
+    @pushOnce('styles')
+        <style>
+            .app-search-spinner {
+                width: 16px;
+                height: 16px;
+                border: 2px solid #d1d5db;
+                border-top-color: #f97316;
+                border-radius: 9999px;
+                animation: app-search-spin 0.7s linear infinite;
+                pointer-events: none;
+            }
+
+            .dark .app-search-spinner {
+                border-color: #4b5563;
+                border-top-color: #fb923c;
+            }
+
+            @keyframes app-search-spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+        </style>
     @endPushOnce
 </x-admin::layouts>

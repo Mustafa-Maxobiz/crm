@@ -89,9 +89,9 @@
                     <div class="flex items-center justify-center space-x-1">
                         <div
                             class="relative"
-                            v-if="isSearching"
+                            v-if="isPending || isSearching"
                         >
-                            <x-admin::spinner />
+                            <div class="app-search-spinner"></div>
                         </div>
 
                         <i
@@ -108,14 +108,26 @@
                     :class="dropdownPosition === 'bottom' ? 'top-full mt-1' : 'bottom-full mb-1'"
                 >
                     <!-- Search Bar -->
-                    <input
-                        type="text"
-                        v-model.lazy="searchTerm"
-                        v-debounce="2000"
-                        class="!mb-2 w-full rounded border border-gray-200 px-2.5 py-2 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400 dark:focus:border-gray-400"
-                        placeholder="@lang('admin::app.components.lookup.search')"
-                        ref="searchInput"
-                    />
+                    <div class="relative flex items-center">
+                        <input
+                            type="text"
+                            v-model="searchTerm"
+                            @input="queueSearch"
+                            @keyup.enter="searchNow"
+                            class="!mb-2 w-full rounded border border-gray-200 px-2.5 py-2 pr-8 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400 dark:focus:border-gray-400"
+                            placeholder="@lang('admin::app.components.lookup.search')"
+                            ref="searchInput"
+                        />
+
+                        <div
+                            v-if="isPending || isSearching"
+                            class="absolute top-1/2 -translate-y-1/2 ltr:right-2 rtl:left-2"
+                            style="margin-top: -0.25rem;"
+                            title="Searching..."
+                        >
+                            <div class="app-search-spinner"></div>
+                        </div>
+                    </div>
 
                     <!-- Results List -->
                     <ul class="max-h-40 divide-y divide-gray-100 overflow-y-auto">
@@ -228,6 +240,12 @@
 
                     isSearching: false,
 
+                    isPending: false,
+
+                    debounceTimer: null,
+
+                    debounceMs: 2000,
+
                     cancelToken: null,
 
                     isDropdownOpen: false,
@@ -247,16 +265,18 @@
                 value(newValue) {
                     this.inputValue = newValue;
                 },
-
-                searchTerm(newVal, oldVal) {
-                    this.search();
-                },
             },
 
             mounted() {
                 window.addEventListener("resize", this.setDropdownPosition);
 
                 this.$emitter.on('show-pop', this.handleShowPop);
+            },
+
+            beforeUnmount() {
+                clearTimeout(this.debounceTimer);
+                window.removeEventListener("resize", this.setDropdownPosition);
+                this.$emitter.off('show-pop', this.handleShowPop);
             },
 
             computed: {
@@ -277,6 +297,30 @@
             },
 
             methods: {
+                queueSearch() {
+                    clearTimeout(this.debounceTimer);
+
+                    if (! (this.searchTerm || '').trim()) {
+                        this.isPending = false;
+                        this.search();
+
+                        return;
+                    }
+
+                    this.isPending = true;
+
+                    this.debounceTimer = setTimeout(() => {
+                        this.isPending = false;
+                        this.search();
+                    }, this.debounceMs);
+                },
+
+                searchNow() {
+                    clearTimeout(this.debounceTimer);
+                    this.isPending = false;
+                    this.search();
+                },
+
                 /**
                  * Toggle the input.
                  *
@@ -445,4 +489,29 @@
             },
         });
     </script>
+@endPushOnce
+
+@pushOnce('styles')
+    <style>
+        .app-search-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #d1d5db;
+            border-top-color: #f97316;
+            border-radius: 9999px;
+            animation: app-search-spin 0.7s linear infinite;
+            pointer-events: none;
+        }
+
+        .dark .app-search-spinner {
+            border-color: #4b5563;
+            border-top-color: #fb923c;
+        }
+
+        @keyframes app-search-spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
 @endPushOnce

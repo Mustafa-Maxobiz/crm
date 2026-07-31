@@ -120,6 +120,33 @@ export default {
             return inputDate >= today;
         });
 
+        /**
+         * Ensure a datetime is strictly after another form field.
+         * Usage: rules="required|after_datetime:@schedule_from"
+         * The @ prefix re-validates when the target field changes.
+         */
+        defineRule("after_datetime", (value, [otherValue]) => {
+            if (
+                value === null
+                || value === undefined
+                || value === ""
+                || otherValue === null
+                || otherValue === undefined
+                || otherValue === ""
+            ) {
+                return true;
+            }
+
+            const toTime = new Date(value).getTime();
+            const fromTime = new Date(otherValue).getTime();
+
+            if (Number.isNaN(toTime) || Number.isNaN(fromTime)) {
+                return true;
+            }
+
+            return toTime > fromTime;
+        });
+
         configure({
             /**
              * Built-in error messages and custom error messages are available. Multiple
@@ -132,6 +159,7 @@ export default {
                         ...ar.messages,
                         phone: "يجب أن يكون هذا {field} رقم هاتف صالحًا",
                         after: "يجب أن يكون {field} تاريخًا في المستقبل أو اليوم.",
+                        after_datetime: "يجب أن يكون {field} بعد وقت البداية.",
                     },
                 },
         
@@ -141,6 +169,7 @@ export default {
                         ...en.messages,
                         phone: "This {field} must be a valid phone number",
                         after: "The {field} must be a date in the future or today.",
+                        after_datetime: "The {field} must be later than Schedule From.",
                     },
                 },
         
@@ -150,6 +179,7 @@ export default {
                         ...es.messages,
                         phone: "Este {field} debe ser un número de teléfono válido.",
                         after: "El {field} debe ser una fecha en el futuro o hoy.",
+                        after_datetime: "El {field} debe ser posterior a Schedule From.",
                     },
                 },
         
@@ -159,6 +189,7 @@ export default {
                         ...fa.messages,
                         phone: "این {field} باید یک شماره تلفن معتبر باشد.",
                         after: "{field} باید یک تاریخ در آینده یا امروز باشد.",
+                        after_datetime: "{field} باید بعد از زمان شروع باشد.",
                     },
                 },
         
@@ -168,6 +199,7 @@ export default {
                         ...tr.messages,
                         phone: "Bu {field} geçerli bir telefon numarası olmalıdır.",
                         after: "{field} gelecekte veya bugün olmalıdır.",
+                        after_datetime: "{field}, başlangıç zamanından sonra olmalıdır.",
                     },
                 },
             }),

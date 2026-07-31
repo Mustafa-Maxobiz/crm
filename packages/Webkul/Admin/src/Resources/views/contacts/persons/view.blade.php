@@ -92,7 +92,10 @@
             {!! view_render_event('admin.contact.persons.view.right.before', ['person' => $person]) !!}
 
             <!-- Stages Navigation -->
-            <x-admin::activities :endpoint="route('admin.contacts.persons.activities.index', $person->id)" />
+            <x-admin::activities
+                :endpoint="route('admin.contacts.persons.activities.index', $person->id)"
+                :prospect-timezone="app(\Webkul\Lead\Services\UsStateTimezoneService::class)->timezoneFromPerson($person)"
+            />
 
             {!! view_render_event('admin.contact.persons.view.right.after', ['person' => $person]) !!}
         </div>

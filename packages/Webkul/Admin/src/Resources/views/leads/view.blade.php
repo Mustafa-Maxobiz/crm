@@ -239,6 +239,7 @@
                 :endpoint="route('admin.leads.activities.index', $lead->id)"
                 :email-detach-endpoint="route('admin.leads.emails.detach', $lead->id)"
                 :activeType="request()->query('from') === 'quotes' ? 'quotes' : 'all'"
+                :prospect-timezone="app(\Webkul\Lead\Services\UsStateTimezoneService::class)->timezoneFromPerson($lead->person)"
                 :extra-types="[
                     ['name' => 'description', 'label' => trans('admin::app.leads.view.tabs.description')],
                     ['name' => 'products', 'label' => trans('admin::app.leads.view.tabs.products')],

@@ -76,7 +76,8 @@
             "Webkul\\Warehouse\\": "packages/Webkul/Warehouse/src",
             "Webkul\\WebForm\\": "packages/Webkul/WebForm/src",
             "Webkul\\Automation\\": "packages/Webkul/Automation/src",
-            "Webkul\\MetaLead\\": "packages/Webkul/MetaLead/src"
+            "Webkul\\MetaLead\\": "packages/Webkul/MetaLead/src",
+            "Webkul\\SmrtPhone\\": "packages/Webkul/SmrtPhone/src"
         }
     },
     "autoload-dev": {
