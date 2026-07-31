@@ -116,7 +116,7 @@ class TagController extends Controller
      */
     protected function prepareNotAnsweredCallActivity($lead, $tag): ?JsonResponse
     {
-        if (strtolower(trim((string) $tag?->name)) !== 'not answer') {
+        if (strtolower(trim((string) $tag?->name)) !== 'not answered') {
             return null;
         }
 
@@ -141,7 +141,7 @@ class TagController extends Controller
 
         if (! request()->filled('schedule_from')) {
             return response()->json([
-                'message'                => 'Please add call attempt details before marking this lead as Not Answer.',
+                'message'                => 'Please add call attempt details before marking this lead as Not Answered.',
                 'requires_call_activity' => true,
             ], 409);
         }

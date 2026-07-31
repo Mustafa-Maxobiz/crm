@@ -207,7 +207,7 @@
                     >
                         <x-slot:header>
                             <h3 class="text-base font-semibold dark:text-white">
-                                Add Not Answer Call
+                                Add Not Answered Call
                             </h3>
                         </x-slot>
 
@@ -297,7 +297,7 @@
                                 </template>
 
                                 <template v-else>
-                                    Save Not Answer
+                                    Save Not Answered
                                 </template>
                             </button>
                         </x-slot>
@@ -601,12 +601,12 @@
                                 return;
                             }
 
-                            self.$emitter.emit('add-flash', { type: 'error', message: error.response?.data?.message || 'Not Answer call could not be saved.' });
+                            self.$emitter.emit('add-flash', { type: 'error', message: error.response?.data?.message || 'Not Answered call could not be saved.' });
                         });
                 },
 
                 isNotAnswerTag(tag) {
-                    return (tag.name || '').trim().toLowerCase() === 'not answer';
+                    return (tag.name || '').trim().toLowerCase() === 'not answered';
                 },
 
                 removeDetachedTags(tagIds) {

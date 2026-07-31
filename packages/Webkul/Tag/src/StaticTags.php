@@ -15,7 +15,7 @@ class StaticTags
     {
         return [
             ['name' => 'Do Not Call', 'color' => '#FEE2E2'],
-            ['name' => 'Not Answer', 'color' => '#FEF3C7'],
+            ['name' => 'Not Answered', 'color' => '#FEF3C7'],
             ['name' => 'Cold Lead', 'color' => '#DBEAFE'],
             ['name' => 'Warm Lead', 'color' => '#DCFCE7'],
             ['name' => 'Incorrect Info', 'color' => '#FFEDD5'],

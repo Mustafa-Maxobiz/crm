@@ -2197,7 +2197,7 @@ return [
                 'industry'            => 'Industry',
                 'service-offered'     => 'Service Offered',
                 'products'            => 'Products',
-                'tag-name'            => 'Tag Name',
+                'tag-name'            => 'Tag',
                 'contact-person'      => 'Contact Person',
                 'phone'               => 'Phone',
                 'copy-phone'          => 'Copy phone',

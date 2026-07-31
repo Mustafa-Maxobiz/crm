@@ -20,7 +20,8 @@ return new class extends Migration
             'cold calls' => 'Cold Lead',
             'warm leads' => 'Warm Lead',
             'warm lead'  => 'Warm Lead',
-            'not answer' => 'Not Answer',
+            'not answer' => 'Not Answered',
+            'not answered' => 'Not Answered',
             'do not call'=> 'Do Not Call',
             'incorrect info' => 'Incorrect Info',
         ];
