@@ -49,6 +49,16 @@
         ],
     ];
 
+    $isSdrUser = strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr';
+
+    if ($isSdrUser) {
+        unset(
+            $inlineOptions['lead_source_name'],
+            $inlineOptions['lead_type_name'],
+            $inlineOptions['industry'],
+        );
+    }
+
     $defaultMeetingParticipants = [
         'users' => auth()->guard('user')->user()
             ? [[

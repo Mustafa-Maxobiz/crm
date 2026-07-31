@@ -4,6 +4,13 @@
         @lang('admin::app.leads.edit.title')
     </x-slot>
 
+    @php
+        $isSdrUser = strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr';
+        $sdrLockedAttributeCodes = $isSdrUser
+            ? ['lead_source_id', 'lead_type_id', 'lead_sub_source_id', 'industry']
+            : [];
+    @endphp
+
     {!! view_render_event('admin.leads.edit.form_controls.before', ['lead' => $lead]) !!}
 
     <!-- Edit Lead Form -->
@@ -118,6 +125,7 @@
                                     ],
                                 ]"
                                 :entity="$lead"
+                                :disabled-attribute-codes="$sdrLockedAttributeCodes"
                             />
 
                             <!-- Lead Details Other input fields -->
@@ -141,6 +149,7 @@
                                             'quick_add'   => 1
                                         ])"
                                         :entity="$lead"
+                                        :disabled-attribute-codes="$sdrLockedAttributeCodes"
                                         ::key="sourceKey"
                                         @on-change="handleSourceChange"
                                     />
@@ -157,6 +166,8 @@
                                                 name="lead_sub_source_id"
                                                 v-model="selectedSubSource"
                                                 :label="'Sub-Source'"
+                                                :disabled="$isSdrUser"
+                                                :class="$isSdrUser ? 'cursor-not-allowed opacity-70' : ''"
                                             >
                                                 <option value="">Select Sub-Source</option>
                                                 <option 
@@ -192,6 +203,7 @@
                                             'quick_add'   => 1
                                         ])"
                                         :entity="$lead"
+                                        :disabled-attribute-codes="$sdrLockedAttributeCodes"
                                     />
                                     
                                     <!-- Sales Owner, Expected Close Date, Next Follow-up Date -->

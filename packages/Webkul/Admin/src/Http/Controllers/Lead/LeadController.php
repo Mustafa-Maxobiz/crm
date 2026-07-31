@@ -785,6 +785,37 @@ class LeadController extends Controller
     }
 
     /**
+     * Lead fields SDRs can view but must not change.
+     *
+     * @return array<int, string>
+     */
+    protected function sdrLockedLeadAttributeCodes(): array
+    {
+        return [
+            'lead_source_id',
+            'lead_type_id',
+            'lead_sub_source_id',
+            'industry',
+        ];
+    }
+
+    /**
+     * Remove SDR-locked fields so existing values are preserved.
+     */
+    protected function stripSdrLockedLeadFields(array $data): array
+    {
+        if (! $this->isSdrUser()) {
+            return $data;
+        }
+
+        foreach ($this->sdrLockedLeadAttributeCodes() as $code) {
+            unset($data[$code]);
+        }
+
+        return $data;
+    }
+
+    /**
      * First SDR to open a New lead claims it and moves it into Follow Up.
      */
     protected function claimNewLeadForSdr($lead)
@@ -883,7 +914,7 @@ class LeadController extends Controller
     {
         Event::dispatch('lead.update.before', $id);
 
-        $data = $request->all();
+        $data = $this->stripSdrLockedLeadFields($request->all());
 
         if (isset($data['lead_pipeline_stage_id'])) {
             $stage = $this->stageRepository->findOrFail($data['lead_pipeline_stage_id']);
@@ -928,6 +959,17 @@ class LeadController extends Controller
     public function updateAttributes(int $id)
     {
         $data = request()->all();
+
+        if ($this->isSdrUser()) {
+            $lockedCodes = $this->sdrLockedLeadAttributeCodes();
+            $attemptedLocked = array_values(array_intersect(array_keys($data), $lockedCodes));
+
+            if (! empty($attemptedLocked)) {
+                return response()->json([
+                    'message' => trans('admin::app.leads.sdr-field-locked'),
+                ], 403);
+            }
+        }
 
         if (array_key_exists('lead_source_id', $data) || array_key_exists('lead_sub_source_id', $data)) {
             $sourceId = ! empty($data['lead_source_id']) ? (int) $data['lead_source_id'] : null;

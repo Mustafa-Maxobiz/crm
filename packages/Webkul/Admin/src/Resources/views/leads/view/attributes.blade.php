@@ -1,5 +1,12 @@
 {!! view_render_event('admin.leads.view.attributes.before', ['lead' => $lead]) !!}
 
+@php
+    $isSdrUser = strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr';
+    $sdrLockedAttributeCodes = $isSdrUser
+        ? ['lead_source_id', 'lead_type_id', 'lead_sub_source_id', 'industry']
+        : [];
+@endphp
+
 <div class="flex w-full flex-col gap-4 border-b border-gray-200 p-4 dark:border-gray-800">
     <x-admin::accordion class="select-none !border-none">
         <x-slot:header class="!p-0">
@@ -35,6 +42,7 @@
                         :entity="$lead"
                         :url="route('admin.leads.attributes.update', $lead->id)"
                         :allow-edit="true"
+                        :locked-attribute-codes="$sdrLockedAttributeCodes"
                     />
         
                     {!! view_render_event('admin.leads.view.attributes.form_controls.attributes.view.after', ['lead' => $lead]) !!}

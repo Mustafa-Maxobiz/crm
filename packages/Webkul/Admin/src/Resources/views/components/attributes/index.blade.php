@@ -1,9 +1,14 @@
+@php
+    $disabledAttributeCodes = $disabledAttributeCodes ?? [];
+@endphp
+
 @foreach ($customAttributes as $attribute)
     @php
         $validations = [];
         $value = isset($entity) ? $entity[$attribute->code] : null;
+        $isDisabled = in_array($attribute->code, $disabledAttributeCodes, true);
 
-        if ($attribute->is_required) {
+        if ($attribute->is_required && ! $isDisabled) {
             $validations[] = 'required';
         }
 
@@ -27,7 +32,7 @@
     <x-admin::form.control-group class="mb-2.5 w-full">
         <x-admin::form.control-group.label
             for="{{ $attribute->code }}"
-            :class="$attribute->is_required ? 'required' : ''"
+            :class="$attribute->is_required && ! $isDisabled ? 'required' : ''"
         >
             {{ $attribute->name }}
 
@@ -41,6 +46,7 @@
                 :attribute="$attribute"
                 :validations="$validations"
                 :value="$value"
+                :disabled="$isDisabled"
             />
         @endif
 

@@ -2122,6 +2122,7 @@ return [
         'create-success'            => 'Lead created successfully.',
         'source-access-denied'      => 'You do not have access to the selected lead source.',
         'company-access-denied'     => 'You do not have access to the selected company.',
+        'sdr-field-locked'          => 'Lead source, business type, sub source, and industry cannot be changed by SDR users.',
         'update-success'            => 'Leads updated successfully.',
         'meeting-stage-requires-activity' => 'Please add a meeting activity on this lead before moving it to Meeting.',
         'meeting-stage-requires-done-activity' => 'Please mark the meeting activity as done before moving this lead to the next stage.',

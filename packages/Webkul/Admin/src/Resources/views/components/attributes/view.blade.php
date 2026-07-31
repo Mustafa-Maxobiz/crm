@@ -1,13 +1,18 @@
 @props([
-    'customAttributes' => [],
-    'entity'           => null,
-    'allowEdit'        => false,
-    'url'              => null,
+    'customAttributes'     => [],
+    'entity'               => null,
+    'allowEdit'            => false,
+    'url'                  => null,
+    'lockedAttributeCodes' => [],
 ])
 
 <div class="flex flex-col gap-1">
     @foreach ($customAttributes as $attribute)
         @if (view()->exists($typeView = 'admin::components.attributes.view.' . $attribute->type))
+            @php
+                $attributeAllowEdit = $allowEdit && ! in_array($attribute->code, $lockedAttributeCodes, true);
+            @endphp
+
             <div class="grid grid-cols-[1fr_2fr] items-center gap-1">
                 <div class="label dark:text-white">{{ $attribute->name }}</div>
 
@@ -15,7 +20,7 @@
                     @include ($typeView, [
                         'attribute' => $attribute,
                         'value'     => isset($entity) ? $entity[$attribute->code] : null,
-                        'allowEdit' => $allowEdit,
+                        'allowEdit' => $attributeAllowEdit,
                         'url'       => $url,
                         'entity'    => $entity,
                     ])

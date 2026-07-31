@@ -2,6 +2,7 @@
     'attribute'   => '',
     'value'       => '',
     'validations' => '',
+    'disabled'    => false,
 ])
 
 @switch($attribute->type)
@@ -47,6 +48,7 @@
             :attribute="$attribute"
             :value="$value"
             :validations="$validations"
+            :disabled="$disabled"
         />
 
         @break
