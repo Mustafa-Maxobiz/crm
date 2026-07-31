@@ -905,12 +905,13 @@ return [
 
         'types' => [
             'index' => [
-                'create-btn'     => 'Create Type',
-                'create-success' => 'Type created successfully.',
-                'delete-failed'  => 'Type can not be deleted.',
-                'delete-success' => 'Type deleted successfully.',
-                'title'          => 'Types',
-                'update-success' => 'Type updated successfully.',
+                'create-btn'     => 'Create Business Type',
+                'create-success' => 'Business type created successfully.',
+                'delete-failed'  => 'Business type can not be deleted.',
+                'delete-success' => 'Business type deleted successfully.',
+                'title'          => 'Business Types',
+                'update-success' => 'Business type updated successfully.',
+                'limit-reached'  => 'Only New Business and Existing Business are allowed.',
 
                 'datagrid' => [
                     'delete'      => 'Delete',
@@ -922,12 +923,12 @@ return [
 
                 'create' => [
                     'name'     => 'Name',
-                    'save-btn' => 'Save Type',
-                    'title'    => 'Create Type',
+                    'save-btn' => 'Save Business Type',
+                    'title'    => 'Create Business Type',
                 ],
 
                 'edit' => [
-                    'title' => 'Edit Type',
+                    'title' => 'Edit Business Type',
                 ],
             ],
         ],
@@ -2192,7 +2193,7 @@ return [
                 'subject'             => 'Company Name',
                 'source'              => 'Source',
                 'lead-value'          => 'Lead Value',
-                'lead-type'           => 'Lead Type',
+                'lead-type'           => 'Business Type',
                 'industry'            => 'Industry',
                 'service-offered'     => 'Service Offered',
                 'products'            => 'Products',
@@ -2238,7 +2239,7 @@ return [
                 'columns' => [
                     'contact-person'      => 'Contact Person',
                     'id'                  => 'ID',
-                    'lead-type'           => 'Lead Type',
+                    'lead-type'           => 'Business Type',
                     'lead-value'          => 'Lead Value',
                     'sales-person'        => 'Sales Person',
                     'source'              => 'Source',
@@ -2672,8 +2673,8 @@ return [
         'pipelines-info'       => 'Add, edit or delete pipelines from CRM',
         'sources'              => 'Sources',
         'sources-info'         => 'Add, edit or delete sources from CRM',
-        'types'                => 'Types',
-        'types-info'           => 'Add, edit or delete types from CRM',
+        'types'                => 'Business Types',
+        'types-info'           => 'Manage New Business and Existing Business options for leads',
         'industries'           => 'Industries',
         'industries-info'      => 'Add, edit or delete industry options for leads',
         'services-offered'     => 'Services Offered',

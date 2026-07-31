@@ -33,11 +33,6 @@ class TypeSeeder extends Seeder
                 'name'       => trans('installer::app.seeders.lead.type.existing-business', [], $defaultLocale),
                 'created_at' => $now,
                 'updated_at' => $now,
-            ], [
-                'id'         => 3,
-                'name'       => trans('installer::app.seeders.lead.type.old-business', [], $defaultLocale),
-                'created_at' => $now,
-                'updated_at' => $now,
             ],
         ]);
     }

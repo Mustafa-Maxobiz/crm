@@ -283,20 +283,31 @@
                         :class="section.tall ? 'min-h-[620px]' : 'min-h-[300px]'"
                     >
                         <div class="border-b border-gray-200 p-3 dark:border-gray-800">
-                            <div class="flex items-center justify-between gap-3 max-sm:flex-wrap">
-                                <div>
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0 flex-1">
                                     <p class="text-lg font-semibold text-gray-800 dark:text-white">
                                         @{{ section.title }}
                                     </p>
 
-                                    <p class="text-sm text-gray-500 dark:text-gray-400">
-                                        @{{ section.description }}
+                                    <p
+                                        class="text-sm text-gray-500 dark:text-gray-400"
+                                        v-html="section.description"
+                                    ></p>
+
+                                    <p
+                                        v-if="section.key === 'today-calendar'"
+                                        class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300"
+                                    >
+                                        <span class="sdr-priority-legend-swatch"></span>
+                                        <span>
+                                            Green border = high priority (prospect US time 11:00 AM – 4:00 PM)
+                                        </span>
                                     </p>
                                 </div>
 
                                 <div
                                     v-if="section.key === 'today-calendar'"
-                                    class="flex flex-wrap items-center gap-1.5"
+                                    class="flex shrink-0 flex-nowrap items-center gap-1.5"
                                 >
                                     <span class="sdr-summary-badge meeting">
                                         Meetings @{{ summary.meetings }}
@@ -313,7 +324,7 @@
 
                                 <span
                                     v-else
-                                    class="sdr-section-count"
+                                    class="sdr-section-count shrink-0"
                                 >
                                     @{{ section.items.length }}
                                 </span>
@@ -327,7 +338,10 @@
                                 role="link"
                                 tabindex="0"
                                 class="min-w-0 cursor-pointer rounded-md border border-gray-200 p-3 transition-all hover:border-brandColor hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-950"
-                                :class="{'sdr-row-card-warm': isWarm(item)}"
+                                :class="{
+                                    'sdr-row-card-warm': isWarm(item) && ! item.in_priority_window,
+                                    'sdr-row-card-priority': item.in_priority_window,
+                                }"
                                 @click="openItem(item)"
                                 @keydown.enter="openItem(item)"
                             >
@@ -479,7 +493,7 @@
                                     {
                                         key: 'today-calendar',
                                         title: "Today's Calendar",
-                                        description: 'Meetings and follow-ups due today.',
+                                        description: 'Meetings and follow-ups due today.<br>Items with a green border are high priority during 11:00 AM – 4:00 PM in the prospect US timezone.',
                                         items: this.todayCalendar,
                                         pageSize: 10,
                                         tall: true,
@@ -994,6 +1008,24 @@
                 border-color: #ef4444 !important;
             }
 
+            .sdr-row-card-priority {
+                border-color: #16a34a !important;
+                border-width: 3px !important;
+            }
+
+            .sdr-row-card-priority:hover {
+                border-color: #15803d !important;
+            }
+
+            .sdr-priority-legend-swatch {
+                border: 3px solid #16a34a;
+                border-radius: 4px;
+                display: inline-block;
+                flex-shrink: 0;
+                height: 14px;
+                width: 22px;
+            }
+
             .sdr-row-lead-title {
                 cursor: pointer;
                 overflow-wrap: anywhere;
@@ -1068,6 +1100,14 @@
             .dark .sdr-row-card-warm:hover {
                 background: rgba(127, 29, 29, 0.28) !important;
                 border-color: rgba(248, 113, 113, 0.7) !important;
+            }
+
+            .dark .sdr-row-card-priority {
+                border-color: #22c55e !important;
+            }
+
+            .dark .sdr-row-card-priority:hover {
+                border-color: #4ade80 !important;
             }
 
             .dark .sdr-row-time-badge {

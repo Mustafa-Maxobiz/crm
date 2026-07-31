@@ -4,6 +4,7 @@ namespace Webkul\Admin\Http\Controllers\Settings;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Webkul\Admin\DataGrids\Settings\TypeDataGrid;
 use Webkul\Admin\Http\Controllers\Controller;
@@ -11,6 +12,14 @@ use Webkul\Lead\Repositories\TypeRepository;
 
 class TypeController extends Controller
 {
+    /**
+     * Allowed business type names.
+     */
+    public const ALLOWED_NAMES = [
+        'New Business',
+        'Existing Business',
+    ];
+
     /**
      * Create a new controller instance.
      *
@@ -35,8 +44,14 @@ class TypeController extends Controller
      */
     public function store(): JsonResponse
     {
+        if ($this->typeRepository->count() >= count(self::ALLOWED_NAMES)) {
+            throw ValidationException::withMessages([
+                'name' => [trans('admin::app.settings.types.index.limit-reached')],
+            ]);
+        }
+
         $this->validate(request(), [
-            'name' => ['required', 'unique:lead_types,name'],
+            'name' => ['required', 'unique:lead_types,name', 'in:'.implode(',', self::ALLOWED_NAMES)],
         ]);
 
         Event::dispatch('settings.type.create.before');
@@ -69,7 +84,7 @@ class TypeController extends Controller
     public function update(int $id): JsonResponse
     {
         $this->validate(request(), [
-            'name' => 'required|unique:lead_types,name,'.$id,
+            'name' => 'required|unique:lead_types,name,'.$id.'|in:'.implode(',', self::ALLOWED_NAMES),
         ]);
 
         Event::dispatch('settings.type.update.before', $id);
@@ -90,6 +105,12 @@ class TypeController extends Controller
     public function destroy(int $id): JsonResponse
     {
         $type = $this->typeRepository->findOrFail($id);
+
+        if (in_array(strtolower((string) $type->name), array_map('strtolower', self::ALLOWED_NAMES), true)) {
+            return new JsonResponse([
+                'message' => trans('admin::app.settings.types.index.delete-failed'),
+            ], 400);
+        }
 
         try {
             Event::dispatch('settings.type.delete.before', $id);

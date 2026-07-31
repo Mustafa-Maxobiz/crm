@@ -112,12 +112,31 @@ class UsStateTimezoneService
     }
 
     /**
-     * Resolve US timezone from a person model / object with address.
+     * Resolve US timezone from a person model / object.
+     *
+     * Prefers dedicated `persons.timezone` / `persons.state` columns,
+     * then falls back to legacy nested address payloads.
      */
     public function timezoneFromPerson(mixed $person): ?string
     {
         if (! $person) {
             return null;
+        }
+
+        $storedTimezone = is_object($person)
+            ? ($person->timezone ?? null)
+            : ($person['timezone'] ?? null);
+
+        if (filled($storedTimezone)) {
+            return (string) $storedTimezone;
+        }
+
+        $state = is_object($person)
+            ? ($person->state ?? null)
+            : ($person['state'] ?? null);
+
+        if (filled($state)) {
+            return $this->timezoneForState((string) $state);
         }
 
         $address = is_object($person)
@@ -192,5 +211,63 @@ class UsStateTimezoneService
         ?string $usTimezone
     ): array {
         return $this->formatDual($datetime, $usTimezone, 'h:i A');
+    }
+
+    /**
+     * Sort metadata for SDR "today" lists using prospect US wall-clock time
+     * (not APP_TIMEZONE / PKR). Prioritizes 11am–4pm US local time.
+     *
+     * `us_sort_at` is minutes from midnight in the US timezone so ordering
+     * matches the displayed US time badges.
+     *
+     * @return array{in_priority_window: bool, priority_rank: int, us_sort_at: int}
+     */
+    public function priorityWindowSortMeta(
+        CarbonInterface|string|null $datetime,
+        ?string $usTimezone,
+        int $windowStartHour = 11,
+        int $windowEndHour = 16
+    ): array {
+        $fallback = [
+            'in_priority_window' => false,
+            'priority_rank'      => 1,
+            'us_sort_at'         => PHP_INT_MAX,
+        ];
+
+        if ($datetime === null || $datetime === '') {
+            return $fallback;
+        }
+
+        $carbon = $datetime instanceof CarbonInterface
+            ? $datetime->copy()
+            : Carbon::parse($datetime);
+
+        if (! $usTimezone) {
+            // No prospect state: keep after US-prioritized rows; order by app/PKR clock.
+            $local = $carbon->copy()->timezone($this->appTimezone());
+
+            return [
+                'in_priority_window' => false,
+                'priority_rank'      => 1,
+                'us_sort_at'         => ((int) $local->format('H') * 60) + (int) $local->format('i'),
+            ];
+        }
+
+        try {
+            $usTime = $carbon->copy()->timezone($usTimezone);
+        } catch (\Throwable) {
+            return $fallback;
+        }
+
+        $minutes = ((int) $usTime->format('H') * 60) + (int) $usTime->format('i');
+        $windowStart = $windowStartHour * 60;
+        $windowEnd = $windowEndHour * 60;
+        $inWindow = $minutes >= $windowStart && $minutes <= $windowEnd;
+
+        return [
+            'in_priority_window' => $inWindow,
+            'priority_rank'      => $inWindow ? 0 : 1,
+            'us_sort_at'         => $minutes,
+        ];
     }
 }

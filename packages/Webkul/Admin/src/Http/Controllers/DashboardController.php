@@ -168,10 +168,6 @@ class DashboardController extends Controller
         $todayStart = Carbon::now()->startOfDay();
         $todayEnd = Carbon::now()->endOfDay();
         $sourceAccessService = app(SourceAccessService::class);
-        $addressAttributeId = DB::table('attributes')
-            ->where('code', 'address')
-            ->where('entity_type', 'persons')
-            ->value('id');
 
         $meetingsBase = DB::table('activities')
             ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
@@ -179,16 +175,6 @@ class DashboardController extends Controller
             ->leftJoin('leads', 'lead_activities.lead_id', '=', 'leads.id')
             ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
             ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
-            ->leftJoin('attribute_values as person_address', function ($join) use ($addressAttributeId) {
-                $join->on('person_address.entity_id', '=', 'persons.id')
-                    ->where('person_address.entity_type', '=', 'persons');
-
-                if ($addressAttributeId) {
-                    $join->where('person_address.attribute_id', '=', $addressAttributeId);
-                } else {
-                    $join->whereRaw('1 = 0');
-                }
-            })
             ->where('activities.type', 'meeting')
             ->whereBetween('activities.schedule_from', [$todayStart, $todayEnd])
             ->where(function ($query) use ($userId) {
@@ -212,34 +198,52 @@ class DashboardController extends Controller
                 'activities.location',
                 'leads.id as lead_id',
                 'persons.name as person_name',
-                'lead_sources.name as source_name',
-                'person_address.json_value as person_address'
+                'persons.city as person_city',
+                'persons.state as person_state',
+                'persons.country as person_country',
+                'persons.timezone as person_timezone',
+                'lead_sources.name as source_name'
             )
             ->orderBy('activities.schedule_from')
-            ->limit(8)
             ->get()
             ->unique('id')
             ->values()
             ->map(function ($activity) {
+                $usTimezone = $activity->person_timezone
+                    ?: $this->usStateTimezoneService->timezoneForState($activity->person_state);
                 $dual = $this->usStateTimezoneService->formatDualTime(
                     $activity->schedule_from,
-                    $this->usStateTimezoneService->timezoneFromAddress($activity->person_address)
+                    $usTimezone
                 );
+                $priority = $this->usStateTimezoneService->priorityWindowSortMeta(
+                    $activity->schedule_from,
+                    $usTimezone
+                );
+                $addressLabel = $this->formatPersonAddressLabel([
+                    'city'    => $activity->person_city,
+                    'state'   => $activity->person_state,
+                    'country' => $activity->person_country,
+                ]);
 
                 return [
-                    'id'           => 'meeting-'.$activity->id,
-                    'type'         => 'Meeting',
-                    'source'       => $activity->source_name,
-                    'source_group' => $this->sourceGroup($activity->source_name),
-                    'title'        => $activity->title ?: 'Meeting',
-                    'person'       => $activity->person_name,
-                    'meta'         => $activity->location ?: 'Scheduled meeting',
-                    'time'         => $dual['label'],
-                    'time_local'   => $dual['local'],
-                    'time_us'      => $dual['us'],
-                    'sort_at'      => Carbon::parse($activity->schedule_from)->timestamp,
-                    'url'          => route('admin.activities.edit', $activity->id),
-                    'lead_url'     => $activity->lead_id ? route('admin.leads.view', $activity->lead_id) : null,
+                    'id'                 => 'meeting-'.$activity->id,
+                    'type'               => 'Meeting',
+                    'source'             => $activity->source_name,
+                    'source_group'       => $this->sourceGroup($activity->source_name),
+                    'title'              => $activity->title ?: 'Meeting',
+                    'person'             => $activity->person_name,
+                    'address'            => $addressLabel,
+                    'meta'               => $addressLabel
+                        ?: ($activity->location ?: 'Scheduled meeting'),
+                    'time'               => $dual['label'],
+                    'time_local'         => $dual['local'],
+                    'time_us'            => $dual['us'],
+                    'in_priority_window' => $priority['in_priority_window'],
+                    'priority_rank'      => $priority['priority_rank'],
+                    'us_sort_at'         => $priority['us_sort_at'],
+                    'sort_at'            => Carbon::parse($activity->schedule_from)->timestamp,
+                    'url'                => route('admin.activities.edit', $activity->id),
+                    'lead_url'           => $activity->lead_id ? route('admin.leads.view', $activity->lead_id) : null,
                 ];
             });
 
@@ -247,16 +251,6 @@ class DashboardController extends Controller
             ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
             ->leftJoin('organizations', 'persons.organization_id', '=', 'organizations.id')
             ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
-            ->leftJoin('attribute_values as person_address', function ($join) use ($addressAttributeId) {
-                $join->on('person_address.entity_id', '=', 'persons.id')
-                    ->where('person_address.entity_type', '=', 'persons');
-
-                if ($addressAttributeId) {
-                    $join->where('person_address.attribute_id', '=', $addressAttributeId);
-                } else {
-                    $join->whereRaw('1 = 0');
-                }
-            })
             ->whereNull('leads.deleted_at')
             ->where('leads.user_id', $userId)
             ->whereNotNull('leads.next_followup_date')
@@ -272,33 +266,51 @@ class DashboardController extends Controller
                 'leads.title',
                 'leads.next_followup_date',
                 'persons.name as person_name',
+                'persons.city as person_city',
+                'persons.state as person_state',
+                'persons.country as person_country',
+                'persons.timezone as person_timezone',
                 'organizations.name as organization_name',
-                'lead_sources.name as source_name',
-                'person_address.json_value as person_address'
+                'lead_sources.name as source_name'
             )
             ->orderBy('leads.next_followup_date')
-            ->limit(8)
             ->get()
             ->map(function ($lead) {
+                $usTimezone = $lead->person_timezone
+                    ?: $this->usStateTimezoneService->timezoneForState($lead->person_state);
                 $dual = $this->usStateTimezoneService->formatDualTime(
                     $lead->next_followup_date,
-                    $this->usStateTimezoneService->timezoneFromAddress($lead->person_address)
+                    $usTimezone
                 );
+                $priority = $this->usStateTimezoneService->priorityWindowSortMeta(
+                    $lead->next_followup_date,
+                    $usTimezone
+                );
+                $addressLabel = $this->formatPersonAddressLabel([
+                    'city'    => $lead->person_city,
+                    'state'   => $lead->person_state,
+                    'country' => $lead->person_country,
+                ]);
 
                 return [
-                    'id'           => 'followup-'.$lead->id,
-                    'type'         => 'Follow-up',
-                    'source'       => $lead->source_name,
-                    'source_group' => $this->sourceGroup($lead->source_name),
-                    'title'        => $lead->title,
-                    'person'       => $lead->person_name,
-                    'meta'         => $lead->organization_name ?: 'Lead follow-up',
-                    'time'         => $dual['label'],
-                    'time_local'   => $dual['local'],
-                    'time_us'      => $dual['us'],
-                    'sort_at'      => Carbon::parse($lead->next_followup_date)->timestamp,
-                    'url'          => route('admin.leads.view', $lead->id),
-                    'lead_url'     => route('admin.leads.view', $lead->id),
+                    'id'                 => 'followup-'.$lead->id,
+                    'type'               => 'Follow-up',
+                    'source'             => $lead->source_name,
+                    'source_group'       => $this->sourceGroup($lead->source_name),
+                    'title'              => $lead->title,
+                    'person'             => $lead->person_name,
+                    'address'            => $addressLabel,
+                    'meta'               => $addressLabel
+                        ?: ($lead->organization_name ?: 'Lead follow-up'),
+                    'time'               => $dual['label'],
+                    'time_local'         => $dual['local'],
+                    'time_us'            => $dual['us'],
+                    'in_priority_window' => $priority['in_priority_window'],
+                    'priority_rank'      => $priority['priority_rank'],
+                    'us_sort_at'         => $priority['us_sort_at'],
+                    'sort_at'            => Carbon::parse($lead->next_followup_date)->timestamp,
+                    'url'                => route('admin.leads.view', $lead->id),
+                    'lead_url'           => route('admin.leads.view', $lead->id),
                 ];
             });
 
@@ -310,7 +322,11 @@ class DashboardController extends Controller
             ],
             'today_calendar' => $todayMeetings
                 ->merge($todayFollowups)
-                ->sortBy('sort_at')
+                ->sortBy([
+                    ['priority_rank', 'asc'],
+                    ['us_sort_at', 'asc'],
+                    ['sort_at', 'asc'],
+                ])
                 ->values(),
         ]);
     }
@@ -349,6 +365,40 @@ class DashboardController extends Controller
         return strcasecmp((string) $sourceName, 'Cold Call') === 0
             ? 'cold'
             : 'warm';
+    }
+
+    /**
+     * Build a compact US address label (city, state) for dashboard rows.
+     */
+    protected function formatPersonAddressLabel(mixed $address): ?string
+    {
+        if (is_string($address)) {
+            $decoded = json_decode($address, true);
+            $address = json_last_error() === JSON_ERROR_NONE ? $decoded : null;
+        }
+
+        if (! is_array($address)) {
+            return null;
+        }
+
+        $parts = array_filter([
+            trim((string) ($address['city'] ?? '')),
+            trim((string) ($address['state'] ?? '')),
+        ]);
+
+        if (empty($parts)) {
+            return null;
+        }
+
+        $label = implode(', ', $parts);
+
+        $country = strtoupper(trim((string) ($address['country'] ?? '')));
+
+        if ($country !== '' && ! in_array($country, ['US', 'USA', 'UNITED STATES'], true)) {
+            $label .= ' · '.$country;
+        }
+
+        return $label;
     }
 
     protected function periodRange(string $period, ?string $startDate = null, ?string $endDate = null): array

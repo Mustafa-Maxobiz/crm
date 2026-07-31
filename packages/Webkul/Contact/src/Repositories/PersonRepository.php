@@ -7,6 +7,7 @@ use Webkul\Attribute\Repositories\AttributeRepository;
 use Webkul\Attribute\Repositories\AttributeValueRepository;
 use Webkul\Contact\Contracts\Person;
 use Webkul\Core\Eloquent\Repository;
+use Webkul\Lead\Services\UsStateTimezoneService;
 
 class PersonRepository extends Repository
 {
@@ -19,6 +20,12 @@ class PersonRepository extends Repository
         'contact_numbers',
         'organization_id',
         'job_title',
+        'address_line',
+        'city',
+        'state',
+        'country',
+        'postcode',
+        'timezone',
         'organization.name',
         'user_id',
         'user.name',
@@ -33,6 +40,7 @@ class PersonRepository extends Repository
         protected AttributeRepository $attributeRepository,
         protected AttributeValueRepository $attributeValueRepository,
         protected OrganizationRepository $organizationRepository,
+        protected UsStateTimezoneService $usStateTimezoneService,
         Container $container
     ) {
         parent::__construct($container);
@@ -67,9 +75,11 @@ class PersonRepository extends Repository
             $data['user_id'] = $data['user_id'] ?: null;
         }
 
+        $attributeData = $this->attributePayloadWithoutAddress($data);
+
         $person = parent::create($data);
 
-        $this->attributeValueRepository->save(array_merge($data, [
+        $this->attributeValueRepository->save(array_merge($attributeData, [
             'entity_id' => $person->id,
         ]));
 
@@ -95,30 +105,41 @@ class PersonRepository extends Repository
             unset($data['organization_name']);
         }
 
+        $attributeData = $this->attributePayloadWithoutAddress($data);
+
         $person = parent::update($data, $id);
 
         /**
          * If attributes are provided then only save the provided attributes and return.
          */
         if (! empty($attributes)) {
-            $conditions = ['entity_type' => $data['entity_type']];
+            $attributes = array_values(array_filter(
+                $attributes,
+                fn ($attribute) => $attribute !== 'address'
+            ));
+
+            if (empty($attributes)) {
+                return $person;
+            }
+
+            $conditions = ['entity_type' => $data['entity_type'] ?? 'persons'];
 
             if (isset($data['quick_add'])) {
                 $conditions['quick_add'] = 1;
             }
 
-            $attributes = $this->attributeRepository->where($conditions)
+            $attributeModels = $this->attributeRepository->where($conditions)
                 ->whereIn('code', $attributes)
                 ->get();
 
-            $this->attributeValueRepository->save(array_merge($data, [
+            $this->attributeValueRepository->save(array_merge($attributeData, [
                 'entity_id' => $person->id,
-            ]), $attributes);
+            ]), $attributeModels);
 
             return $person;
         }
 
-        $this->attributeValueRepository->save(array_merge($data, [
+        $this->attributeValueRepository->save(array_merge($attributeData, [
             'entity_id' => $person->id,
         ]));
 
@@ -196,21 +217,81 @@ class PersonRepository extends Repository
         }
 
         // Generate unique_id, fallback to random string if all parts are empty
-        $data['unique_id'] = empty($uniqueIdParts) 
-            ? 'person_' . uniqid() 
+        $data['unique_id'] = empty($uniqueIdParts)
+            ? 'person_'.uniqid()
             : implode('|', $uniqueIdParts);
 
         if (array_key_exists('website', $data) && empty($data['website'])) {
             $data['website'] = null;
         }
 
-        if (array_key_exists('address', $data) && is_array($data['address'])) {
-            $hasAddress = collect($data['address'])->contains(fn ($part) => ! empty($part));
+        return $this->mapAddressFieldsToColumns($data);
+    }
 
-            if (! $hasAddress) {
-                $data['address'] = null;
+    /**
+     * Map nested `address[...]` payload (and flat fields) onto persons columns.
+     */
+    private function mapAddressFieldsToColumns(array $data): array
+    {
+        if (array_key_exists('address', $data)) {
+            if (is_array($data['address'])) {
+                $hasAddress = collect($data['address'])->contains(fn ($part) => filled($part));
+
+                if ($hasAddress) {
+                    $data['address_line'] = trim((string) ($data['address']['address'] ?? '')) ?: null;
+                    $data['city'] = trim((string) ($data['address']['city'] ?? '')) ?: null;
+                    $data['state'] = trim((string) ($data['address']['state'] ?? '')) ?: null;
+                    $data['country'] = trim((string) ($data['address']['country'] ?? '')) ?: null;
+                    $data['postcode'] = trim((string) ($data['address']['postcode'] ?? '')) ?: null;
+                } else {
+                    $data['address_line'] = null;
+                    $data['city'] = null;
+                    $data['state'] = null;
+                    $data['country'] = null;
+                    $data['postcode'] = null;
+                    $data['timezone'] = null;
+                }
+            } elseif ($data['address'] === null) {
+                $data['address_line'] = null;
+                $data['city'] = null;
+                $data['state'] = null;
+                $data['country'] = null;
+                $data['postcode'] = null;
+                $data['timezone'] = null;
+            }
+
+            unset($data['address']);
+        }
+
+        foreach (['address_line', 'city', 'state', 'country', 'postcode'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $data[$field] = filled($data[$field] ?? null) ? trim((string) $data[$field]) : null;
             }
         }
+
+        if (array_key_exists('state', $data)) {
+            $data['timezone'] = $data['state']
+                ? $this->usStateTimezoneService->timezoneForState($data['state'])
+                : null;
+        }
+
+        return $data;
+    }
+
+    /**
+     * EAV payload without address (address now lives on persons columns).
+     */
+    private function attributePayloadWithoutAddress(array $data): array
+    {
+        unset(
+            $data['address'],
+            $data['address_line'],
+            $data['city'],
+            $data['state'],
+            $data['country'],
+            $data['postcode'],
+            $data['timezone']
+        );
 
         return $data;
     }

@@ -23,7 +23,7 @@ return [
                 'source'              => 'Source',
                 'sub-source'          => 'Sub Source',
                 'title'               => 'Title',
-                'type'                => 'Type',
+                'type'                => 'Business Type',
                 'pipeline'            => 'Pipeline',
                 'stage'               => 'Stage',
             ],
@@ -121,7 +121,6 @@ return [
             'type' => [
                 'existing-business' => 'Existing Business',
                 'new-business'      => 'New Business',
-                'old-business'      => 'Old Business',
             ],
         ],
 

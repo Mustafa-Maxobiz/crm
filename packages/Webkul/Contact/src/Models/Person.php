@@ -18,7 +18,11 @@ use Webkul\User\Models\UserProxy;
 
 class Person extends Model implements PersonContract
 {
-    use CustomAttribute, HasFactory, LogsActivity;
+    use HasFactory, LogsActivity;
+    use CustomAttribute {
+        getAttribute as getCustomEavAttribute;
+        attributesToArray as customAttributesToArray;
+    }
 
     /**
      * Table name.
@@ -54,10 +58,57 @@ class Person extends Model implements PersonContract
         'emails',
         'contact_numbers',
         'job_title',
+        'address_line',
+        'city',
+        'state',
+        'country',
+        'postcode',
+        'timezone',
         'user_id',
         'organization_id',
         'unique_id',
     ];
+
+    /**
+     * Prefer dedicated address columns over EAV for `address`.
+     */
+    public function getAttribute($key)
+    {
+        if ($key === 'address') {
+            return $this->composeAddress();
+        }
+
+        return $this->getCustomEavAttribute($key);
+    }
+
+    /**
+     * Ensure API/array dumps use column-backed address.
+     */
+    public function attributesToArray()
+    {
+        $attributes = $this->customAttributesToArray();
+        $attributes['address'] = $this->composeAddress();
+
+        return $attributes;
+    }
+
+    /**
+     * Compose legacy address array shape used by forms and APIs.
+     */
+    public function composeAddress(): ?array
+    {
+        $address = [
+            'address'  => $this->attributes['address_line'] ?? null,
+            'city'     => $this->attributes['city'] ?? null,
+            'state'    => $this->attributes['state'] ?? null,
+            'country'  => $this->attributes['country'] ?? null,
+            'postcode' => $this->attributes['postcode'] ?? null,
+        ];
+
+        $hasValue = collect($address)->contains(fn ($part) => filled($part));
+
+        return $hasValue ? $address : null;
+    }
 
     /**
      * Get the user that owns the lead.
