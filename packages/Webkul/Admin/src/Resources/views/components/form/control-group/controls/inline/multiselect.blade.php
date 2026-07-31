@@ -1,12 +1,16 @@
 @props([
     'allowEdit' => true,
     'data'      => [],
+    'canAddNew' => false,
+    'storeUrl'  => null,
 ])
 
 <v-inline-multi-select-edit
-    {{ $attributes->except('data') }}
+    {{ $attributes->except(['data', 'canAddNew', 'storeUrl']) }}
     :data="{{ json_encode($data) }}"
     :allow-edit="{{ $allowEdit ? 'true' : 'false' }}"
+    :can-add-new="{{ $canAddNew ? 'true' : 'false' }}"
+    store-url="{{ $storeUrl }}"
 >
     <div class="group w-full max-w-full hover:rounded-sm">
         <div class="rounded-xs flex h-[34px] items-center pl-2.5 text-left">
@@ -58,7 +62,7 @@
                 <template v-if="allowEdit">
                     <i
                         @click="toggle"
-                        class="icon-edit phttp://192.168.15.43/test/-0.5 cursor-pointer rounded text-2xl opacity-0 hover:bg-gray-200 group-hover:opacity-100 dark:hover:bg-gray-950 ltr:mr-1 rtl:ml-1"
+                        class="icon-edit cursor-pointer rounded p-0.5 text-2xl opacity-0 hover:bg-gray-200 group-hover:opacity-100 dark:hover:bg-gray-950 ltr:mr-1 rtl:ml-1"
                     ></i>
                 </template>
             </div>
@@ -72,68 +76,53 @@
             ref="dropdownContainer"
             v-if="isEditing"
         >
-            <div class="flex min-h-[38px] w-full items-center rounded border border-gray-200 px-2.5 py-1.5 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400 dark:focus:border-gray-400 ltr:pr-16 rtl:pl-16">
+            <div class="flex min-h-[38px] w-full flex-wrap items-center gap-1 rounded border border-gray-200 px-2.5 py-1.5 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400 dark:focus:border-gray-400 ltr:pr-16 rtl:pl-16">
                 <ul class="flex flex-wrap items-center gap-1">
                     <li
                         v-for="option in tempOptions"
                         :key="option.id"
                         class="flex items-center gap-1 rounded-md bg-slate-100 pl-2 dark:bg-gray-800 dark:text-white"
                     >
-                        <input
-                            type="hidden"
-                            :name="name"
-                            :value="option"
-                        />
-                
-                        <div
-                            class="relative h-[18px] pl-2.5"
-                            :style="{ 'text-align': position }"
-                        >
-                            <!-- Wrap the text and tooltip in a group class for hover tracking -->
-                            <div class="group">
-                                <!-- Truncated text -->
-                                <p class="max-w-[110px] cursor-pointer truncate">@{{ option.name }}</p>
-                
-                                <!-- Tooltip that shows on hover over the truncated text -->
-                                <div
-                                    class="absolute bottom-0 mb-5 hidden flex-col group-hover:flex"
-                                    v-if="option.name?.length > 20"
-                                >
-                                    <span
-                                        class="whitespace-no-wrap relative z-20 rounded-md bg-black px-4 py-2 text-xs leading-none text-white shadow-lg dark:bg-white dark:text-gray-900"
-                                    >
-                                        @{{ option.name }}
-                                    </span>
-                
-                                    <div class="-mt-2 ml-4 h-3 w-3 rotate-45 bg-black dark:bg-white"></div>
-                                </div>
-                            </div>
-                        </div>
-                
-                        <!-- Cross icon for removing option -->
+                        <p class="max-w-[110px] truncate">@{{ option.name }}</p>
+
                         <span
                             class="icon-cross-large cursor-pointer p-0.5 text-xl"
                             @click="removeOption(option)"
                         ></span>
                     </li>
                 </ul>
+
+                <input
+                    type="text"
+                    v-model="searchTerm"
+                    class="min-w-[100px] flex-1 border-0 bg-transparent p-0 text-sm outline-none dark:bg-transparent"
+                    :placeholder="placeholder"
+                    @keydown.enter.prevent="handleEnter"
+                />
             </div>
 
             <!-- Dropdown (position dynamic based on space) -->
             <div
                 class="absolute z-10 w-full origin-top transform rounded-lg border bg-white shadow-lg dark:border-gray-800 dark:bg-gray-800"
                 :class="dropdownPosition === 'bottom' ? 'top-full mt-1' : 'bottom-full mb-1'"
-                v-if="options.length > 0"
+                v-if="filteredOptions.length || (canAddNew && searchableNewLabel)"
             >
-                <!-- Results List -->
                 <ul class="max-h-40 divide-gray-100 overflow-y-auto p-0.5">
                     <li 
-                        v-for="option in options" 
+                        v-for="option in filteredOptions" 
                         :key="option.id"
-                        class="cursor-pointer rounded px-4 py-2 text-gray-800 transition-colors hover:bg-blue-100 dark:text-white dark:hover:bg-gray-950 ltr:pr-16 rtl:pl-16"
+                        class="cursor-pointer rounded px-4 py-2 text-gray-800 transition-colors hover:bg-blue-100 dark:text-white dark:hover:bg-gray-950"
                         @click="addOption(option)"
                     >
                         @{{ option.name }}
+                    </li>
+
+                    <li
+                        v-if="canAddNew && searchableNewLabel"
+                        class="cursor-pointer rounded border-t border-gray-100 px-4 py-2 font-medium text-brandColor hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-950"
+                        @click="createOption"
+                    >
+                        @{{ isCreating ? creatingLabel : addButtonLabel }}
                     </li>
                 </ul>
             </div>
@@ -157,7 +146,6 @@
                 </button>
             </div>
         </div>
-
     </script>
 
     <script type="module">
@@ -220,70 +208,110 @@
                     type: String,
                     default: '',
                 },
+
+                canAddNew: {
+                    type: Boolean,
+                    default: false,
+                },
+
+                storeUrl: {
+                    type: String,
+                    default: '',
+                },
             },
 
             data() {
                 return {
                     inputValue: this.value,
-
                     isEditing: false,
-
-                    options: this.data ?? [],
-
+                    allOptions: [...(this.data ?? [])],
+                    options: [],
                     tempOptions: [],
-
-                    isRTL: document.documentElement.dir === 'rtl',
-
+                    searchTerm: '',
+                    isCreating: false,
                     isDropdownOpen: false,
-
-                    dropdownPosition: "bottom",
+                    dropdownPosition: 'bottom',
+                    addLabel: @json(__('admin::app.leads.services-offered.add-option')),
+                    creatingLabel: @json(__('admin::app.leads.services-offered.creating-option')),
                 };
             },
 
             mounted() {
-                this.tempOptions = this.options.filter((data) => this.value.includes(data.id));
-
-                this.options = this.options.filter((data) => !this.value.includes(data.id));
-
-                window.addEventListener("resize", this.setDropdownPosition);
+                this.syncFromValue();
+                window.addEventListener('resize', this.setDropdownPosition);
             },
 
             computed: {
-                /**
-                 * Get the selected value.
-                 * 
-                 * @return {Object}
-                 */
-                selectedValue() {                    
+                selectedIds() {
+                    if (Array.isArray(this.value)) {
+                        return this.value.map(Number).filter(Boolean);
+                    }
+
+                    if (this.value === null || this.value === undefined || this.value === '') {
+                        return [];
+                    }
+
+                    return String(this.value)
+                        .split(',')
+                        .map(id => Number(id.trim()))
+                        .filter(Boolean);
+                },
+
+                selectedValue() {
                     if (this.tempOptions.length === 0) {
                         return null;
                     }
 
-                    return this.tempOptions.map((data) => data.name).join(', ');
+                    return this.tempOptions.map(data => data.name).join(', ');
+                },
+
+                filteredOptions() {
+                    const term = this.searchTerm.trim().toLowerCase();
+
+                    return this.options.filter(option => {
+                        if (! term) {
+                            return true;
+                        }
+
+                        return String(option.name).toLowerCase().includes(term);
+                    });
+                },
+
+                searchableNewLabel() {
+                    const term = this.searchTerm.trim();
+
+                    if (! term) {
+                        return '';
+                    }
+
+                    const exists = this.allOptions.some(
+                        option => String(option.name).toLowerCase() === term.toLowerCase()
+                    );
+
+                    return exists ? '' : term;
+                },
+
+                addButtonLabel() {
+                    return this.addLabel.replace(':name', this.searchableNewLabel);
                 },
             },
 
             methods: {
-                /**
-                 * Toggle the input.
-                 * 
-                 * @return {void}
-                 */
-                toggle() {
-                    this.isEditing = true;
+                syncFromValue() {
+                    const selected = this.selectedIds;
 
-                    this.isDropdownOpen = ! this.isDropdownOpen;
-
-                    if (this.isDropdownOpen) {
-                        this.setDropdownPosition();
-                    }
+                    this.tempOptions = this.allOptions.filter(option => selected.includes(Number(option.id)));
+                    this.options = this.allOptions.filter(option => ! selected.includes(Number(option.id)));
                 },
 
-                /**
-                 * Save the input value.
-                 * 
-                 * @return {void}
-                 */
+                toggle() {
+                    this.isEditing = true;
+                    this.isDropdownOpen = true;
+                    this.searchTerm = '';
+                    this.syncFromValue();
+                    this.setDropdownPosition();
+                },
+
                 save() {
                     if (this.errors[this.name]) {
                         return;
@@ -291,56 +319,95 @@
 
                     this.isEditing = false;
 
+                    const selectedIds = this.tempOptions.map(data => data.id);
+                    this.inputValue = selectedIds.join(',');
+
                     if (this.url) {
                         this.$axios.put(this.url, {
-                                [this.name]: this.tempOptions.map((data) => data.id),
-                            })
-                            .then((response) => {
-                                this.$emitter.emit('add-flash', { type: 'success', message: response.data.message });
-                            })
-                            .catch((error) => {
-                                this.inputValue = this.value;
-
-                                this.$emitter.emit('add-flash', { type: 'error', message: error.response.data.message });
-                            });                        
+                            [this.name]: selectedIds,
+                        }).then(response => {
+                            this.$emitter.emit('add-flash', { type: 'success', message: response.data.message });
+                        }).catch(error => {
+                            this.inputValue = this.value;
+                            this.syncFromValue();
+                            this.$emitter.emit('add-flash', {
+                                type: 'error',
+                                message: error.response?.data?.message || 'Update failed.',
+                            });
+                        });
                     }
 
                     this.$emit('options-updated', {
                         name: this.name,
-                        value: this.tempOptions.map((data) => data.id),
+                        value: selectedIds,
                     });
                 },
 
-                /**
-                 * Cancel the input value.
-                 * 
-                 * @return {void}
-                 */
                 cancel() {
                     this.isEditing = false;
-
-                    this.$emit('options-updated', {
-                        name: this.name,
-                        value: this.tempOptions.map((data) => data.id),
-                    });
+                    this.searchTerm = '';
+                    this.syncFromValue();
                 },
 
                 addOption(option) {
-                    if (!this.tempOptions.some((data) => data.id === option.id)) {
+                    if (! this.tempOptions.some(data => Number(data.id) === Number(option.id))) {
                         this.tempOptions.push(option);
-
-                        this.options = this.options.filter((data) => data.id !== option.id);
-
-                        this.input = '';
+                        this.options = this.options.filter(data => Number(data.id) !== Number(option.id));
+                        this.searchTerm = '';
                     }
                 },
 
                 removeOption(option) {
-                    if (!this.options.some((data) => data.id === option.id)) {
+                    if (! this.options.some(data => Number(data.id) === Number(option.id))) {
                         this.options.push(option);
-
-                        this.tempOptions = this.tempOptions.filter((data) => data.id !== option.id);
+                        this.tempOptions = this.tempOptions.filter(data => Number(data.id) !== Number(option.id));
                     }
+                },
+
+                handleEnter() {
+                    if (this.filteredOptions.length) {
+                        this.addOption(this.filteredOptions[0]);
+                        return;
+                    }
+
+                    if (this.canAddNew && this.searchableNewLabel) {
+                        this.createOption();
+                    }
+                },
+
+                createOption() {
+                    if (! this.canAddNew || ! this.storeUrl || ! this.searchableNewLabel || this.isCreating) {
+                        return;
+                    }
+
+                    this.isCreating = true;
+
+                    this.$axios.post(this.storeUrl, {
+                        name: this.searchableNewLabel,
+                    }).then(response => {
+                        const option = response.data.data;
+
+                        this.allOptions.push({
+                            id: option.id,
+                            name: option.name,
+                        });
+
+                        this.addOption(option);
+
+                        this.$emitter.emit('add-flash', {
+                            type: 'success',
+                            message: response.data.message,
+                        });
+                    }).catch(error => {
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: error.response?.data?.message
+                                || Object.values(error.response?.data?.errors || {})?.[0]?.[0]
+                                || 'Unable to add service offered option.',
+                        });
+                    }).finally(() => {
+                        this.isCreating = false;
+                    });
                 },
 
                 setDropdownPosition() {
@@ -348,17 +415,15 @@
                         const dropdownContainer = this.$refs.dropdownContainer;
 
                         if (! dropdownContainer) {
-                            return;     
+                            return;
                         }
 
                         const dropdownRect = dropdownContainer.getBoundingClientRect();
                         const viewportHeight = window.innerHeight;
 
-                        if (dropdownRect.bottom + 250 > viewportHeight) {
-                            this.dropdownPosition = "top";
-                        } else {
-                            this.dropdownPosition = "bottom";
-                        }
+                        this.dropdownPosition = dropdownRect.bottom + 250 > viewportHeight
+                            ? 'top'
+                            : 'bottom';
                     });
                 },
             },

@@ -58,6 +58,15 @@
             :attribute="$attribute"
             :value="$value"
             :validations="$validations"
+            :can-add-new="$attribute->code === 'service_offered' && (
+                bouncer()->hasPermission('settings.lead.services_offered.create')
+                || bouncer()->hasPermission('leads.create')
+                || bouncer()->hasPermission('leads.edit')
+                || strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr'
+            )"
+            :store-url="$attribute->code === 'service_offered'
+                ? route('admin.leads.services_offered.store')
+                : null"
         />
         
         @break

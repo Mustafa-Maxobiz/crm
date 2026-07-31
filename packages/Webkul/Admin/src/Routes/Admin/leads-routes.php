@@ -34,9 +34,11 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
 
     Route::put('edit/{id}', 'update')->name('admin.leads.update');
 
-    Route::put('attributes/edit/{id}', 'updateAttributes')->name('admin.leads.attributes.update');
+        Route::put('attributes/edit/{id}', 'updateAttributes')->name('admin.leads.attributes.update');
 
-    Route::put('stage/edit/{id}', 'updateStage')->name('admin.leads.stage.update');
+        Route::post('services-offered', 'storeServiceOfferedOption')->name('admin.leads.services_offered.store');
+
+        Route::put('stage/edit/{id}', 'updateStage')->name('admin.leads.stage.update');
 
     Route::post('disqualify/{id}', 'disqualify')->name('admin.leads.disqualify');
 

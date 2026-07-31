@@ -39,17 +39,25 @@
                 ->all(),
         ],
         'service_offered' => [
-            'field'   => 'service_option_id',
-            'items'   => \Illuminate\Support\Facades\DB::table('attribute_options')
-                ->where('attribute_id', \Illuminate\Support\Facades\DB::table('attributes')->where('code', 'service_offered')->where('entity_type', 'leads')->value('id'))
-                ->orderBy('sort_order')
-                ->get(['id as value', 'name as label'])
-                ->map(fn ($o) => ['value' => $o->value, 'label' => $o->label])
-                ->all(),
+            'field'    => 'service_option_ids',
+            'multiple' => true,
+            'items'    => collect(
+                \Illuminate\Support\Facades\DB::table('attribute_options')
+                    ->where('attribute_id', \Illuminate\Support\Facades\DB::table('attributes')->where('code', 'service_offered')->where('entity_type', 'leads')->value('id'))
+                    ->orderBy('sort_order')
+                    ->get(['id as value', 'name as label'])
+                    ->map(fn ($o) => ['value' => (int) $o->value, 'label' => $o->label])
+                    ->all()
+            )->unique('value')->values()->all(),
         ],
     ];
 
     $isSdrUser = strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr';
+
+    $canAddServiceOffered = bouncer()->hasPermission('settings.lead.services_offered.create')
+        || bouncer()->hasPermission('leads.create')
+        || bouncer()->hasPermission('leads.edit')
+        || $isSdrUser;
 
     if ($isSdrUser) {
         unset(
@@ -137,9 +145,29 @@
 
                             <template v-for="column in available.columns">
                                 <template v-if="column.visibility">
-                                    {{-- Inline-editable dropdown columns --}}
+                                    {{-- Multi-select Services Offered trigger --}}
                                     <div
-                                        v-if="inlineOptions[column.index]"
+                                        v-if="inlineOptions[column.index]?.multiple"
+                                        class="service-offered-cell min-w-0"
+                                        @click.stop
+                                    >
+                                        <button
+                                            type="button"
+                                            class="flex w-full items-center justify-between gap-1 truncate rounded border border-transparent bg-transparent px-1 py-0.5 text-left text-sm text-gray-800 outline-none transition-all hover:border-gray-300 focus:border-brandColor dark:text-gray-300 dark:hover:border-gray-600"
+                                            :class="openServiceLeadId === record.id ? 'border-brandColor ring-1 ring-brandColor' : ''"
+                                            :ref="el => setServiceTriggerRef(record.id, el)"
+                                            @click="toggleServiceDropdown(record, $event)"
+                                        >
+                                            <span class="truncate">
+                                                @{{ serviceOfferedLabel(record) }}
+                                            </span>
+                                            <i class="icon-down-arrow shrink-0 text-lg"></i>
+                                        </button>
+                                    </div>
+
+                                    {{-- Inline-editable single dropdown columns --}}
+                                    <div
+                                        v-else-if="inlineOptions[column.index]"
                                         class="min-w-0"
                                     >
                                         <select
@@ -608,6 +636,98 @@
                     </div>
                 </x-slot>
             </x-admin::modal>
+
+            {{-- Services Offered: fixed overlay + panel so table content never bleeds through --}}
+            <Teleport to="body">
+                <template v-if="openServiceRecord">
+                    <div
+                        class="service-offered-dropdown-overlay fixed inset-0 z-[9998]"
+                        @mousedown.prevent="closeServiceDropdown"
+                    ></div>
+
+                    <div
+                        class="service-offered-dropdown-portal fixed z-[9999] flex w-72 flex-col rounded-md border border-gray-200 shadow-2xl dark:border-gray-800"
+                        :style="serviceDropdownStyle"
+                        @mousedown.stop
+                        @click.stop
+                        @wheel.stop
+                    >
+                        <div class="shrink-0 border-b border-gray-100 p-2 dark:border-gray-800" style="background:#fff;">
+                            <input
+                                type="text"
+                                v-model="serviceSearchTerm"
+                                class="w-full rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-brandColor dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300"
+                                style="background:#fff;"
+                                placeholder="@lang('admin::app.leads.index.datagrid.service-offered')"
+                                @keydown.enter.prevent="handleServiceEnter(openServiceRecord)"
+                            />
+                        </div>
+
+                        <ul
+                            class="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1"
+                            style="background:#fff;"
+                            :style="{ maxHeight: serviceListMaxHeight }"
+                        >
+                            <li
+                                v-for="opt in filteredServiceOptions"
+                                :key="'service-opt-' + opt.value"
+                                class="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                                style="background:#fff;"
+                                @click="toggleServiceOption(openServiceRecord, opt.value)"
+                            >
+                                <span
+                                    class="flex h-4 w-4 shrink-0 items-center justify-center rounded border"
+                                    :class="isServiceSelected(openServiceRecord, opt.value)
+                                        ? 'border-brandColor bg-brandColor text-white'
+                                        : 'border-gray-300'"
+                                    :style="isServiceSelected(openServiceRecord, opt.value) ? '' : 'background:#fff;'"
+                                >
+                                    <i
+                                        v-if="isServiceSelected(openServiceRecord, opt.value)"
+                                        class="icon-tick text-xs"
+                                    ></i>
+                                </span>
+                                <span class="truncate">@{{ opt.label }}</span>
+                            </li>
+
+                            <li
+                                v-if="! filteredServiceOptions.length && ! serviceSearchableNewLabel"
+                                class="px-3 py-2 text-sm text-gray-500"
+                                style="background:#fff;"
+                            >
+                                @lang('admin::app.components.lookup.no-results')
+                            </li>
+
+                            <li
+                                v-if="canAddServiceOffered && serviceSearchableNewLabel"
+                                class="cursor-pointer border-t border-gray-100 px-3 py-2 text-sm font-medium text-brandColor hover:bg-gray-50"
+                                style="background:#fff;"
+                                @click="createServiceOption(openServiceRecord)"
+                            >
+                                <i class="icon-add text-md"></i>
+                                @{{ isCreatingService ? serviceCreatingLabel : serviceAddLabel.replace(':name', serviceSearchableNewLabel) }}
+                            </li>
+                        </ul>
+
+                        <div class="flex shrink-0 justify-end gap-1 border-t border-gray-100 p-2 dark:border-gray-800" style="background:#fff;">
+                            <button
+                                type="button"
+                                class="rounded px-2 py-1 text-sm text-gray-600 hover:bg-gray-100"
+                                @click="closeServiceDropdown"
+                            >
+                                @lang('admin::app.leads.index.datagrid.cancel')
+                            </button>
+                            <button
+                                type="button"
+                                class="rounded bg-brandColor px-2 py-1 text-sm text-white"
+                                @click="saveServiceOffered(openServiceRecord)"
+                            >
+                                @lang('admin::app.leads.index.datagrid.save')
+                            </button>
+                        </div>
+                    </div>
+                </template>
+            </Teleport>
         </div>
     </script>
 
@@ -619,6 +739,17 @@
                 return {
                     src: "{{ route('admin.leads.index') }}",
                     inlineOptions: @json($inlineOptions),
+                    canAddServiceOffered: @json($canAddServiceOffered),
+                    openServiceLeadId: null,
+                    openServiceRecord: null,
+                    serviceDropdownStyle: {},
+                    serviceListMaxHeight: '220px',
+                    serviceTriggerRefs: {},
+                    serviceSearchTerm: '',
+                    serviceDraftIds: {},
+                    isCreatingService: false,
+                    serviceAddLabel: @json(__('admin::app.leads.services-offered.add-option')),
+                    serviceCreatingLabel: @json(__('admin::app.leads.services-offered.creating-option')),
                     editLeadId: null,
                     editLead: {},
                     editPerson: { name: '' },
@@ -643,7 +774,237 @@
                 };
             },
 
+            computed: {
+                filteredServiceOptions() {
+                    const items = this.inlineOptions.service_offered?.items || [];
+                    const term = this.serviceSearchTerm.trim().toLowerCase();
+
+                    if (! term) {
+                        return items;
+                    }
+
+                    return items.filter(opt => String(opt.label).toLowerCase().includes(term));
+                },
+
+                serviceSearchableNewLabel() {
+                    const term = this.serviceSearchTerm.trim();
+
+                    if (! term) {
+                        return '';
+                    }
+
+                    const exists = (this.inlineOptions.service_offered?.items || []).some(
+                        opt => String(opt.label).toLowerCase() === term.toLowerCase()
+                    );
+
+                    return exists ? '' : term;
+                },
+            },
+
+            mounted() {
+                document.addEventListener('keydown', this.handleServiceEscape);
+            },
+
+            beforeUnmount() {
+                document.removeEventListener('keydown', this.handleServiceEscape);
+            },
+
             methods: {
+                setServiceTriggerRef(leadId, el) {
+                    if (el) {
+                        this.serviceTriggerRefs[leadId] = el;
+                    } else {
+                        delete this.serviceTriggerRefs[leadId];
+                    }
+                },
+
+                parseServiceIds(record) {
+                    const raw = record.service_option_ids;
+
+                    if (Array.isArray(raw)) {
+                        return raw.map(Number).filter(Boolean);
+                    }
+
+                    if (! raw) {
+                        return [];
+                    }
+
+                    return String(raw)
+                        .split(',')
+                        .map(id => Number(String(id).trim()))
+                        .filter(Boolean);
+                },
+
+                serviceOfferedLabel(record) {
+                    const ids = this.serviceDraftIds[record.id] ?? this.parseServiceIds(record);
+                    const items = this.inlineOptions.service_offered?.items || [];
+                    const labels = items
+                        .filter(opt => ids.includes(Number(opt.value)))
+                        .map(opt => opt.label);
+
+                    return labels.length ? labels.join(', ') : '--';
+                },
+
+                isServiceSelected(record, optionId) {
+                    const ids = this.serviceDraftIds[record.id] ?? this.parseServiceIds(record);
+
+                    return ids.includes(Number(optionId));
+                },
+
+                toggleServiceDropdown(record, event) {
+                    if (this.openServiceLeadId === record.id) {
+                        this.closeServiceDropdown();
+
+                        return;
+                    }
+
+                    const trigger = event?.currentTarget || this.serviceTriggerRefs[record.id];
+
+                    if (! trigger) {
+                        return;
+                    }
+
+                    const rect = trigger.getBoundingClientRect();
+                    const dropdownWidth = 288;
+                    const chromeHeight = 110; // search + footer approx
+                    const spaceBelow = window.innerHeight - rect.bottom - 12;
+                    const spaceAbove = rect.top - 12;
+                    const openUp = spaceBelow < 260 && spaceAbove > spaceBelow;
+                    const available = Math.max(160, openUp ? spaceAbove : spaceBelow);
+                    const panelMax = Math.min(380, available);
+                    const listMax = Math.max(120, panelMax - chromeHeight);
+
+                    const left = Math.min(
+                        Math.max(8, rect.left),
+                        window.innerWidth - dropdownWidth - 8
+                    );
+
+                    const top = openUp
+                        ? Math.max(8, rect.top - panelMax - 4)
+                        : rect.bottom + 4;
+
+                    this.openServiceLeadId = record.id;
+                    this.openServiceRecord = record;
+                    this.serviceSearchTerm = '';
+                    this.serviceListMaxHeight = `${listMax}px`;
+                    this.serviceDropdownStyle = {
+                        top: `${top}px`,
+                        left: `${left}px`,
+                        maxHeight: `${panelMax}px`,
+                        background: '#ffffff',
+                        opacity: '1',
+                        isolation: 'isolate',
+                    };
+                    this.serviceDraftIds = {
+                        ...this.serviceDraftIds,
+                        [record.id]: this.parseServiceIds(record),
+                    };
+                },
+
+                closeServiceDropdown() {
+                    this.openServiceLeadId = null;
+                    this.openServiceRecord = null;
+                    this.serviceSearchTerm = '';
+                    this.serviceDropdownStyle = {};
+                    this.serviceListMaxHeight = '220px';
+                },
+
+                handleServiceEscape(event) {
+                    if (event.key === 'Escape' && this.openServiceLeadId) {
+                        this.closeServiceDropdown();
+                    }
+                },
+
+                toggleServiceOption(record, optionId) {
+                    const id = Number(optionId);
+                    const current = [...(this.serviceDraftIds[record.id] ?? this.parseServiceIds(record))];
+                    const index = current.indexOf(id);
+
+                    if (index >= 0) {
+                        current.splice(index, 1);
+                    } else {
+                        current.push(id);
+                    }
+
+                    this.serviceDraftIds = {
+                        ...this.serviceDraftIds,
+                        [record.id]: current,
+                    };
+                },
+
+                handleServiceEnter(record) {
+                    if (this.filteredServiceOptions.length === 1) {
+                        this.toggleServiceOption(record, this.filteredServiceOptions[0].value);
+
+                        return;
+                    }
+
+                    if (this.canAddServiceOffered && this.serviceSearchableNewLabel) {
+                        this.createServiceOption(record);
+                    }
+                },
+
+                createServiceOption(record) {
+                    if (! this.canAddServiceOffered || ! this.serviceSearchableNewLabel || this.isCreatingService) {
+                        return;
+                    }
+
+                    this.isCreatingService = true;
+
+                    this.$axios.post("{{ route('admin.leads.services_offered.store') }}", {
+                        name: this.serviceSearchableNewLabel,
+                    }).then(response => {
+                        const option = response.data.data;
+                        const items = this.inlineOptions.service_offered?.items || [];
+
+                        items.push({
+                            value: Number(option.id),
+                            label: option.name,
+                        });
+
+                        this.inlineOptions.service_offered.items = items;
+                        this.toggleServiceOption(record, option.id);
+                        this.serviceSearchTerm = '';
+
+                        this.$emitter.emit('add-flash', {
+                            type: 'success',
+                            message: response.data.message,
+                        });
+                    }).catch(error => {
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: error.response?.data?.message
+                                || Object.values(error.response?.data?.errors || {})?.[0]?.[0]
+                                || 'Unable to add service offered option.',
+                        });
+                    }).finally(() => {
+                        this.isCreatingService = false;
+                    });
+                },
+
+                saveServiceOffered(record) {
+                    const ids = this.serviceDraftIds[record.id] ?? this.parseServiceIds(record);
+
+                    this.$axios.put(`{{ url('admin/leads/attributes/edit') }}/${record.id}`, {
+                        entity_type: 'leads',
+                        service_offered: ids,
+                    }).then(response => {
+                        this.$emitter.emit('add-flash', {
+                            type: 'success',
+                            message: response.data.message,
+                        });
+
+                        record.service_option_ids = ids.join(',');
+                        this.closeServiceDropdown();
+                        this.$refs.datagrid.get();
+                    }).catch(error => {
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: error.response?.data?.message || 'Update failed.',
+                        });
+                    });
+                },
+
                 inlineUpdate(record, columnIndex, newValue) {
                     const config = this.inlineOptions[columnIndex];
                     if (! config) return;
@@ -658,7 +1019,6 @@
                         lead_pipeline_stage_id: 'lead_pipeline_stage_id',
                         tag_id: 'tag_id',
                         industry_option_id: 'industry',
-                        service_option_id: 'service_offered',
                     };
 
                     if (field === 'tag_id') {
@@ -745,9 +1105,8 @@
                         entity_type: 'leads',
                     };
 
-                    if (field === 'industry_option_id' || field === 'service_option_id') {
-                        const attrCode = field === 'industry_option_id' ? 'industry' : 'service_offered';
-                        payload[attrCode] = value;
+                    if (field === 'industry_option_id') {
+                        payload.industry = value;
                     } else {
                         payload[field] = value;
                     }

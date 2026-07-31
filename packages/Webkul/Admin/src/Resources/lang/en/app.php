@@ -2124,6 +2124,11 @@ return [
         'company-access-denied'     => 'You do not have access to the selected company.',
         'sdr-field-locked'          => 'Lead source, business type, sub source, and industry cannot be changed by SDR users.',
         'update-success'            => 'Leads updated successfully.',
+        'services-offered'          => [
+            'add-option'      => 'Add ":name" as new service',
+            'creating-option' => 'Adding…',
+            'create-success'  => 'Service offered option created successfully.',
+        ],
         'meeting-stage-requires-activity' => 'Please add a meeting activity on this lead before moving it to Meeting.',
         'meeting-stage-requires-done-activity' => 'Please mark the meeting activity as done before moving this lead to the next stage.',
         'update-failed'             => 'Leads can not be deleted.',
@@ -2196,7 +2201,7 @@ return [
                 'lead-value'          => 'Lead Value',
                 'lead-type'           => 'Business Type',
                 'industry'            => 'Industry',
-                'service-offered'     => 'Service Offered',
+                'service-offered'     => 'Services Offered',
                 'products'            => 'Products',
                 'tag-name'            => 'Tag',
                 'contact-person'      => 'Contact Person',
@@ -2220,6 +2225,8 @@ return [
                 'add-note'            => 'Add Note',
                 'mass-delete'         => 'Mass Delete',
                 'mass-update'         => 'Mass Update',
+                'save'                => 'Save',
+                'cancel'              => 'Cancel',
             ],
 
             'modals' => [

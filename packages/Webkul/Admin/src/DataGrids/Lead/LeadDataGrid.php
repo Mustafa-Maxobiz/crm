@@ -95,8 +95,14 @@ class LeadDataGrid extends DataGrid
                 'tags.name as tag_name',
                 'industry_options.name as industry',
                 'industry_values.integer_value as industry_option_id',
-                'service_options.name as service_offered',
-                'service_values.integer_value as service_option_id',
+                DB::raw('(
+                    SELECT GROUP_CONCAT(ao.name ORDER BY ao.sort_order SEPARATOR ", ")
+                    FROM attribute_options ao
+                    WHERE service_values.text_value IS NOT NULL
+                      AND service_values.text_value != ""
+                      AND FIND_IN_SET(ao.id, service_values.text_value)
+                ) as service_offered'),
+                'service_values.text_value as service_option_ids',
                 DB::raw('(
                     SELECT GROUP_CONCAT(products.name SEPARATOR ", ")
                     FROM lead_products
@@ -140,7 +146,6 @@ class LeadDataGrid extends DataGrid
                     $join->whereRaw('1 = 0');
                 }
             })
-            ->leftJoin('attribute_options as service_options', 'service_options.id', '=', 'service_values.integer_value')
             ->groupBy('leads.id')
             ->whereNull('leads.deleted_at')
             ->where('leads.lead_pipeline_id', $this->pipeline->id);
@@ -194,7 +199,7 @@ class LeadDataGrid extends DataGrid
         $this->addFilter('lead_type_name', 'lead_types.id');
         $this->addFilter('person_name', 'persons.name');
         $this->addFilter('industry', 'industry_options.name');
-        $this->addFilter('service_offered', 'service_options.name');
+        $this->addFilter('service_offered', 'service_values.text_value');
         $this->addFilter('type', 'lead_pipeline_stages.code');
         $this->addFilter('stage', 'lead_pipeline_stages.id');
         $this->addFilter('tag_name', 'tags.name');
@@ -301,8 +306,8 @@ class LeadDataGrid extends DataGrid
             'label'      => trans('admin::app.leads.index.datagrid.service-offered'),
             'type'       => 'string',
             'searchable' => false,
-            'sortable'   => true,
-            'filterable' => true,
+            'sortable'   => false,
+            'filterable' => false,
             'closure'    => fn ($row) => $row->service_offered ?: '--',
         ]);
 

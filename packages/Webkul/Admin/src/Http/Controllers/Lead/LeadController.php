@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Maatwebsite\Excel\Concerns\ToArray;
 use Maatwebsite\Excel\Facades\Excel;
@@ -25,6 +26,7 @@ use Webkul\Admin\Http\Requests\MassUpdateRequest;
 use Webkul\Admin\Http\Resources\LeadResource;
 use Webkul\Admin\Http\Resources\StageResource;
 use Webkul\Attribute\Repositories\AttributeRepository;
+use Webkul\Attribute\Repositories\AttributeOptionRepository;
 use Webkul\Contact\Repositories\OrganizationRepository;
 use Webkul\Contact\Repositories\PersonRepository;
 use Webkul\Contact\Repositories\TeamRepository;
@@ -57,6 +59,7 @@ class LeadController extends Controller
     public function __construct(
         protected UserRepository $userRepository,
         protected AttributeRepository $attributeRepository,
+        protected AttributeOptionRepository $attributeOptionRepository,
         protected SourceRepository $sourceRepository,
         protected TypeRepository $typeRepository,
         protected PipelineRepository $pipelineRepository,
@@ -951,6 +954,51 @@ class LeadController extends Controller
         } else {
             return redirect()->route('admin.leads.index', $data['lead_pipeline_id']);
         }
+    }
+
+    /**
+     * Create a new services offered option from lead forms.
+     */
+    public function storeServiceOfferedOption(): JsonResponse
+    {
+        $canCreate = bouncer()->hasPermission('settings.lead.services_offered.create')
+            || bouncer()->hasPermission('leads.create')
+            || bouncer()->hasPermission('leads.edit')
+            || $this->isSdrUser();
+
+        abort_unless($canCreate, 403);
+
+        $attribute = $this->attributeRepository->findOneWhere([
+            'code'        => 'service_offered',
+            'entity_type' => 'leads',
+        ]);
+
+        abort_unless($attribute, 404);
+
+        $this->validate(request(), [
+            'name' => [
+                'required',
+                'max:255',
+                Rule::unique('attribute_options', 'name')->where(
+                    fn ($query) => $query->where('attribute_id', $attribute->id)
+                ),
+            ],
+        ]);
+
+        $sortOrder = ((int) DB::table('attribute_options')
+            ->where('attribute_id', $attribute->id)
+            ->max('sort_order')) + 1;
+
+        $option = $this->attributeOptionRepository->create([
+            'attribute_id' => $attribute->id,
+            'name'         => request('name'),
+            'sort_order'   => $sortOrder,
+        ]);
+
+        return response()->json([
+            'data'    => $option,
+            'message' => trans('admin::app.leads.services-offered.create-success'),
+        ]);
     }
 
     /**

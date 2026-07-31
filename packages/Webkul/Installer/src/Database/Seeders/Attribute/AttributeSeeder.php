@@ -169,7 +169,7 @@ class AttributeSeeder extends Seeder
             ], [
                 'code'            => 'service_offered',
                 'name'            => trans('installer::app.seeders.attributes.leads.service-offered', [], $defaultLocale),
-                'type'            => 'select',
+                'type'            => 'multiselect',
                 'entity_type'     => 'leads',
                 'lookup_type'     => null,
                 'validation'      => null,

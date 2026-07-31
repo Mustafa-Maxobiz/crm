@@ -186,42 +186,22 @@
             },
 
             watch: {
-                /**
-                 * Watch the value prop.
-                 * 
-                 * @param {String} newValue 
-                 */
                 value(newValue) {
                     this.inputValue = newValue;
                 },
             },
 
             computed: {
-                /**
-                 * Get the selected value.
-                 * 
-                 * @return {Object}
-                 */
                 selectedValue() {
                     return this.options.find((option, index) => option.id == this.inputValue);
                 },
             },
 
             methods: {
-                /**
-                 * Toggle the input.
-                 * 
-                 * @return {void}
-                 */
                 toggle() {
                     this.isEditing = true;
                 },
 
-                /**
-                 * Save the input value.
-                 * 
-                 * @return {void}
-                 */
                 save() {
                     if (this.errors[this.name]) {
                         return;
@@ -253,11 +233,6 @@
                     });
                 },
 
-                /**
-                 * Cancel the input value.
-                 * 
-                 * @return {void}
-                 */
                 cancel() {
                     this.inputValue = this.value;
 

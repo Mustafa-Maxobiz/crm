@@ -14,7 +14,7 @@ return [
     ], [
         'key'   => 'leads.create',
         'name'  => 'admin::app.acl.create',
-        'route' => ['admin.leads.create', 'admin.leads.store'],
+        'route' => ['admin.leads.create', 'admin.leads.store', 'admin.leads.services_offered.store'],
         'sort'  => 1,
     ], [
         'key'   => 'leads.view',
@@ -32,6 +32,7 @@ return [
             'admin.leads.tags.attach',
             'admin.leads.tags.replace',
             'admin.leads.tags.detach',
+            'admin.leads.services_offered.store',
         ],
         'sort'  => 3,
     ], [
