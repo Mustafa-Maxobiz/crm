@@ -41,7 +41,18 @@ class TagController extends Controller
         }
 
         if (! $lead->tags->contains(request()->input('tag_id'))) {
+            $oldTags = $lead->tags->pluck('name')->sort()->values()->implode(', ');
+
             $lead->tags()->attach(request()->input('tag_id'));
+
+            $newTags = $lead->fresh('tags')->tags->pluck('name')->sort()->values()->implode(', ');
+
+            \Webkul\Lead\Models\Lead::storeSystemActivity(
+                $lead,
+                'Tags',
+                $oldTags !== '' ? $oldTags : null,
+                $newTags !== '' ? $newTags : null
+            );
         }
 
         Event::dispatch('leads.tag.create.after', $lead);
@@ -75,6 +86,8 @@ class TagController extends Controller
             return $response;
         }
 
+        $oldTags = $lead->tags->pluck('name')->sort()->values()->implode(', ');
+
         if ($oldTagId && $oldTagId !== $newTagId) {
             $lead->tags()->detach($oldTagId);
         }
@@ -83,7 +96,17 @@ class TagController extends Controller
             $lead->tags()->attach($newTagId);
         }
 
-        Event::dispatch('leads.tag.create.after', $lead->fresh('tags'));
+        $lead = $lead->fresh('tags');
+        $newTags = $lead->tags->pluck('name')->sort()->values()->implode(', ');
+
+        \Webkul\Lead\Models\Lead::storeSystemActivity(
+            $lead,
+            'Tags',
+            $oldTags !== '' ? $oldTags : null,
+            $newTags !== '' ? $newTags : null
+        );
+
+        Event::dispatch('leads.tag.create.after', $lead);
 
         return response()->json([
             'message' => trans('admin::app.leads.view.tags.create-success'),
@@ -102,7 +125,18 @@ class TagController extends Controller
 
         $lead = $this->leadRepository->find($leadId);
 
+        $oldTags = $lead->tags->pluck('name')->sort()->values()->implode(', ');
+
         $lead->tags()->detach(request()->input('tag_id'));
+
+        $newTags = $lead->fresh('tags')->tags->pluck('name')->sort()->values()->implode(', ');
+
+        \Webkul\Lead\Models\Lead::storeSystemActivity(
+            $lead,
+            'Tags',
+            $oldTags !== '' ? $oldTags : null,
+            $newTags !== '' ? $newTags : null
+        );
 
         Event::dispatch('leads.tag.delete.after', $lead);
 

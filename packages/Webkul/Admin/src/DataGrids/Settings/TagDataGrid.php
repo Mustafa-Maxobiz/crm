@@ -30,7 +30,7 @@ class TagDataGrid extends DataGrid
         $this->addFilter('id', 'tags.id');
         $this->addFilter('name', 'tags.name');
         $this->addFilter('created_at', 'tags.created_at');
-        $this->addFilter('user_name', 'users.id');
+        $this->addFilter('user_name', 'users.name');
 
         return $queryBuilder;
     }

@@ -36,6 +36,7 @@ class SourceDataGrid extends DataGrid
         }
 
         $this->addFilter('id', 'lead_sources.id');
+        $this->addFilter('name', 'lead_sources.name');
 
         return $queryBuilder;
     }

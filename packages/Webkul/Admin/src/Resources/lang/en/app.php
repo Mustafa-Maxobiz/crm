@@ -2122,7 +2122,8 @@ return [
         'create-success'            => 'Lead created successfully.',
         'source-access-denied'      => 'You do not have access to the selected lead source.',
         'company-access-denied'     => 'You do not have access to the selected company.',
-        'sdr-field-locked'          => 'Lead source, business type, sub source, and industry cannot be changed by SDR users.',
+        'sdr-field-locked'          => 'Lead source, business type, sub source, and industry cannot be changed.',
+        'locked-fields'             => 'Lead source, business type, sub source, and industry cannot be changed.',
         'update-success'            => 'Leads updated successfully.',
         'services-offered'          => [
             'add-option'      => 'Add ":name" as new service',

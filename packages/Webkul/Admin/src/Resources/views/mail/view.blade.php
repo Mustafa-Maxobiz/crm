@@ -1020,7 +1020,7 @@
                                                     <div class="w-1/2">
                                                         <x-admin::attributes
                                                             :custom-attributes="app('Webkul\Attribute\Repositories\AttributeRepository')->findWhere([
-                                                                ['code', 'IN', ['title']],
+                                                                ['code', 'IN', ['organization_id', 'companies', 'title']],
                                                                 'entity_type' => 'leads',
                                                                 'quick_add'   => 1
                                                             ])"

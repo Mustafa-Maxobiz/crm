@@ -5,10 +5,12 @@
     </x-slot>
 
     @php
-        $isSdrUser = strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr';
-        $sdrLockedAttributeCodes = $isSdrUser
-            ? ['lead_source_id', 'lead_type_id', 'lead_sub_source_id', 'industry']
-            : [];
+        $lockedLeadAttributeCodes = [
+            'lead_source_id',
+            'lead_type_id',
+            'lead_sub_source_id',
+            'industry',
+        ];
     @endphp
 
     {!! view_render_event('admin.leads.edit.form_controls.before', ['lead' => $lead]) !!}
@@ -125,7 +127,7 @@
                                     ],
                                 ]"
                                 :entity="$lead"
-                                :disabled-attribute-codes="$sdrLockedAttributeCodes"
+                                :disabled-attribute-codes="$lockedLeadAttributeCodes"
                             />
 
                             @include('admin::leads.common.services', ['lead' => $lead])
@@ -151,7 +153,7 @@
                                             'quick_add'   => 1
                                         ])"
                                         :entity="$lead"
-                                        :disabled-attribute-codes="$sdrLockedAttributeCodes"
+                                        :disabled-attribute-codes="$lockedLeadAttributeCodes"
                                         ::key="sourceKey"
                                         @on-change="handleSourceChange"
                                     />
@@ -168,8 +170,8 @@
                                                 name="lead_sub_source_id"
                                                 v-model="selectedSubSource"
                                                 :label="'Sub-Source'"
-                                                :disabled="$isSdrUser"
-                                                :class="$isSdrUser ? 'cursor-not-allowed opacity-70' : ''"
+                                                disabled
+                                                class="cursor-not-allowed opacity-70"
                                             >
                                                 <option value="">Select Sub-Source</option>
                                                 <option 
@@ -205,7 +207,7 @@
                                             'quick_add'   => 1
                                         ])"
                                         :entity="$lead"
-                                        :disabled-attribute-codes="$sdrLockedAttributeCodes"
+                                        :disabled-attribute-codes="$lockedLeadAttributeCodes"
                                     />
                                     
                                     <!-- Sales Owner, Expected Close Date, Next Follow-up Date -->

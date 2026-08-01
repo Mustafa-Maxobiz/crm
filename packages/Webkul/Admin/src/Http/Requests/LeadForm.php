@@ -150,13 +150,76 @@ class LeadForm extends FormRequest
             'person.contact_numbers'       => ['nullable', 'array'],
             'person.contact_numbers.*.value' => ['nullable'],
             'person.organization_id'       => ['nullable'],
-            'person.website'               => ['nullable', 'url'],
+            'person.organization_name'     => ['nullable', 'string', 'max:255'],
+            'organization_id'              => ['nullable', 'integer', 'exists:organizations,id'],
+            'organization_name'            => ['nullable', 'string', 'max:255'],
+            'person.website'               => ['nullable', 'string', 'max:255'],
+            'person.address'               => ['nullable', 'array'],
+            'person.address.address'       => ['nullable', 'string'],
+            'person.address.country'       => ['nullable', 'string'],
+            'person.address.state'         => ['nullable', 'string'],
+            'person.address.city'          => ['nullable', 'string'],
+            'person.address.postcode'      => ['nullable', 'string'],
             'products'              => 'array',
             'products.*.product_id' => 'sometimes|required|exists:products,id',
             'products.*.name'       => 'required_with:products.*.product_id',
             'products.*.price'      => 'required_with:products.*.product_id',
             'products.*.quantity'   => 'required_with:products.*.product_id',
         ];
+    }
+
+    /**
+     * Normalize company/person fields before validation.
+     */
+    protected function prepareForValidation(): void
+    {
+        $data = $this->all();
+
+        // Legacy text company field → create-by-name.
+        if (! empty($data['companies']) && empty($data['organization_id']) && empty($data['organization_name'])) {
+            $data['organization_name'] = $data['companies'];
+        }
+
+        if (array_key_exists('organization_id', $data) && $data['organization_id'] === '') {
+            $data['organization_id'] = null;
+        }
+
+        if (empty($data['organization_name'])) {
+            unset($data['organization_name']);
+        }
+
+        unset($data['companies']);
+
+        $person = $data['person'] ?? [];
+
+        if (is_array($person) && array_key_exists('website', $person) && $person['website'] === '') {
+            $person['website'] = null;
+        }
+
+        if (is_array($person) && array_key_exists('organization_id', $person) && $person['organization_id'] === '') {
+            $person['organization_id'] = null;
+        }
+
+        if (is_array($person) && empty($person['organization_name'])) {
+            unset($person['organization_name']);
+        }
+
+        // Mirror lead company onto person when person org not explicitly sent.
+        if (
+            is_array($person)
+            && empty($person['organization_id'])
+            && empty($person['organization_name'])
+        ) {
+            if (! empty($data['organization_id'])) {
+                $person['organization_id'] = $data['organization_id'];
+            } elseif (! empty($data['organization_name'])) {
+                $person['organization_name'] = $data['organization_name'];
+            }
+        }
+
+        $data['person'] = $person;
+
+        $this->replace($data);
     }
 
     public function withValidator($validator): void
@@ -176,10 +239,22 @@ class LeadForm extends FormRequest
                 }
             }
 
-            $organizationId = request('person.organization_id') ?? request()->input('person.organization_id');
+            $organizationId = request('organization_id')
+                ?: request('person.organization_id')
+                ?: request()->input('person.organization_id');
+            $organizationName = request('organization_name')
+                ?: request('person.organization_name')
+                ?: request()->input('person.organization_name');
+            $isSdr = strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr';
 
-            if ($organizationId && ! $this->sourceAccessService->canAccessOrganizationId((int) $organizationId)) {
-                $validator->errors()->add('person.organization_id', trans('admin::app.leads.company-access-denied'));
+            // New company by name is always allowed; SDR can reassign company on leads they edit.
+            if (
+                $organizationId
+                && ! $organizationName
+                && ! $isSdr
+                && ! $this->sourceAccessService->canAccessOrganizationId((int) $organizationId)
+            ) {
+                $validator->errors()->add('organization_id', trans('admin::app.leads.company-access-denied'));
             }
         });
     }

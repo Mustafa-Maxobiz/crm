@@ -77,7 +77,7 @@
                                     </p>
 
                                     <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                                        Required: title*, lead_value*, type*, pricing_type*
+                                        Required: companies*, lead_value*, type*, pricing_type*
                                     </p>
                                 </div>
 

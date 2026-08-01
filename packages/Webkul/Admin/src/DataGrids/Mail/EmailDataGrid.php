@@ -43,7 +43,9 @@ class EmailDataGrid extends DataGrid
             ->whereNull('parent_id');
 
         $this->addFilter('id', 'emails.id');
-        $this->addFilter('name', 'emails.name');
+        $this->addFilter('name', DB::raw('COALESCE(NULLIF('.DB::getTablePrefix().'emails.name, ""), '.DB::getTablePrefix().'emails.from)'));
+        $this->addFilter('subject', 'emails.subject');
+        $this->addFilter('reply', 'emails.reply');
         $this->addFilter('tags', 'tags.name');
         $this->addFilter('created_at', 'emails.created_at');
 

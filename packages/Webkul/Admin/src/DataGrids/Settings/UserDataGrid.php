@@ -94,6 +94,10 @@ class UserDataGrid extends DataGrid
             $queryBuilder->whereIn('users.id', $userIds);
         }
 
+        $this->addFilter('id', 'users.id');
+        $this->addFilter('name', 'users.name');
+        $this->addFilter('email', 'users.email');
+
         return $queryBuilder;
     }
 

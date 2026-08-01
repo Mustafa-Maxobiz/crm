@@ -29,23 +29,15 @@ class OrganizationDataGrid extends DataGrid
                 'organizations.created_at'
             );
 
-        if ($userIds = bouncer()->getAuthorizedUserIds()) {
-            $queryBuilder->whereIn('organizations.user_id', $userIds);
-        }
-
-        $organizationIds = app(\Webkul\Lead\Services\SourceAccessService::class)->getEffectiveOrganizationIds();
-
-        if ($organizationIds !== null) {
-            if (empty($organizationIds)) {
-                $queryBuilder->whereRaw('0 = 1');
-            } else {
-                $queryBuilder->whereIn('organizations.id', $organizationIds);
-            }
-        }
-
+        /**
+         * Companies are shared master data (name is globally unique).
+         * Do not hide rows by sales-owner (`user_id`) or lead SourceAccess
+         * assignments — those scopes apply to leads/lookups, not this directory.
+         * Otherwise users hit "already taken" on create but never see the company.
+         */
         $this->addFilter('id', 'organizations.id');
-
-        $this->addFilter('organization', 'organizations.name');
+        $this->addFilter('name', 'organizations.name');
+        $this->addFilter('created_at', 'organizations.created_at');
 
         return $queryBuilder;
     }
@@ -61,6 +53,7 @@ class OrganizationDataGrid extends DataGrid
             'type'       => 'integer',
             'filterable' => true,
             'sortable'   => true,
+            'searchable' => true,
         ]);
 
         $this->addColumn([
@@ -69,6 +62,7 @@ class OrganizationDataGrid extends DataGrid
             'type'       => 'string',
             'sortable'   => true,
             'filterable' => true,
+            'searchable' => true,
         ]);
 
         $this->addColumn([

@@ -75,6 +75,7 @@ class LeadAttributeOptionDataGrid extends DataGrid
             'type'       => 'string',
             'filterable' => true,
             'sortable'   => true,
+            'searchable' => true,
         ]);
 
         $this->addColumn([

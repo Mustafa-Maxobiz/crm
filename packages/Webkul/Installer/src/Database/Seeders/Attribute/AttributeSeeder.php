@@ -27,14 +27,14 @@ class AttributeSeeder extends Seeder
              * Leads Attributes
              */
             [
-                'code'            => 'title',
-                'name'            => trans('installer::app.seeders.attributes.leads.title', [], $defaultLocale),
-                'type'            => 'text',
+                'code'            => 'organization_id',
+                'name'            => trans('installer::app.seeders.attributes.leads.organization', [], $defaultLocale),
+                'type'            => 'lookup',
                 'entity_type'     => 'leads',
-                'lookup_type'     => null,
+                'lookup_type'     => 'organizations',
                 'validation'      => null,
                 'sort_order'      => '1',
-                'is_required'     => '1',
+                'is_required'     => '0',
                 'is_unique'       => '0',
                 'quick_add'       => '1',
                 'is_user_defined' => '0',

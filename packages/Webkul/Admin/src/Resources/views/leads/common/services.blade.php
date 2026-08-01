@@ -1,10 +1,10 @@
 @php
-    $serviceOptions = app(\Webkul\Lead\Repositories\ServiceRepository::class)
-        ->getModel()
-        ->newQuery()
-        ->orderBy('sort_order')
-        ->orderBy('name')
-        ->get(['id', 'name']);
+    $serviceOptions = collect(app(\Webkul\Lead\Repositories\ServiceRepository::class)->getDropdownOptions())
+        ->map(fn ($option) => (object) [
+            'id'   => $option['value'],
+            'name' => $option['label'],
+        ])
+        ->values();
 
     $selectedServiceIds = isset($lead)
         ? $lead->services()->pluck('services.id')->map(fn ($id) => (int) $id)->values()->all()

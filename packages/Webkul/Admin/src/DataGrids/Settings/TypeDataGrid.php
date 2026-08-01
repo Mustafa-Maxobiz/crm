@@ -20,6 +20,7 @@ class TypeDataGrid extends DataGrid
             );
 
         $this->addFilter('id', 'lead_types.id');
+        $this->addFilter('name', 'lead_types.name');
 
         return $queryBuilder;
     }
@@ -35,6 +36,7 @@ class TypeDataGrid extends DataGrid
             'type'       => 'string',
             'filterable' => true,
             'sortable'   => true,
+            'searchable' => true,
         ]);
 
         $this->addColumn([
@@ -43,6 +45,7 @@ class TypeDataGrid extends DataGrid
             'type'       => 'string',
             'filterable' => true,
             'sortable'   => true,
+            'searchable' => true,
         ]);
     }
 

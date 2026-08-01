@@ -93,9 +93,32 @@ class PersonRepository extends Repository
      */
     public function update(array $data, $id, $attributes = [])
     {
+        $existing = $this->find($id);
+
+        $touchesIdentity = array_key_exists('organization_id', $data)
+            || ! empty($data['organization_name'])
+            || array_key_exists('emails', $data)
+            || array_key_exists('contact_numbers', $data)
+            || array_key_exists('user_id', $data);
+
+        if ($existing && $touchesIdentity) {
+            $data['emails'] = $data['emails'] ?? $existing->emails;
+            $data['contact_numbers'] = $data['contact_numbers'] ?? $existing->contact_numbers;
+
+            if (! array_key_exists('user_id', $data)) {
+                $data['user_id'] = $existing->user_id;
+            }
+        }
+
         $data = $this->sanitizeRequestedPersonData($data);
 
-        $data['user_id'] = empty($data['user_id']) ? null : $data['user_id'];
+        if ($existing && ! $touchesIdentity) {
+            unset($data['unique_id']);
+        }
+
+        if (array_key_exists('user_id', $data)) {
+            $data['user_id'] = empty($data['user_id']) ? null : $data['user_id'];
+        }
 
         if (! empty($data['organization_name'])) {
             $organization = $this->fetchOrCreateOrganizationByName($data['organization_name']);
@@ -103,6 +126,21 @@ class PersonRepository extends Repository
             $data['organization_id'] = $organization->id;
 
             unset($data['organization_name']);
+
+            // Rebuild unique_id now that organization_id is resolved.
+            $uniqueIdParts = array_filter([
+                $data['user_id'] ?? null,
+                $data['organization_id'] ?? null,
+                $data['emails'][0]['value'] ?? null,
+            ]);
+
+            if (! empty($data['contact_numbers'][0]['value'])) {
+                $uniqueIdParts[] = $data['contact_numbers'][0]['value'];
+            }
+
+            $data['unique_id'] = empty($uniqueIdParts)
+                ? 'person_'.uniqid()
+                : implode('|', $uniqueIdParts);
         }
 
         $attributeData = $this->attributePayloadWithoutAddress($data);

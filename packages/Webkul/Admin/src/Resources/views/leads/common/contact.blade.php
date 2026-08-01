@@ -1,6 +1,15 @@
 {!! view_render_event('admin.leads.create.contact_person.form_controls.before') !!}
 
-<v-contact-component :data="person"></v-contact-component>
+@php
+    $canEditLeadCompany = strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr'
+        || bouncer()->hasPermission('contacts.organizations.edit')
+        || bouncer()->hasPermission('contacts.organizations.create');
+@endphp
+
+<v-contact-component
+    :data="person"
+    :can-edit-company='@json($canEditLeadCompany)'
+></v-contact-component>
 
 {!! view_render_event('admin.leads.create.contact_person.form_controls.after') !!}
 
@@ -79,18 +88,40 @@
                     'code'        => 'organization_id'
                 ]);
 
-                $organizationAttribute->code = 'person[' . $organizationAttribute->code . ']';
+                // Display-only lookup field name so we can submit real company values separately.
+                $organizationAttribute->code = '_person_organization_lookup';
             @endphp
 
             <x-admin::attributes.edit.lookup />
 
             <v-lookup-component
-                :key="person.organization?.id"
+                :key="'org-' + (person.id || 'new') + '-' + (person.organization?.id || person.organization_name || 'none')"
                 :attribute='@json($organizationAttribute)'
                 :value="person.organization"
-                :is-disabled="person?.id ? true : false"
-                can-add-new="true"
+                :is-disabled="isCompanyDisabled"
+                :can-add-new="! isCompanyDisabled"
+                @lookup-added="onCompanySelected"
+                @lookup-removed="onCompanyRemoved"
             ></v-lookup-component>
+
+            <x-admin::form.control-group.control
+                type="hidden"
+                name="person[organization_id]"
+                ::value="person.organization_id ?? ''"
+            />
+
+            <x-admin::form.control-group.control
+                type="hidden"
+                name="person[organization_name]"
+                ::value="person.organization_name || ''"
+            />
+
+            <x-admin::form.control-group.control
+                type="hidden"
+                name="person[id]"
+                ::value="person.id || ''"
+                v-if="person.id"
+            />
         </x-admin::form.control-group>
 
         <!-- Person Address -->
@@ -112,11 +143,11 @@
                 @endphp
 
                 <v-address-component
-                    :key="person.id || 'new-address'"
+                    :key="(person.id || 'new-address') + '-' + (isCompanyDisabled ? 'locked' : 'editable')"
                     :attribute='@json($addressAttribute)'
                     :data="person.address"
                     validations=""
-                    :is-disabled="person?.id ? true : false"
+                    :is-disabled="isCompanyDisabled"
                 ></v-address-component>
             @endif
         </x-admin::form.control-group>
@@ -131,7 +162,7 @@
                 type="text"
                 name="person[website]"
                 ::value="person.website ?? ''"
-                ::disabled="person?.id ? true : false"
+                ::disabled="isCompanyDisabled"
                 :label="trans('admin::app.leads.common.contact.website')"
                 :placeholder="trans('admin::app.leads.common.contact.website')"
             />
@@ -142,7 +173,17 @@
         app.component('v-contact-component', {
             template: '#v-contact-component-template',
 
-            props: ['data'],
+            props: {
+                data: {
+                    type: Object,
+                    default: () => ({}),
+                },
+
+                canEditCompany: {
+                    type: Boolean,
+                    default: @json($canEditLeadCompany),
+                },
+            },
 
             data () {
                 return {
@@ -178,7 +219,15 @@
 
                 nameValidationRule() {
                     return '';
-                }
+                },
+
+                isCompanyDisabled() {
+                    if (this.canEditCompany) {
+                        return false;
+                    }
+
+                    return !! this.person?.id;
+                },
             },
 
             methods: {
@@ -201,6 +250,7 @@
                                 name: person.organization.name,
                             }
                             : null,
+                        organization_name: person.organization_name ?? '',
                         address: person.address ?? null,
                         website: person.website ?? '',
                     };
@@ -208,6 +258,38 @@
 
                 addPerson (person) {
                     this.person = this.normalizePerson(person);
+                },
+
+                onCompanySelected(company) {
+                    if (! company) {
+                        this.onCompanyRemoved();
+
+                        return;
+                    }
+
+                    if (company.id) {
+                        this.person.organization = {
+                            id: company.id,
+                            name: company.name,
+                        };
+                        this.person.organization_id = company.id;
+                        this.person.organization_name = '';
+
+                        return;
+                    }
+
+                    this.person.organization = {
+                        id: '',
+                        name: company.name,
+                    };
+                    this.person.organization_id = null;
+                    this.person.organization_name = company.name;
+                },
+
+                onCompanyRemoved() {
+                    this.person.organization = null;
+                    this.person.organization_id = null;
+                    this.person.organization_name = '';
                 },
             }
         });

@@ -1,12 +1,24 @@
 {!! view_render_event('admin.leads.index.table.before') !!}
 
 @php
+    $lockedLeadAttributeCodes = [
+        'lead_source_id',
+        'lead_type_id',
+        'lead_sub_source_id',
+        'industry',
+    ];
+
     $modalExcludedAttributeCodes = [
         'lead_type_id',
         'user_id',
         'lead_pipeline_id',
         'lead_pipeline_stage_id',
         'next_followup_date',
+        // Company is edited via contact person; avoid a second lead-level company field
+        // that would overwrite the contact company on save.
+        'organization_id',
+        'companies',
+        'title',
     ];
 
     $leadQuickAttributes = app(\Webkul\Attribute\Repositories\AttributeRepository::class)
@@ -42,14 +54,6 @@
         ->all();
 
     $inlineOptions = [
-        'lead_source_name' => [
-            'field' => 'lead_source_id',
-            'items' => app(\Webkul\Lead\Repositories\SourceRepository::class)->getRootDropdownOptions(),
-        ],
-        'lead_type_name' => [
-            'field'   => 'lead_type_id',
-            'items'   => app(\Webkul\Lead\Repositories\TypeRepository::class)->all(['id as value', 'name as label'])->toArray(),
-        ],
         'stage' => [
             'field'   => 'lead_pipeline_stage_id',
             'items'   => $pipeline->stages->map(fn ($s) => [
@@ -62,26 +66,10 @@
             'field'   => 'tag_id',
             'items'   => app(\Webkul\Tag\Repositories\TagRepository::class)->all(['id as value', 'name as label'])->toArray(),
         ],
-        'industry' => [
-            'field'   => 'industry_option_id',
-            'items'   => \Illuminate\Support\Facades\DB::table('attribute_options')
-                ->where('attribute_id', \Illuminate\Support\Facades\DB::table('attributes')->where('code', 'industry')->where('entity_type', 'leads')->value('id'))
-                ->orderBy('sort_order')
-                ->get(['id as value', 'name as label'])
-                ->map(fn ($o) => ['value' => $o->value, 'label' => $o->label])
-                ->all(),
-        ],
         'service_offered' => [
-            'field'    => 'service_option_ids',
+            'field'    => 'services',
             'multiple' => true,
-            'items'    => collect(
-                \Illuminate\Support\Facades\DB::table('attribute_options')
-                    ->where('attribute_id', \Illuminate\Support\Facades\DB::table('attributes')->where('code', 'service_offered')->where('entity_type', 'leads')->value('id'))
-                    ->orderBy('sort_order')
-                    ->get(['id as value', 'name as label'])
-                    ->map(fn ($o) => ['value' => (int) $o->value, 'label' => $o->label])
-                    ->all()
-            )->unique('value')->values()->all(),
+            'items'    => app(\Webkul\Lead\Repositories\ServiceRepository::class)->getDropdownOptions(),
         ],
     ];
 
@@ -91,14 +79,6 @@
         || bouncer()->hasPermission('leads.create')
         || bouncer()->hasPermission('leads.edit')
         || $isSdrUser;
-
-    if ($isSdrUser) {
-        unset(
-            $inlineOptions['lead_source_name'],
-            $inlineOptions['lead_type_name'],
-            $inlineOptions['industry'],
-        );
-    }
 
     $defaultMeetingParticipants = [
         'users' => auth()->guard('user')->user()
@@ -321,6 +301,7 @@
 
                                 <x-admin::attributes
                                     :custom-attributes="$leadQuickAttributes"
+                                    :disabled-attribute-codes="$lockedLeadAttributeCodes"
                                 />
 
                                 <x-admin::form.control-group>
@@ -333,6 +314,8 @@
                                         name="lead_type_id"
                                         ::value="editLead.lead_type_id"
                                         :label="trans('admin::app.leads.index.datagrid.lead-type')"
+                                        disabled
+                                        class="cursor-not-allowed opacity-70"
                                     >
                                         <option value="">
                                             @lang('admin::app.leads.index.datagrid.lead-type')
@@ -456,9 +439,15 @@
                                 </div>
 
                                 <v-contact-component
+                                    ref="editContact"
                                     v-if="editLeadId && ! isEditLoading"
                                     :key="'contact-' + editLeadId + '-' + (editPerson.id || 'new')"
                                     :data="editPerson"
+                                    :can-edit-company='@json(
+                                        strtolower((string) auth()->guard("user")->user()?->role?->name) === "sdr"
+                                            || bouncer()->hasPermission("contacts.organizations.edit")
+                                            || bouncer()->hasPermission("contacts.organizations.create")
+                                    )'
                                 ></v-contact-component>
                             </div>
                         </x-slot>
@@ -1103,6 +1092,7 @@
 
                     this.$axios.put(`{{ url('admin/leads/attributes/edit') }}/${record.id}`, {
                         entity_type: 'leads',
+                        services: ids,
                         service_offered: ids,
                     }).then(response => {
                         this.$emitter.emit('add-flash', {
@@ -1321,8 +1311,46 @@
                 saveLead(params, { setErrors }) {
                     this.isEditSaving = true;
 
+                    const contactPerson = this.$refs.editContact?.person;
+                    const personPayload = {
+                        ...(params.person || {}),
+                    };
+
+                    if (contactPerson) {
+                        personPayload.id = contactPerson.id ?? personPayload.id ?? null;
+                        personPayload.name = contactPerson.name || personPayload.name || '';
+                        personPayload.organization_id = contactPerson.organization_id
+                            || contactPerson.organization?.id
+                            || null;
+                        personPayload.organization_name = contactPerson.organization_name || null;
+                        personPayload.address = contactPerson.address ?? personPayload.address ?? null;
+                        personPayload.website = contactPerson.website ?? personPayload.website ?? null;
+                        personPayload.emails = contactPerson.emails ?? personPayload.emails;
+                        personPayload.contact_numbers = contactPerson.contact_numbers ?? personPayload.contact_numbers;
+                    }
+
+                    if (! personPayload.organization_name) {
+                        delete personPayload.organization_name;
+                    }
+
+                    if (personPayload.website === '') {
+                        personPayload.website = null;
+                    }
+
+                    // Lead company FK comes from the contact company picker.
+                    const organizationPayload = {};
+
+                    if (personPayload.organization_name) {
+                        organizationPayload.organization_name = personPayload.organization_name;
+                        organizationPayload.organization_id = null;
+                    } else if (Object.prototype.hasOwnProperty.call(personPayload, 'organization_id')) {
+                        organizationPayload.organization_id = personPayload.organization_id || null;
+                    }
+
                     this.$axios.post(`{{ url('admin/leads/edit') }}/${this.editLeadId}`, {
                         ...params,
+                        ...organizationPayload,
+                        person: personPayload,
                         entity_type: 'leads',
                         quick_add: 1,
                         _method: 'put',

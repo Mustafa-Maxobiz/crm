@@ -26,6 +26,8 @@ class AttributeDataGrid extends DataGrid
             ->where('entity_type', '<>', 'locations');
 
         $this->addFilter('id', 'attributes.id');
+        $this->addFilter('code', 'attributes.code');
+        $this->addFilter('name', 'attributes.name');
         $this->addFilter('type', 'attributes.type');
         $this->addFilter('attribute_type', 'attributes.is_user_defined');
 

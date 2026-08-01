@@ -21,6 +21,7 @@ class EventDataGrid extends DataGrid
             );
 
         $this->addFilter('id', 'marketing_events.id');
+        $this->addFilter('name', 'marketing_events.name');
 
         return $queryBuilder;
     }

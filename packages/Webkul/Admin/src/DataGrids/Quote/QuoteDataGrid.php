@@ -40,6 +40,7 @@ class QuoteDataGrid extends DataGrid
         }
 
         $this->addFilter('id', 'quotes.id');
+        $this->addFilter('subject', 'quotes.subject');
         $this->addFilter('user', 'quotes.user_id');
         $this->addFilter('sales_person', 'users.name');
         $this->addFilter('person_name', 'persons.name');
@@ -66,6 +67,7 @@ class QuoteDataGrid extends DataGrid
             'type'       => 'string',
             'filterable' => true,
             'sortable'   => true,
+            'searchable' => true,
         ]);
 
         $this->addColumn([
@@ -74,6 +76,7 @@ class QuoteDataGrid extends DataGrid
             'type'               => 'string',
             'sortable'           => true,
             'filterable'         => true,
+            'searchable'         => true,
             'filterable_type'    => 'searchable_dropdown',
             'filterable_options' => [
                 'repository' => \Webkul\User\Repositories\UserRepository::class,
@@ -90,6 +93,7 @@ class QuoteDataGrid extends DataGrid
             'type'               => 'string',
             'sortable'           => true,
             'filterable'         => true,
+            'searchable'         => true,
             'filterable_type'    => 'searchable_dropdown',
             'filterable_options' => [
                 'repository' => \Webkul\Contact\Repositories\PersonRepository::class,

@@ -20,6 +20,8 @@ class EmailTemplateDataGrid extends DataGrid
             );
 
         $this->addFilter('id', 'email_templates.id');
+        $this->addFilter('name', 'email_templates.name');
+        $this->addFilter('subject', 'email_templates.subject');
 
         return $queryBuilder;
     }
@@ -50,10 +52,12 @@ class EmailTemplateDataGrid extends DataGrid
         ]);
 
         $this->addColumn([
-            'index'    => 'subject',
-            'label'    => trans('admin::app.settings.email-template.index.datagrid.subject'),
-            'type'     => 'string',
-            'sortable' => true,
+            'index'      => 'subject',
+            'label'      => trans('admin::app.settings.email-template.index.datagrid.subject'),
+            'type'       => 'string',
+            'sortable'   => true,
+            'searchable' => true,
+            'filterable' => true,
         ]);
     }
 

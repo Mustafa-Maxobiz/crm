@@ -29,6 +29,9 @@ class WarehouseDataGrid extends DataGrid
             ->groupBy('warehouses.id');
 
         $this->addFilter('id', 'warehouses.id');
+        $this->addFilter('name', 'warehouses.name');
+        $this->addFilter('contact_name', 'warehouses.contact_name');
+        $this->addFilter('contact_emails', 'warehouses.contact_emails');
         $this->addFilter('created_at', 'warehouses.created_at');
 
         return $queryBuilder;
@@ -45,6 +48,7 @@ class WarehouseDataGrid extends DataGrid
             'type'       => 'string',
             'sortable'   => true,
             'filterable' => true,
+            'searchable' => true,
         ]);
 
         $this->addColumn([
@@ -53,6 +57,7 @@ class WarehouseDataGrid extends DataGrid
             'type'       => 'string',
             'sortable'   => true,
             'filterable' => true,
+            'searchable' => true,
         ]);
 
         $this->addColumn([

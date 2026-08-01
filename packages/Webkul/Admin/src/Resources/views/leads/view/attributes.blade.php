@@ -1,10 +1,12 @@
 {!! view_render_event('admin.leads.view.attributes.before', ['lead' => $lead]) !!}
 
 @php
-    $isSdrUser = strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr';
-    $sdrLockedAttributeCodes = $isSdrUser
-        ? ['lead_source_id', 'lead_type_id', 'lead_sub_source_id', 'industry']
-        : [];
+    $lockedLeadAttributeCodes = [
+        'lead_source_id',
+        'lead_type_id',
+        'lead_sub_source_id',
+        'industry',
+    ];
 @endphp
 
 <div class="flex w-full flex-col gap-4 border-b border-gray-200 p-4 dark:border-gray-800">
@@ -37,12 +39,12 @@
                     <x-admin::attributes.view
                         :custom-attributes="app('Webkul\Attribute\Repositories\AttributeRepository')->findWhere([
                             'entity_type' => 'leads',
-                            ['code', 'NOTIN', ['title', 'description', 'lead_pipeline_id', 'lead_pipeline_stage_id', 'source_sub_type', 'service_offered']]
+                            ['code', 'NOTIN', ['title', 'companies', 'organization_id', 'description', 'lead_pipeline_id', 'lead_pipeline_stage_id', 'source_sub_type', 'service_offered']]
                         ])"
                         :entity="$lead"
                         :url="route('admin.leads.attributes.update', $lead->id)"
                         :allow-edit="true"
-                        :locked-attribute-codes="$sdrLockedAttributeCodes"
+                        :locked-attribute-codes="$lockedLeadAttributeCodes"
                     />
 
                     <div class="mt-3">

@@ -38,6 +38,8 @@ class PersonDataGrid extends DataGrid
 
         $this->addFilter('id', 'persons.id');
         $this->addFilter('person_name', 'persons.name');
+        $this->addFilter('emails', 'persons.emails');
+        $this->addFilter('contact_numbers', 'persons.contact_numbers');
         $this->addFilter('organization', 'organizations.name');
 
         return $queryBuilder;

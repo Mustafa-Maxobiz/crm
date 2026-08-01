@@ -22,6 +22,9 @@ class WebhookDataGrid extends DataGrid
             );
 
         $this->addFilter('id', 'webhooks.id');
+        $this->addFilter('name', 'webhooks.name');
+        $this->addFilter('entity_type', 'webhooks.entity_type');
+        $this->addFilter('end_point', 'webhooks.end_point');
 
         return $queryBuilder;
     }

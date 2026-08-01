@@ -111,7 +111,7 @@ class LeadController extends Controller
         abort_unless($this->sourceAccessService->isAdmin(), 403);
 
         $headers = [
-            'title*',
+            'companies*',
             'lead_value*',
             'type*',
             'pricing_type*',
@@ -697,7 +697,7 @@ class LeadController extends Controller
             abort(403);
         }
 
-        $lead->load(['person.organization', 'tags', 'pipeline.stages']);
+        $lead->load(['person.organization', 'organization', 'tags', 'pipeline.stages']);
 
         $data = $lead->attributesToArray();
 
@@ -715,6 +715,7 @@ class LeadController extends Controller
             'lead_pipeline_id',
             'lead_pipeline_stage_id',
             'lead_sub_source_id',
+            'organization_id',
             'expected_close_date',
             'next_followup_date',
             'last_followup_date',
@@ -725,6 +726,24 @@ class LeadController extends Controller
                 $data[$column] = $lead->getAttributes()[$column];
             }
         }
+
+        $organization = $lead->organization ?: $lead->person?->organization;
+
+        $data['organization_id'] = $organization?->id
+            ? (string) $organization->id
+            : ($data['organization_id'] ? (string) $data['organization_id'] : null);
+
+        // Lookup components expect {id, name} under the attribute code for edit values.
+        $data['organization'] = $organization
+            ? ['id' => $organization->id, 'name' => $organization->name]
+            : null;
+
+        // Keep title as display fallback for older screens.
+        if ($organization && empty($data['title'])) {
+            $data['title'] = $organization->name;
+        }
+
+        unset($data['companies']);
 
         foreach (['expected_close_date', 'next_followup_date', 'last_followup_date', 'closed_at', 'lead_disqualified_at'] as $dateField) {
             $raw = $lead->getAttributes()[$dateField] ?? null;
@@ -745,7 +764,7 @@ class LeadController extends Controller
             }
         }
 
-        foreach (['lead_type_id', 'user_id', 'lead_pipeline_id', 'lead_pipeline_stage_id', 'lead_source_id', 'lead_sub_source_id'] as $idField) {
+        foreach (['lead_type_id', 'user_id', 'lead_pipeline_id', 'lead_pipeline_stage_id', 'lead_source_id', 'lead_sub_source_id', 'organization_id'] as $idField) {
             if (isset($data[$idField]) && $data[$idField] !== null && $data[$idField] !== '') {
                 $data[$idField] = (string) $data[$idField];
             }
@@ -846,11 +865,11 @@ class LeadController extends Controller
     }
 
     /**
-     * Lead fields SDRs can view but must not change.
+     * Lead fields that can be viewed but must not change after create.
      *
      * @return array<int, string>
      */
-    protected function sdrLockedLeadAttributeCodes(): array
+    protected function lockedLeadAttributeCodes(): array
     {
         return [
             'lead_source_id',
@@ -861,19 +880,33 @@ class LeadController extends Controller
     }
 
     /**
-     * Remove SDR-locked fields so existing values are preserved.
+     * Remove locked lead fields so existing values are preserved on update.
      */
-    protected function stripSdrLockedLeadFields(array $data): array
+    protected function stripLockedLeadFields(array $data): array
     {
-        if (! $this->isSdrUser()) {
-            return $data;
-        }
-
-        foreach ($this->sdrLockedLeadAttributeCodes() as $code) {
+        foreach ($this->lockedLeadAttributeCodes() as $code) {
             unset($data[$code]);
         }
 
         return $data;
+    }
+
+    /**
+     * @deprecated Use lockedLeadAttributeCodes()
+     *
+     * @return array<int, string>
+     */
+    protected function sdrLockedLeadAttributeCodes(): array
+    {
+        return $this->lockedLeadAttributeCodes();
+    }
+
+    /**
+     * @deprecated Use stripLockedLeadFields()
+     */
+    protected function stripSdrLockedLeadFields(array $data): array
+    {
+        return $this->stripLockedLeadFields($data);
     }
 
     /**
@@ -975,7 +1008,7 @@ class LeadController extends Controller
     {
         Event::dispatch('lead.update.before', $id);
 
-        $data = $this->stripSdrLockedLeadFields($request->all());
+        $data = $this->stripLockedLeadFields($request->all());
 
         if (isset($data['lead_pipeline_stage_id'])) {
             $stage = $this->stageRepository->findOrFail($data['lead_pipeline_stage_id']);
@@ -1058,15 +1091,13 @@ class LeadController extends Controller
     {
         $data = request()->all();
 
-        if ($this->isSdrUser()) {
-            $lockedCodes = $this->sdrLockedLeadAttributeCodes();
-            $attemptedLocked = array_values(array_intersect(array_keys($data), $lockedCodes));
+        $lockedCodes = $this->lockedLeadAttributeCodes();
+        $attemptedLocked = array_values(array_intersect(array_keys($data), $lockedCodes));
 
-            if (! empty($attemptedLocked)) {
-                return response()->json([
-                    'message' => trans('admin::app.leads.sdr-field-locked'),
-                ], 403);
-            }
+        if (! empty($attemptedLocked)) {
+            return response()->json([
+                'message' => trans('admin::app.leads.locked-fields'),
+            ], 403);
         }
 
         if (array_key_exists('services', $data) || array_key_exists('service_offered', $data)) {
@@ -1102,7 +1133,7 @@ class LeadController extends Controller
 
         $attributes = $this->attributeRepository->findWhere([
             'entity_type' => 'leads',
-            ['code', 'NOTIN', ['title', 'description', 'service_offered']],
+            ['code', 'NOTIN', ['title', 'companies', 'organization_id', 'description', 'service_offered']],
         ]);
 
         Event::dispatch('lead.update.before', $id);
@@ -1482,11 +1513,12 @@ class LeadController extends Controller
             foreach ($leads as $lead) {
                 Event::dispatch('lead.update.before', $lead->id);
 
-                $lead = $this->leadRepository->find($lead->id);
+                $this->leadRepository->update([
+                    'entity_type'            => 'leads',
+                    'lead_pipeline_stage_id' => $massUpdateRequest->input('value'),
+                ], $lead->id, ['lead_pipeline_stage_id']);
 
-                $lead?->update(['lead_pipeline_stage_id' => $massUpdateRequest->input('value')]);
-
-                Event::dispatch('lead.update.before', $lead->id);
+                Event::dispatch('lead.update.after', $this->leadRepository->find($lead->id));
             }
 
             return response()->json([
@@ -1853,6 +1885,8 @@ class LeadController extends Controller
      */
     private function syncLeadTags($lead, array $tagNames): void
     {
+        $oldTags = $lead->tags()->pluck('name')->sort()->values()->implode(', ');
+
         $tagIds = collect($tagNames)
             ->filter(fn ($name) => filled($name))
             ->map(fn ($name) => trim($name))
@@ -1863,6 +1897,10 @@ class LeadController extends Controller
                     'name'    => $name,
                     'user_id' => auth()->id(),
                 ]);
+
+                if (! $tag) {
+                    $tag = $this->tagRepository->findOneWhere(['name' => $name]);
+                }
 
                 if (! $tag) {
                     $tag = $this->tagRepository->create([
@@ -1877,6 +1915,15 @@ class LeadController extends Controller
             ->all();
 
         $lead->tags()->sync($tagIds);
+
+        $newTags = $lead->tags()->pluck('name')->sort()->values()->implode(', ');
+
+        \Webkul\Lead\Models\Lead::storeSystemActivity(
+            $lead,
+            'Tags',
+            $oldTags !== '' ? $oldTags : null,
+            $newTags !== '' ? $newTags : null
+        );
     }
 
     /**
@@ -1900,13 +1947,24 @@ class LeadController extends Controller
             ->values()
             ->all();
 
+        $oldServices = $lead->services()->orderBy('name')->pluck('name')->implode(', ');
+
         $lead->services()->sync($ids);
+
+        $newServices = $lead->services()->orderBy('name')->pluck('name')->implode(', ');
+
+        \Webkul\Lead\Models\Lead::storeSystemActivity(
+            $lead,
+            'Services Offered',
+            $oldServices !== '' ? $oldServices : null,
+            $newServices !== '' ? $newServices : null
+        );
     }
 
     protected function requiredImportColumns(): array
     {
         return [
-            'title',
+            'companies',
             'lead_value',
             'type',
             'pricing_type',
@@ -1916,7 +1974,11 @@ class LeadController extends Controller
     protected function importColumnAliases(): array
     {
         return [
-            'lead_title'         => 'title',
+            'title'              => 'companies',
+            'lead_title'         => 'companies',
+            'company_name'       => 'companies',
+            'organization'       => 'companies',
+            'organization_name'  => 'companies',
             'value'              => 'lead_value',
             'amount'             => 'lead_value',
             'lead_source'        => 'source',
@@ -1924,9 +1986,6 @@ class LeadController extends Controller
             'owner'              => 'sales_owner_email',
             'sales_owner'        => 'sales_owner_email',
             'owner_email'        => 'sales_owner_email',
-            'company_name'       => 'company',
-            'organization'       => 'company',
-            'organization_name'  => 'company',
             'contact_name'       => 'person_name',
             'person'             => 'person_name',
             'contact_email'      => 'email',
@@ -2058,7 +2117,7 @@ class LeadController extends Controller
 
         return [
             'entity_type'              => 'leads',
-            'title'                    => trim($row['title']),
+            'organization_name'        => trim((string) ($row['companies'] ?? $row['title'] ?? $row['company'] ?? '')),
             'description'              => $this->nullableImportValue($row['description'] ?? null),
             'lead_value'               => (float) $row['lead_value'],
             'lead_source_id'           => $coldCallSourceId,
@@ -2077,12 +2136,12 @@ class LeadController extends Controller
             'schedule_followup'        => $scheduleFollowup,
             'next_followup_date'       => $nextFollowupDate,
             'person'                   => [
-                'name'            => $this->nullableImportValue($row['person_name'] ?? null),
-                'organization_name'=> $this->nullableImportValue($row['company'] ?? null),
-                'emails'          => filled($row['email'] ?? null)
+                'name'             => $this->nullableImportValue($row['person_name'] ?? null),
+                'organization_name'=> $this->nullableImportValue($row['company'] ?? $row['companies'] ?? null),
+                'emails'           => filled($row['email'] ?? null)
                     ? [['value' => trim($row['email']), 'label' => 'work']]
                     : [],
-                'contact_numbers' => filled($row['phone'] ?? null)
+                'contact_numbers'  => filled($row['phone'] ?? null)
                     ? [['value' => trim((string) $row['phone']), 'label' => 'work']]
                     : [],
             ],
@@ -2382,6 +2441,7 @@ class LeadController extends Controller
         ]);
 
         $payload['entity_type'] = 'leads';
+        $payload['organization_id'] = $organizationId;
         $payload['team_id'] = $teamId;
         $payload['person'] = $this->buildDuplicatePersonPayload($lead, $organizationId);
 

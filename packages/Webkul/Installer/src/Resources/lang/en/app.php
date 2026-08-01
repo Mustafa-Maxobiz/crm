@@ -23,6 +23,8 @@ return [
                 'source'              => 'Source',
                 'sub-source'          => 'Sub Source',
                 'title'               => 'Title',
+                'companies'           => 'Company Name',
+                'organization'        => 'Company Name',
                 'type'                => 'Business Type',
                 'pipeline'            => 'Pipeline',
                 'stage'               => 'Stage',

@@ -21,6 +21,8 @@ class CampaignDatagrid extends DataGrid
             );
 
         $this->addFilter('id', 'marketing_campaigns.id');
+        $this->addFilter('name', 'marketing_campaigns.name');
+        $this->addFilter('subject', 'marketing_campaigns.subject');
 
         return $queryBuilder;
     }
@@ -51,10 +53,12 @@ class CampaignDatagrid extends DataGrid
         ]);
 
         $this->addColumn([
-            'index'    => 'subject',
-            'label'    => trans('admin::app.settings.marketing.campaigns.index.datagrid.subject'),
-            'type'     => 'string',
-            'sortable' => true,
+            'index'      => 'subject',
+            'label'      => trans('admin::app.settings.marketing.campaigns.index.datagrid.subject'),
+            'type'       => 'string',
+            'sortable'   => true,
+            'searchable' => true,
+            'filterable' => true,
         ]);
 
         $this->addColumn([

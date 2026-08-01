@@ -12,6 +12,7 @@ use Webkul\Activity\Models\ActivityProxy;
 use Webkul\Activity\Traits\LogsActivity;
 use Webkul\Attribute\Traits\CustomAttribute;
 use Webkul\Contact\Models\PersonProxy;
+use Webkul\Contact\Models\OrganizationProxy;
 use Webkul\Contact\Models\TeamProxy;
 use Webkul\Email\Models\EmailProxy;
 use Webkul\Lead\Contracts\Lead as LeadContract;
@@ -45,6 +46,7 @@ class Lead extends Model implements LeadContract
         'closed_at',
         'user_id',
         'person_id',
+        'organization_id',
         'team_id',
         'lead_source_id',
         'lead_sub_source_id',
@@ -92,6 +94,14 @@ class Lead extends Model implements LeadContract
     public function person(): BelongsTo
     {
         return $this->belongsTo(PersonProxy::modelClass());
+    }
+
+    /**
+     * Get the company (organization) linked to the lead.
+     */
+    public function organization(): BelongsTo
+    {
+        return $this->belongsTo(OrganizationProxy::modelClass());
     }
 
     /**

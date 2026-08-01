@@ -389,7 +389,9 @@ class SourceAccessService
 
         $lead->loadMissing('person');
 
-        $organizationId = $lead->person?->getAttributes()['organization_id'] ?? null;
+        $organizationId = $lead->getAttributes()['organization_id']
+            ?? $lead->person?->getAttributes()['organization_id']
+            ?? null;
 
         if (! $organizationId) {
             return false;
@@ -437,7 +439,11 @@ class SourceAccessService
             return $query->whereRaw('0 = 1');
         }
 
-        return $query->whereHas('person', fn ($personQuery) => $personQuery->whereIn('organization_id', $allowed));
+        return $query->where(function ($scopeQuery) use ($allowed) {
+            $scopeQuery
+                ->whereIn('organization_id', $allowed)
+                ->orWhereHas('person', fn ($personQuery) => $personQuery->whereIn('organization_id', $allowed));
+        });
     }
 
     protected function applySourceTableScope(QueryBuilder $query): QueryBuilder
@@ -479,7 +485,11 @@ class SourceAccessService
             return $query->whereRaw('0 = 1');
         }
 
-        return $query->whereIn('persons.organization_id', $allowed);
+        return $query->where(function ($scopeQuery) use ($allowed) {
+            $scopeQuery
+                ->whereIn('leads.organization_id', $allowed)
+                ->orWhereIn('persons.organization_id', $allowed);
+        });
     }
 
     /**

@@ -86,6 +86,14 @@
                 ::label="attribute['name']"
             />
 
+            <!-- When adding a new lookup entity, also submit the typed name. -->
+            <x-admin::form.control-group.control
+                v-if="newEntityNameField && selectedItem.name && ! selectedItem.id"
+                type="hidden"
+                ::name="newEntityNameField"
+                v-model="selectedItem.name"
+            />
+
             <!-- Popup Box -->
             <div
                 v-if="showPopup"
@@ -182,8 +190,13 @@
             },
 
             mounted() {
-                if (this.value) {
+                if (this.value?.id) {
                     this.getLookUpEntity();
+                } else if (this.value?.name) {
+                    this.selectedItem = {
+                        id: this.value.id || '',
+                        name: this.value.name,
+                    };
                 }
 
                 window.addEventListener('click', this.handleFocusOut);
@@ -204,6 +217,26 @@
                     return this.searchedResults.filter(item =>
                         item.name.toLowerCase().includes(this.searchTerm.toLowerCase())
                     );
+                },
+
+                /**
+                 * For codes like organization_id, submit organization_name when adding new.
+                 */
+                newEntityNameField() {
+                    const code = this.attribute?.code || '';
+
+                    if (code.endsWith('_id')) {
+                        return code.slice(0, -3) + '_name';
+                    }
+
+                    // Bracket form: person[organization_id] → person[organization_name]
+                    const match = code.match(/^(.*)\[(.+)_id\]$/);
+
+                    if (match) {
+                        return `${match[1]}[${match[2]}_name]`;
+                    }
+
+                    return null;
                 }
             },
 

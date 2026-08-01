@@ -20,6 +20,7 @@ class WorkflowDataGrid extends DataGrid
             );
 
         $this->addFilter('id', 'workflows.id');
+        $this->addFilter('name', 'workflows.name');
 
         return $queryBuilder;
     }

@@ -21,6 +21,7 @@ class GroupDataGrid extends DataGrid
             );
 
         $this->addFilter('id', 'groups.id');
+        $this->addFilter('name', 'groups.name');
 
         return $queryBuilder;
     }

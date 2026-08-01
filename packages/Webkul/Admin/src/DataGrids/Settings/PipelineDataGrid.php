@@ -22,6 +22,7 @@ class PipelineDataGrid extends DataGrid
             );
 
         $this->addFilter('id', 'lead_pipelines.id');
+        $this->addFilter('name', 'lead_pipelines.name');
 
         return $queryBuilder;
     }

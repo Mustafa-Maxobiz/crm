@@ -67,6 +67,8 @@ class LeadDataGrid extends DataGrid
             ->addSelect(
                 'leads.id',
                 'leads.title',
+                'leads.organization_id',
+                'organizations.name as company_name',
                 'leads.description',
                 'leads.source_link',
                 'leads.status',
@@ -118,6 +120,7 @@ class LeadDataGrid extends DataGrid
             )
             ->leftJoin('users', 'leads.user_id', '=', 'users.id')
             ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
+            ->leftJoin('organizations', 'leads.organization_id', '=', 'organizations.id')
             ->leftJoin('lead_types', 'leads.lead_type_id', '=', 'lead_types.id')
             ->leftJoin('lead_pipeline_stages', 'leads.lead_pipeline_stage_id', '=', 'lead_pipeline_stages.id')
             ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
@@ -180,6 +183,8 @@ class LeadDataGrid extends DataGrid
 
         $this->addFilter('id', 'leads.id');
         $this->addFilter('title', 'leads.title');
+        $this->addFilter('company_name', 'organizations.name');
+        $this->addFilter('organization_id', 'leads.organization_id');
         $this->addFilter('description', 'leads.description');
         $this->addFilter('source_link', 'leads.source_link');
         $this->addFilter('user', 'leads.user_id');
@@ -226,6 +231,17 @@ class LeadDataGrid extends DataGrid
             'type'       => 'string',
             'searchable' => true,
             'sortable'   => true,
+            'closure'    => fn ($row) => $row->company_name ?: $row->title,
+        ]);
+
+        $this->addColumn([
+            'index'      => 'company_name',
+            'label'      => trans('admin::app.leads.index.datagrid.subject'),
+            'type'       => 'string',
+            'searchable' => true,
+            'sortable'   => true,
+            'filterable' => false,
+            'visibility' => false,
         ]);
 
         $this->addColumn([

@@ -11,6 +11,7 @@ use Webkul\Attribute\Repositories\AttributeValueRepository;
 use Webkul\Contact\Repositories\PersonRepository;
 use Webkul\Core\Eloquent\Repository;
 use Webkul\Lead\Contracts\Lead;
+use Webkul\Lead\Models\Lead as LeadModel;
 use Webkul\Lead\Services\FollowupScheduleService;
 
 class LeadRepository extends Repository
@@ -29,6 +30,8 @@ class LeadRepository extends Repository
         'user.name',
         'person_id',
         'person.name',
+        'organization_id',
+        'organization.name',
         'source.name',
         'lead_source_id',
         'lead_type_id',
@@ -112,19 +115,105 @@ class LeadRepository extends Repository
     }
 
     /**
+     * Resolve optional lead company from payload and keep title/person in sync.
+     */
+    private function resolveLeadOrganization(array $data): array
+    {
+        $hasExplicitCompany = array_key_exists('organization_id', $data)
+            || array_key_exists('organization_name', $data)
+            || array_key_exists('companies', $data);
+
+        // Legacy text field mapped to create-or-find by name.
+        if (! empty($data['companies']) && empty($data['organization_name']) && empty($data['organization_id'])) {
+            $data['organization_name'] = trim((string) $data['companies']);
+        }
+
+        $organizationId = $data['organization_id'] ?? null;
+        $organizationName = filled($data['organization_name'] ?? null)
+            ? trim((string) $data['organization_name'])
+            : null;
+
+        $personHasCompany = isset($data['person'])
+            && is_array($data['person'])
+            && (
+                array_key_exists('organization_id', $data['person'])
+                || array_key_exists('organization_name', $data['person'])
+            );
+
+        // Contact company wins when the user edited person company (edit modal path).
+        if ($personHasCompany) {
+            $personOrganizationId = $data['person']['organization_id'] ?? null;
+            $personOrganizationName = filled($data['person']['organization_name'] ?? null)
+                ? trim((string) $data['person']['organization_name'])
+                : null;
+
+            if ($personOrganizationId === '') {
+                $personOrganizationId = null;
+            }
+
+            $organizationId = $personOrganizationId;
+            $organizationName = $personOrganizationName;
+            $hasExplicitCompany = true;
+        }
+
+        if ($organizationId === '') {
+            $organizationId = null;
+        }
+
+        $organization = null;
+
+        if ($organizationName) {
+            $organization = $this->personRepository->fetchOrCreateOrganizationByName($organizationName);
+        } elseif ($organizationId) {
+            $organization = app(\Webkul\Contact\Repositories\OrganizationRepository::class)->find($organizationId);
+        }
+
+        unset($data['organization_name'], $data['companies']);
+
+        if ($organization) {
+            $data['organization_id'] = $organization->id;
+            $data['title'] = $organization->name;
+
+            if (isset($data['person']) && is_array($data['person'])) {
+                $data['person']['organization_id'] = $organization->id;
+                unset($data['person']['organization_name']);
+            }
+        } elseif ($hasExplicitCompany) {
+            $data['organization_id'] = null;
+
+            if (isset($data['person']) && is_array($data['person'])) {
+                $data['person']['organization_id'] = null;
+                unset($data['person']['organization_name']);
+            }
+        }
+
+        return $data;
+    }
+
+    /**
      * Create.
      *
      * @return \Webkul\Lead\Contracts\Lead
      */
     public function create(array $data)
     {
+        $data = $this->resolveLeadOrganization($data);
+
         /**
          * If a person is provided, create or update the person and set the `person_id`.
          */
         if (isset($data['person'])) {
             if (! empty($data['person']['id'])) {
                 $person = $this->personRepository->findOrFail($data['person']['id']);
+
+                $person = $this->syncExistingPersonCompany($person, $data['person']);
+
                 $data['person_id'] = $person->id;
+
+                if (empty($data['organization_id']) && $person->organization_id) {
+                    $data['organization_id'] = $person->organization_id;
+                    $data['title'] = $person->organization?->name ?: ($data['title'] ?? '');
+                }
             } else {
                 // Check if person data has any meaningful values
                 $hasPersonData = $this->hasPersonData($data['person']);
@@ -134,6 +223,11 @@ class LeadRepository extends Repository
                         'entity_type' => 'persons',
                     ]));
                     $data['person_id'] = $person->id;
+
+                    if (empty($data['organization_id']) && $person->organization_id) {
+                        $data['organization_id'] = $person->organization_id;
+                        $data['title'] = $person->organization?->name ?: ($data['title'] ?? '');
+                    }
                 } else {
                     // No person data provided, set person_id to null
                     $data['person_id'] = null;
@@ -143,6 +237,14 @@ class LeadRepository extends Repository
 
         if (empty($data['expected_close_date'])) {
             $data['expected_close_date'] = null;
+        }
+
+        if (empty($data['organization_id'])) {
+            $data['organization_id'] = null;
+        }
+
+        if (empty($data['title'])) {
+            $data['title'] = $data['title'] ?? '';
         }
 
         $shouldScheduleFollowup = array_key_exists('schedule_followup', $data)
@@ -194,6 +296,8 @@ class LeadRepository extends Repository
      */
     public function update(array $data, $id, $attributes = [])
     {
+        $data = $this->resolveLeadOrganization($data);
+
         /**
          * If a person is provided, create or update the person and set the `person_id`.
          * Be cautious, as a lead can be updated without providing person data.
@@ -202,7 +306,18 @@ class LeadRepository extends Repository
         if (isset($data['person'])) {
             if (! empty($data['person']['id'])) {
                 $person = $this->personRepository->findOrFail($data['person']['id']);
+
+                $person = $this->syncExistingPersonCompany($person, $data['person'], $id);
+
                 $data['person_id'] = $person->id;
+
+                if (
+                    ! array_key_exists('organization_id', $data)
+                    && $person->organization_id
+                ) {
+                    $data['organization_id'] = $person->organization_id;
+                    $data['title'] = $person->organization?->name ?: ($data['title'] ?? null);
+                }
             } else {
                 // Check if person data has any meaningful values
                 $hasPersonData = $this->hasPersonData($data['person']);
@@ -212,11 +327,26 @@ class LeadRepository extends Repository
                         'entity_type' => 'persons',
                     ]));
                     $data['person_id'] = $person->id;
+
+                    if (empty($data['organization_id']) && $person->organization_id) {
+                        $data['organization_id'] = $person->organization_id;
+                        $data['title'] = $person->organization?->name ?: ($data['title'] ?? null);
+                    }
                 } else {
                     // No person data provided, set person_id to null
                     $data['person_id'] = null;
                 }
             }
+        }
+
+        // When person company changed, mirror onto lead.
+        if (
+            isset($person)
+            && array_key_exists('organization_id', $data['person'] ?? [])
+            && ! array_key_exists('organization_name', $data)
+        ) {
+            $data['organization_id'] = $person->organization_id;
+            $data['title'] = $person->organization?->name ?: ($data['title'] ?? null);
         }
 
         if (isset($data['lead_pipeline_stage_id'])) {
@@ -231,6 +361,10 @@ class LeadRepository extends Repository
 
         if (empty($data['expected_close_date'])) {
             $data['expected_close_date'] = null;
+        }
+
+        if (array_key_exists('organization_id', $data) && empty($data['organization_id'])) {
+            $data['organization_id'] = null;
         }
 
         if (array_key_exists('next_followup_date', $data) && empty($data['next_followup_date'])) {
@@ -248,7 +382,28 @@ class LeadRepository extends Repository
             $data['lead_sub_source_id'] = null;
         }
 
+        $existingLead = isset($existingLead) ? $existingLead : $this->find($id);
+        $oldCompany = $existingLead?->organization?->name;
+        $loggedViaPerson = isset($person) && (
+            array_key_exists('organization_id', $data['person'] ?? [])
+            || filled(($data['person']['organization_name'] ?? null))
+        );
+
         $lead = parent::update($data, $id);
+
+        if (! $loggedViaPerson && array_key_exists('organization_id', $data)) {
+            $lead = $lead->fresh(['organization']) ?? $lead;
+            $newCompany = $lead->organization?->name;
+
+            if ($oldCompany !== $newCompany) {
+                LeadModel::storeSystemActivity(
+                    $lead,
+                    'Company',
+                    $oldCompany,
+                    $newCompany
+                );
+            }
+        }
 
         /**
          * If attributes are provided, only save the provided attributes and return.
@@ -345,7 +500,10 @@ class LeadRepository extends Repository
         }
 
         // Check if organization is provided
-        if (! empty($personData['organization_id'])) {
+        if (
+            ! empty($personData['organization_id'])
+            || ! empty($personData['organization_name'])
+        ) {
             return true;
         }
 
@@ -364,5 +522,73 @@ class LeadRepository extends Repository
         }
 
         return false;
+    }
+
+    /**
+     * Update company/address/website on an existing person when submitted from lead edit.
+     */
+    private function syncExistingPersonCompany($person, array $personData, ?int $leadId = null)
+    {
+        $hasOrganizationId = array_key_exists('organization_id', $personData);
+        $hasOrganizationName = filled($personData['organization_name'] ?? null);
+        $hasAddress = array_key_exists('address', $personData);
+        $hasWebsite = array_key_exists('website', $personData);
+
+        if (
+            ! $hasOrganizationId
+            && ! $hasOrganizationName
+            && ! $hasAddress
+            && ! $hasWebsite
+        ) {
+            return $person;
+        }
+
+        $payload = [
+            'entity_type' => 'persons',
+        ];
+
+        if ($hasOrganizationName) {
+            $payload['organization_name'] = trim((string) $personData['organization_name']);
+            unset($payload['organization_id']);
+        } elseif ($hasOrganizationId) {
+            $payload['organization_id'] = $personData['organization_id'] ?: null;
+        }
+
+        if ($hasAddress) {
+            $payload['address'] = $personData['address'];
+        }
+
+        if ($hasWebsite) {
+            $payload['website'] = $personData['website'] ?: null;
+        }
+
+        $oldCompany = $person->organization?->name;
+
+        $person = $this->personRepository->update($payload, $person->id);
+
+        $person = $person->fresh(['organization']) ?? $person;
+        $newCompany = $person->organization?->name;
+
+        if ($leadId) {
+            $this->getModel()->where('id', $leadId)->update([
+                'organization_id' => $person->organization_id,
+                'title'           => $newCompany ?: '',
+            ]);
+        }
+
+        if ($leadId && $oldCompany !== $newCompany) {
+            $lead = $this->find($leadId);
+
+            if ($lead) {
+                LeadModel::storeSystemActivity(
+                    $lead,
+                    'Company',
+                    $oldCompany,
+                    $newCompany
+                );
+            }
+        }
+
+        return $person;
     }
 }
