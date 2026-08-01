@@ -669,7 +669,11 @@ class LeadController extends Controller
             return redirect()->route('admin.leads.index');
         }
 
-        return view('admin::leads.edit', compact('lead'));
+        $lead->load(['person.organization', 'products']);
+
+        $person = $this->leadPersonFormPayload($lead->person);
+
+        return view('admin::leads.edit', compact('lead', 'person'));
     }
 
     /**
@@ -697,6 +701,31 @@ class LeadController extends Controller
 
         $data = $lead->attributesToArray();
 
+        /**
+         * Prefer native lead columns over stale EAV copies for system fields
+         * (attributesToArray can overwrite FKs like lead_type_id with invalid option ids).
+         */
+        foreach ([
+            'title',
+            'description',
+            'lead_value',
+            'lead_source_id',
+            'lead_type_id',
+            'user_id',
+            'lead_pipeline_id',
+            'lead_pipeline_stage_id',
+            'lead_sub_source_id',
+            'expected_close_date',
+            'next_followup_date',
+            'last_followup_date',
+            'closed_at',
+            'lead_disqualified_at',
+        ] as $column) {
+            if (array_key_exists($column, $lead->getAttributes())) {
+                $data[$column] = $lead->getAttributes()[$column];
+            }
+        }
+
         foreach (['expected_close_date', 'next_followup_date', 'last_followup_date', 'closed_at', 'lead_disqualified_at'] as $dateField) {
             $raw = $lead->getAttributes()[$dateField] ?? null;
 
@@ -716,30 +745,16 @@ class LeadController extends Controller
             }
         }
 
+        foreach (['lead_type_id', 'user_id', 'lead_pipeline_id', 'lead_pipeline_stage_id', 'lead_source_id', 'lead_sub_source_id'] as $idField) {
+            if (isset($data[$idField]) && $data[$idField] !== null && $data[$idField] !== '') {
+                $data[$idField] = (string) $data[$idField];
+            }
+        }
+
         $data['entity_type'] = 'leads';
         $data['quick_add'] = 1;
-        $data['tags'] = $lead->tags->pluck('name')->values()->all();
-        $data['person'] = $lead->person
-            ? [
-                'id'               => $lead->person->id,
-                'name'             => $lead->person->name,
-                'emails'           => $lead->person->emails ?: [['value' => '', 'label' => 'work']],
-                'contact_numbers'  => $lead->person->contact_numbers ?: [['value' => '', 'label' => 'work']],
-                'organization_id'  => $lead->person->organization_id,
-                'organization'     => $lead->person->organization,
-                'address'          => $lead->person->address,
-                'website'          => $lead->person->website ?? '',
-            ]
-            : [
-                'id'              => null,
-                'name'            => '',
-                'emails'          => [['value' => '', 'label' => 'work']],
-                'contact_numbers' => [['value' => '', 'label' => 'work']],
-                'organization_id' => null,
-                'organization'    => null,
-                'address'         => null,
-                'website'         => '',
-            ];
+        $data['tags'] = $lead->tags->pluck('name')->filter()->values()->all();
+        $data['person'] = $this->leadPersonFormPayload($lead->person);
 
         $data['stages'] = $lead->pipeline
             ? $lead->pipeline->stages->map(fn ($stage) => [
@@ -787,6 +802,47 @@ class LeadController extends Controller
     protected function isSdrUser(): bool
     {
         return strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr';
+    }
+
+    /**
+     * Build person + company payload for lead create/edit forms.
+     */
+    protected function leadPersonFormPayload($person): array
+    {
+        if (! $person) {
+            return [
+                'id'              => null,
+                'name'            => '',
+                'emails'          => [['value' => '', 'label' => 'work']],
+                'contact_numbers' => [['value' => '', 'label' => 'work']],
+                'organization_id' => null,
+                'organization'    => null,
+                'address'         => null,
+                'website'         => '',
+            ];
+        }
+
+        $organization = $person->organization;
+
+        return [
+            'id'              => $person->id,
+            'name'            => $person->name,
+            'emails'          => ! empty($person->emails)
+                ? $person->emails
+                : [['value' => '', 'label' => 'work']],
+            'contact_numbers' => ! empty($person->contact_numbers)
+                ? $person->contact_numbers
+                : [['value' => '', 'label' => 'work']],
+            'organization_id' => $person->organization_id,
+            'organization'    => $organization
+                ? [
+                    'id'   => $organization->id,
+                    'name' => $organization->name,
+                ]
+                : null,
+            'address'         => $person->address,
+            'website'         => $person->website ?? '',
+        ];
     }
 
     /**

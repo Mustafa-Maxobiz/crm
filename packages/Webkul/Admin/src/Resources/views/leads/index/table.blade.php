@@ -1,12 +1,45 @@
 {!! view_render_event('admin.leads.index.table.before') !!}
 
 @php
-    $leadQuickAttributes = app(\Webkul\Attribute\Repositories\AttributeRepository::class)->findWhere([
-        'entity_type' => 'leads',
-        'quick_add'   => 1,
-    ]);
+    $modalExcludedAttributeCodes = [
+        'lead_type_id',
+        'user_id',
+        'lead_pipeline_id',
+        'lead_pipeline_stage_id',
+        'next_followup_date',
+    ];
+
+    $leadQuickAttributes = app(\Webkul\Attribute\Repositories\AttributeRepository::class)
+        ->findWhere([
+            'entity_type' => 'leads',
+            'quick_add'   => 1,
+        ])
+        ->reject(fn ($attribute) => in_array($attribute->code, $modalExcludedAttributeCodes, true))
+        ->values();
 
     $pipeline = app(\Webkul\Lead\Repositories\PipelineRepository::class)->getDefaultPipeline();
+
+    $leadTypeOptions = \Webkul\Lead\Models\Type::query()
+        ->orderBy('name')
+        ->get(['id', 'name'])
+        ->map(fn ($type) => ['id' => $type->id, 'name' => $type->name])
+        ->values()
+        ->all();
+
+    $salesOwnerOptions = \Webkul\User\Models\User::query()
+        ->where('status', 1)
+        ->orderBy('name')
+        ->get(['id', 'name'])
+        ->map(fn ($user) => ['id' => $user->id, 'name' => $user->name])
+        ->values()
+        ->all();
+
+    $pipelineOptions = \Webkul\Lead\Models\Pipeline::query()
+        ->orderBy('name')
+        ->get(['id', 'name'])
+        ->map(fn ($item) => ['id' => $item->id, 'name' => $item->name])
+        ->values()
+        ->all();
 
     $inlineOptions = [
         'lead_source_name' => [
@@ -41,10 +74,14 @@
         'service_offered' => [
             'field'    => 'service_option_ids',
             'multiple' => true,
-            'items'    => collect(app(\Webkul\Lead\Repositories\ServiceRepository::class)->getDropdownOptions())
-                ->unique('value')
-                ->values()
-                ->all(),
+            'items'    => collect(
+                \Illuminate\Support\Facades\DB::table('attribute_options')
+                    ->where('attribute_id', \Illuminate\Support\Facades\DB::table('attributes')->where('code', 'service_offered')->where('entity_type', 'leads')->value('id'))
+                    ->orderBy('sort_order')
+                    ->get(['id as value', 'name as label'])
+                    ->map(fn ($o) => ['value' => (int) $o->value, 'label' => $o->label])
+                    ->all()
+            )->unique('value')->values()->all(),
         ],
     ];
 
@@ -267,7 +304,8 @@
 
                             <div
                                 class="flex max-h-[60vh] flex-col gap-4 overflow-y-auto pb-4"
-                                v-show="! isEditLoading"
+                                v-if="! isEditLoading"
+                                :key="'edit-fields-' + editLeadId"
                             >
                                 <x-admin::form.control-group.control
                                     type="hidden"
@@ -281,15 +319,81 @@
                                     value="1"
                                 />
 
-                                <x-admin::form.control-group.control
-                                    type="hidden"
-                                    name="lead_pipeline_id"
-                                    ::value="editLead.lead_pipeline_id"
-                                />
-
                                 <x-admin::attributes
                                     :custom-attributes="$leadQuickAttributes"
                                 />
+
+                                <x-admin::form.control-group>
+                                    <x-admin::form.control-group.label>
+                                        @lang('admin::app.leads.index.datagrid.lead-type')
+                                    </x-admin::form.control-group.label>
+
+                                    <x-admin::form.control-group.control
+                                        type="select"
+                                        name="lead_type_id"
+                                        ::value="editLead.lead_type_id"
+                                        :label="trans('admin::app.leads.index.datagrid.lead-type')"
+                                    >
+                                        <option value="">
+                                            @lang('admin::app.leads.index.datagrid.lead-type')
+                                        </option>
+                                        <option
+                                            v-for="type in leadTypeOptions"
+                                            :key="type.id"
+                                            :value="String(type.id)"
+                                        >
+                                            @{{ type.name }}
+                                        </option>
+                                    </x-admin::form.control-group.control>
+                                </x-admin::form.control-group>
+
+                                <x-admin::form.control-group>
+                                    <x-admin::form.control-group.label>
+                                        Sales Owner
+                                    </x-admin::form.control-group.label>
+
+                                    <x-admin::form.control-group.control
+                                        type="select"
+                                        name="user_id"
+                                        ::value="editLead.user_id"
+                                        label="Sales Owner"
+                                    >
+                                        <option value="">
+                                            Sales Owner
+                                        </option>
+                                        <option
+                                            v-for="owner in salesOwnerOptions"
+                                            :key="owner.id"
+                                            :value="String(owner.id)"
+                                        >
+                                            @{{ owner.name }}
+                                        </option>
+                                    </x-admin::form.control-group.control>
+                                </x-admin::form.control-group>
+
+                                <x-admin::form.control-group>
+                                    <x-admin::form.control-group.label>
+                                        Pipeline
+                                    </x-admin::form.control-group.label>
+
+                                    <x-admin::form.control-group.control
+                                        type="select"
+                                        name="lead_pipeline_id"
+                                        ::value="editLead.lead_pipeline_id"
+                                        label="Pipeline"
+                                    >
+                                        <option value="">
+                                            Pipeline
+                                        </option>
+                                        <option
+                                            v-for="pipelineOption in pipelineOptions"
+                                            :key="pipelineOption.id"
+                                            :value="String(pipelineOption.id)"
+                                        >
+                                            @{{ pipelineOption.name }}
+                                        </option>
+                                    </x-admin::form.control-group.control>
+                                </x-admin::form.control-group>
 
                                 <x-admin::form.control-group>
                                     <x-admin::form.control-group.label>
@@ -308,11 +412,24 @@
                                         <option
                                             v-for="stage in editStages"
                                             :key="stage.id"
-                                            :value="stage.id"
+                                            :value="String(stage.id)"
                                         >
                                             @{{ stage.name }}
                                         </option>
                                     </x-admin::form.control-group.control>
+                                </x-admin::form.control-group>
+
+                                <x-admin::form.control-group>
+                                    <x-admin::form.control-group.label>
+                                        @lang('admin::app.leads.index.datagrid.next-followup-date')
+                                    </x-admin::form.control-group.label>
+
+                                    <x-admin::form.control-group.control
+                                        type="datetime"
+                                        name="next_followup_date"
+                                        ::value="editLead.next_followup_date"
+                                        :label="trans('admin::app.leads.index.datagrid.next-followup-date')"
+                                    />
                                 </x-admin::form.control-group>
 
                                 <x-admin::form.control-group>
@@ -340,7 +457,7 @@
 
                                 <v-contact-component
                                     v-if="editLeadId && ! isEditLoading"
-                                    :key="'contact-' + editLeadId + '-' + (editPerson?.id || 'new')"
+                                    :key="'contact-' + editLeadId + '-' + (editPerson.id || 'new')"
                                     :data="editPerson"
                                 ></v-contact-component>
                             </div>
@@ -751,6 +868,9 @@
                     editPerson: { name: '' },
                     editTags: [],
                     editStages: [],
+                    leadTypeOptions: @json($leadTypeOptions),
+                    salesOwnerOptions: @json($salesOwnerOptions),
+                    pipelineOptions: @json($pipelineOptions),
                     isEditLoading: false,
                     isEditSaving: false,
                     noteLeadId: null,
@@ -983,7 +1103,7 @@
 
                     this.$axios.put(`{{ url('admin/leads/attributes/edit') }}/${record.id}`, {
                         entity_type: 'leads',
-                        services: ids,
+                        service_offered: ids,
                     }).then(response => {
                         this.$emitter.emit('add-flash', {
                             type: 'success',

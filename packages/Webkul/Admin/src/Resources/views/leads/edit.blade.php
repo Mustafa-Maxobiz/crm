@@ -316,7 +316,7 @@
                         
                         lead:  @json($lead),  
 
-                        person:  @json($lead->person),  
+                        person:  @json($person),  
 
                         products: @json($lead->products),
 

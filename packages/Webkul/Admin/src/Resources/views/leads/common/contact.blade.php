@@ -156,11 +156,10 @@
 
             watch: {
                 data: {
-                    deep: true,
-                    immediate: false,
                     handler(value) {
                         this.person = this.normalizePerson(value);
                     },
+                    deep: true,
                 },
             },
 
@@ -184,28 +183,26 @@
 
             methods: {
                 normalizePerson(value) {
-                    if (! value || typeof value !== 'object') {
-                        return { name: '' };
-                    }
+                    const person = value && typeof value === 'object' ? { ...value } : {};
 
                     return {
-                        id: value.id ?? null,
-                        name: value.name ?? '',
-                        emails: value.emails?.length
-                            ? value.emails
-                            : [{'value': '', 'label': 'work'}],
-                        contact_numbers: value.contact_numbers?.length
-                            ? value.contact_numbers
-                            : [{'value': '', 'label': 'work'}],
-                        organization_id: value.organization_id ?? value.organization?.id ?? null,
-                        organization: value.organization
+                        id: person.id ?? null,
+                        name: person.name ?? '',
+                        emails: Array.isArray(person.emails) && person.emails.length
+                            ? person.emails
+                            : [{ value: '', label: 'work' }],
+                        contact_numbers: Array.isArray(person.contact_numbers) && person.contact_numbers.length
+                            ? person.contact_numbers
+                            : [{ value: '', label: 'work' }],
+                        organization_id: person.organization_id ?? person.organization?.id ?? null,
+                        organization: person.organization
                             ? {
-                                id: value.organization.id,
-                                name: value.organization.name,
+                                id: person.organization.id,
+                                name: person.organization.name,
                             }
                             : null,
-                        address: value.address ?? null,
-                        website: value.website ?? '',
+                        address: person.address ?? null,
+                        website: person.website ?? '',
                     };
                 },
 

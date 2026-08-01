@@ -157,7 +157,7 @@
 
             data() {
                 return {
-                    tags: this.data ? this.data : [],
+                    tags: Array.isArray(this.data) ? [...this.data] : [],
 
                     input: '',
 
@@ -178,6 +178,13 @@
             },
 
             watch: {
+                data: {
+                    handler(value) {
+                        this.tags = Array.isArray(value) ? [...value] : [];
+                    },
+                    deep: true,
+                },
+
                 input(newValue) {
                     this.searchSuggestions(newValue);
                 },
