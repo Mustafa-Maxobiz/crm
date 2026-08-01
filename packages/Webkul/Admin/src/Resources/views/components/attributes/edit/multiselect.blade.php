@@ -4,14 +4,21 @@
     'validations' => '',
     'canAddNew'   => false,
     'storeUrl'    => null,
+    'options'     => null,
 ])
 
 @php
-    $options = $attribute->lookup_type
-        ? app('Webkul\Attribute\Repositories\AttributeRepository')->getLookUpOptions($attribute->lookup_type)
-        : $attribute->options()->orderBy('sort_order')->get(['id', 'name']);
+    if ($options !== null) {
+        $resolvedOptions = collect($options);
+    } elseif ($attribute?->lookup_type) {
+        $resolvedOptions = app('Webkul\Attribute\Repositories\AttributeRepository')->getLookUpOptions($attribute->lookup_type);
+    } elseif (is_object($attribute) && method_exists($attribute, 'options')) {
+        $resolvedOptions = $attribute->options()->orderBy('sort_order')->get(['id', 'name']);
+    } else {
+        $resolvedOptions = collect();
+    }
 
-    $selectedOption = old($attribute->code) ?: $value;
+    $selectedOption = old($attribute->code ?? 'services') ?: $value;
 
     if (is_array($selectedOption)) {
         $selectedIds = array_values(array_filter(array_map('intval', $selectedOption)));
@@ -20,14 +27,16 @@
     }
 
     $canAddNew = (bool) $canAddNew && filled($storeUrl);
+    $fieldName = $attribute->code ?? 'services';
+    $fieldLabel = $attribute->name ?? __('admin::app.leads.index.datagrid.service-offered');
 @endphp
 
 <v-attribute-multiselect
-    name="{{ $attribute->code }}"
-    label="{{ $attribute->name }}"
-    placeholder="{{ $attribute->name }}"
+    name="{{ $fieldName }}"
+    label="{{ $fieldLabel }}"
+    placeholder="{{ $fieldLabel }}"
     rules="{{ $validations }}"
-    :options='@json($options)'
+    :options='@json($resolvedOptions)'
     :selected-ids='@json($selectedIds)'
     :can-add-new='@json($canAddNew)'
     store-url="{{ $storeUrl }}"

@@ -26,7 +26,6 @@ use Webkul\Admin\Http\Requests\MassUpdateRequest;
 use Webkul\Admin\Http\Resources\LeadResource;
 use Webkul\Admin\Http\Resources\StageResource;
 use Webkul\Attribute\Repositories\AttributeRepository;
-use Webkul\Attribute\Repositories\AttributeOptionRepository;
 use Webkul\Contact\Repositories\OrganizationRepository;
 use Webkul\Contact\Repositories\PersonRepository;
 use Webkul\Contact\Repositories\TeamRepository;
@@ -38,6 +37,7 @@ use Webkul\Lead\Repositories\ProductRepository;
 use Webkul\Lead\Repositories\SourceRepository;
 use Webkul\Lead\Repositories\StageRepository;
 use Webkul\Lead\Repositories\TypeRepository;
+use Webkul\Lead\Repositories\ServiceRepository;
 use Webkul\Lead\Services\FollowupScheduleService;
 use Webkul\Lead\Services\MagicAIService;
 use Webkul\Lead\Services\SourceAccessService;
@@ -59,9 +59,9 @@ class LeadController extends Controller
     public function __construct(
         protected UserRepository $userRepository,
         protected AttributeRepository $attributeRepository,
-        protected AttributeOptionRepository $attributeOptionRepository,
         protected SourceRepository $sourceRepository,
         protected TypeRepository $typeRepository,
+        protected ServiceRepository $serviceRepository,
         protected PipelineRepository $pipelineRepository,
         protected StageRepository $stageRepository,
         protected LeadRepository $leadRepository,
@@ -626,6 +626,8 @@ class LeadController extends Controller
 
         $this->syncLeadTags($lead, $data['tags'] ?? []);
 
+        $this->syncLeadServices($lead, $data['services'] ?? []);
+
         $this->syncSourceTagForLead($lead);
 
         if (request()->ajax()) {
@@ -937,6 +939,10 @@ class LeadController extends Controller
 
         $this->syncLeadTags($lead, $data['tags'] ?? []);
 
+        if (array_key_exists('services', $data)) {
+            $this->syncLeadServices($lead, $data['services']);
+        }
+
         $this->syncSourceTagForLead($lead);
 
         Event::dispatch('lead.update.after', $lead);
@@ -968,35 +974,23 @@ class LeadController extends Controller
 
         abort_unless($canCreate, 403);
 
-        $attribute = $this->attributeRepository->findOneWhere([
-            'code'        => 'service_offered',
-            'entity_type' => 'leads',
-        ]);
-
-        abort_unless($attribute, 404);
-
         $this->validate(request(), [
             'name' => [
                 'required',
                 'max:255',
-                Rule::unique('attribute_options', 'name')->where(
-                    fn ($query) => $query->where('attribute_id', $attribute->id)
-                ),
+                Rule::unique('services', 'name'),
             ],
         ]);
 
-        $sortOrder = ((int) DB::table('attribute_options')
-            ->where('attribute_id', $attribute->id)
-            ->max('sort_order')) + 1;
+        $sortOrder = ((int) DB::table('services')->max('sort_order')) + 1;
 
-        $option = $this->attributeOptionRepository->create([
-            'attribute_id' => $attribute->id,
-            'name'         => request('name'),
-            'sort_order'   => $sortOrder,
+        $service = $this->serviceRepository->create([
+            'name'       => request('name'),
+            'sort_order' => $sortOrder,
         ]);
 
         return response()->json([
-            'data'    => $option,
+            'data'    => $service,
             'message' => trans('admin::app.leads.services-offered.create-success'),
         ]);
     }
@@ -1019,6 +1013,20 @@ class LeadController extends Controller
             }
         }
 
+        if (array_key_exists('services', $data) || array_key_exists('service_offered', $data)) {
+            $lead = $this->leadRepository->findOrFail($id);
+
+            Event::dispatch('lead.update.before', $id);
+
+            $this->syncLeadServices($lead, $data['services'] ?? $data['service_offered'] ?? []);
+
+            Event::dispatch('lead.update.after', $lead);
+
+            return response()->json([
+                'message' => trans('admin::app.leads.update-success'),
+            ]);
+        }
+
         if (array_key_exists('lead_source_id', $data) || array_key_exists('lead_sub_source_id', $data)) {
             $sourceId = ! empty($data['lead_source_id']) ? (int) $data['lead_source_id'] : null;
             $subSourceId = ! empty($data['lead_sub_source_id']) ? (int) $data['lead_sub_source_id'] : null;
@@ -1038,7 +1046,7 @@ class LeadController extends Controller
 
         $attributes = $this->attributeRepository->findWhere([
             'entity_type' => 'leads',
-            ['code', 'NOTIN', ['title', 'description']],
+            ['code', 'NOTIN', ['title', 'description', 'service_offered']],
         ]);
 
         Event::dispatch('lead.update.before', $id);
@@ -1815,6 +1823,30 @@ class LeadController extends Controller
         $lead->tags()->sync($tagIds);
     }
 
+    /**
+     * Sync service ids on a lead.
+     */
+    private function syncLeadServices($lead, $serviceIds): void
+    {
+        if ($serviceIds === null) {
+            return;
+        }
+
+        if (! is_array($serviceIds)) {
+            $serviceIds = array_filter(array_map('intval', explode(',', (string) $serviceIds)));
+        }
+
+        $ids = collect($serviceIds)
+            ->filter(fn ($id) => filled($id))
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $lead->services()->sync($ids);
+    }
+
     protected function requiredImportColumns(): array
     {
         return [
@@ -2240,6 +2272,7 @@ class LeadController extends Controller
                     );
 
                     $this->syncLeadTags($replicatedLead, $lead->tags->pluck('name')->all());
+                    $this->syncLeadServices($replicatedLead, $lead->services()->pluck('services.id')->all());
 
                     Event::dispatch('lead.create.after', $replicatedLead);
 
@@ -2256,6 +2289,7 @@ class LeadController extends Controller
                     );
 
                     $this->syncLeadTags($replicatedLead, $lead->tags->pluck('name')->all());
+                    $this->syncLeadServices($replicatedLead, $lead->services()->pluck('services.id')->all());
 
                     Event::dispatch('lead.create.after', $replicatedLead);
 

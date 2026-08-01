@@ -183,6 +183,14 @@ class Lead extends Model implements LeadContract
     }
 
     /**
+     * The services offered that belong to the lead.
+     */
+    public function services(): BelongsToMany
+    {
+        return $this->belongsToMany(ServiceProxy::modelClass(), 'lead_service');
+    }
+
+    /**
      * Returns the rotten days
      */
     public function getRottenDaysAttribute()

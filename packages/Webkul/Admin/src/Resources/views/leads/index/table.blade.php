@@ -41,14 +41,10 @@
         'service_offered' => [
             'field'    => 'service_option_ids',
             'multiple' => true,
-            'items'    => collect(
-                \Illuminate\Support\Facades\DB::table('attribute_options')
-                    ->where('attribute_id', \Illuminate\Support\Facades\DB::table('attributes')->where('code', 'service_offered')->where('entity_type', 'leads')->value('id'))
-                    ->orderBy('sort_order')
-                    ->get(['id as value', 'name as label'])
-                    ->map(fn ($o) => ['value' => (int) $o->value, 'label' => $o->label])
-                    ->all()
-            )->unique('value')->values()->all(),
+            'items'    => collect(app(\Webkul\Lead\Repositories\ServiceRepository::class)->getDropdownOptions())
+                ->unique('value')
+                ->values()
+                ->all(),
         ],
     ];
 
@@ -343,8 +339,8 @@
                                 </div>
 
                                 <v-contact-component
-                                    v-if="editLeadId"
-                                    :key="'contact-' + editLeadId"
+                                    v-if="editLeadId && ! isEditLoading"
+                                    :key="'contact-' + editLeadId + '-' + (editPerson?.id || 'new')"
                                     :data="editPerson"
                                 ></v-contact-component>
                             </div>
@@ -987,7 +983,7 @@
 
                     this.$axios.put(`{{ url('admin/leads/attributes/edit') }}/${record.id}`, {
                         entity_type: 'leads',
-                        service_offered: ids,
+                        services: ids,
                     }).then(response => {
                         this.$emitter.emit('add-flash', {
                             type: 'success',

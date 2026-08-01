@@ -167,20 +167,6 @@ class AttributeSeeder extends Seeder
                 'created_at'      => $now,
                 'updated_at'      => $now,
             ], [
-                'code'            => 'service_offered',
-                'name'            => trans('installer::app.seeders.attributes.leads.service-offered', [], $defaultLocale),
-                'type'            => 'multiselect',
-                'entity_type'     => 'leads',
-                'lookup_type'     => null,
-                'validation'      => null,
-                'sort_order'      => '5.2',
-                'is_required'     => '0',
-                'is_unique'       => '0',
-                'quick_add'       => '1',
-                'is_user_defined' => '0',
-                'created_at'      => $now,
-                'updated_at'      => $now,
-            ], [
                 'code'            => 'user_id',
                 'name'            => trans('installer::app.seeders.attributes.leads.sales-owner', [], $defaultLocale),
                 'type'            => 'select',
@@ -830,17 +816,6 @@ class AttributeSeeder extends Seeder
             'Education',
             'Retail',
             'Hospitality',
-            'Other',
-        ]);
-
-        $this->seedSelectOptions('service_offered', [
-            'Website Development',
-            'Social Media',
-            'SEO',
-            'Branding',
-            'Paid Ads',
-            'Email Marketing',
-            'Content Marketing',
             'Other',
         ]);
     }

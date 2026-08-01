@@ -63,11 +63,6 @@ class LeadDataGrid extends DataGrid
             ->where('entity_type', 'leads')
             ->value('id');
 
-        $serviceAttributeId = DB::table('attributes')
-            ->where('code', 'service_offered')
-            ->where('entity_type', 'leads')
-            ->value('id');
-
         $queryBuilder = DB::table('leads')
             ->addSelect(
                 'leads.id',
@@ -96,13 +91,17 @@ class LeadDataGrid extends DataGrid
                 'industry_options.name as industry',
                 'industry_values.integer_value as industry_option_id',
                 DB::raw('(
-                    SELECT GROUP_CONCAT(ao.name ORDER BY ao.sort_order SEPARATOR ", ")
-                    FROM attribute_options ao
-                    WHERE service_values.text_value IS NOT NULL
-                      AND service_values.text_value != ""
-                      AND FIND_IN_SET(ao.id, service_values.text_value)
+                    SELECT GROUP_CONCAT(services.name ORDER BY services.sort_order SEPARATOR ", ")
+                    FROM lead_service
+                    INNER JOIN services ON services.id = lead_service.service_id
+                    WHERE lead_service.lead_id = leads.id
                 ) as service_offered'),
-                'service_values.text_value as service_option_ids',
+                DB::raw('(
+                    SELECT GROUP_CONCAT(lead_service.service_id ORDER BY services.sort_order SEPARATOR ",")
+                    FROM lead_service
+                    INNER JOIN services ON services.id = lead_service.service_id
+                    WHERE lead_service.lead_id = leads.id
+                ) as service_option_ids'),
                 DB::raw('(
                     SELECT GROUP_CONCAT(products.name SEPARATOR ", ")
                     FROM lead_products
@@ -136,16 +135,6 @@ class LeadDataGrid extends DataGrid
                 }
             })
             ->leftJoin('attribute_options as industry_options', 'industry_options.id', '=', 'industry_values.integer_value')
-            ->leftJoin('attribute_values as service_values', function ($join) use ($serviceAttributeId) {
-                $join->on('service_values.entity_id', '=', 'leads.id')
-                    ->where('service_values.entity_type', '=', 'leads');
-
-                if ($serviceAttributeId) {
-                    $join->where('service_values.attribute_id', '=', $serviceAttributeId);
-                } else {
-                    $join->whereRaw('1 = 0');
-                }
-            })
             ->groupBy('leads.id')
             ->whereNull('leads.deleted_at')
             ->where('leads.lead_pipeline_id', $this->pipeline->id);
@@ -199,7 +188,7 @@ class LeadDataGrid extends DataGrid
         $this->addFilter('lead_type_name', 'lead_types.id');
         $this->addFilter('person_name', 'persons.name');
         $this->addFilter('industry', 'industry_options.name');
-        $this->addFilter('service_offered', 'service_values.text_value');
+        $this->addFilter('service_offered', 'leads.id');
         $this->addFilter('type', 'lead_pipeline_stages.code');
         $this->addFilter('stage', 'lead_pipeline_stages.id');
         $this->addFilter('tag_name', 'tags.name');

@@ -8,9 +8,11 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Webkul\Admin\DataGrids\Settings\LeadAttributeOptionDataGrid;
+use Webkul\Admin\DataGrids\Settings\ServiceDataGrid;
 use Webkul\Admin\Http\Controllers\Controller;
 use Webkul\Attribute\Repositories\AttributeOptionRepository;
 use Webkul\Attribute\Repositories\AttributeRepository;
+use Webkul\Lead\Repositories\ServiceRepository;
 
 class LeadAttributeOptionController extends Controller
 {
@@ -23,18 +25,21 @@ class LeadAttributeOptionController extends Controller
             'permission'     => 'settings.lead.industries',
             'lang'           => 'admin::app.settings.industries',
             'breadcrumb'     => 'settings.industries',
+            'storage'        => 'attribute_options',
         ],
         'services_offered' => [
-            'attribute_code' => 'service_offered',
+            'attribute_code' => null,
             'permission'     => 'settings.lead.services_offered',
             'lang'           => 'admin::app.settings.services_offered',
             'breadcrumb'     => 'settings.services_offered',
+            'storage'        => 'services',
         ],
     ];
 
     public function __construct(
         protected AttributeRepository $attributeRepository,
         protected AttributeOptionRepository $attributeOptionRepository,
+        protected ServiceRepository $serviceRepository,
     ) {}
 
     /**
@@ -43,9 +48,17 @@ class LeadAttributeOptionController extends Controller
     public function index(): View|JsonResponse
     {
         $resource = $this->resourceConfig();
-        $attribute = $this->resolveAttribute($resource['attribute_code']);
 
         if (request()->ajax()) {
+            if ($this->usesServicesTable()) {
+                return datagrid(ServiceDataGrid::class)
+                    ->setPermissionPrefix($resource['permission'])
+                    ->setRoutePrefix($this->routePrefix())
+                    ->process();
+            }
+
+            $attribute = $this->resolveAttribute($resource['attribute_code']);
+
             return datagrid(LeadAttributeOptionDataGrid::class)
                 ->setAttributeId((int) $attribute->id)
                 ->setPermissionPrefix($resource['permission'])
@@ -59,7 +72,9 @@ class LeadAttributeOptionController extends Controller
             'permission'          => $resource['permission'],
             'lang'                => $resource['lang'],
             'breadcrumb'          => $resource['breadcrumb'],
-            'attribute'           => $attribute,
+            'attribute'           => $this->usesServicesTable()
+                ? null
+                : $this->resolveAttribute($resource['attribute_code']),
             'updateRouteTemplate' => str_replace(
                 '999999999',
                 '__ID__',
@@ -74,6 +89,11 @@ class LeadAttributeOptionController extends Controller
     public function store(): JsonResponse
     {
         $resource = $this->resourceConfig();
+
+        if ($this->usesServicesTable()) {
+            return $this->storeService($resource);
+        }
+
         $attribute = $this->resolveAttribute($resource['attribute_code']);
 
         $this->validate(request(), [
@@ -96,7 +116,7 @@ class LeadAttributeOptionController extends Controller
                 ->max('sort_order') + 1);
 
         $option = DB::transaction(function () use ($attribute, $sortOrder) {
-            $this->swapSortOrderOccupant((int) $attribute->id, $sortOrder);
+            $this->swapAttributeOptionSortOrder((int) $attribute->id, $sortOrder);
 
             return $this->attributeOptionRepository->create([
                 'attribute_id' => $attribute->id,
@@ -118,7 +138,13 @@ class LeadAttributeOptionController extends Controller
      */
     public function edit(int $id): JsonResponse
     {
-        $option = $this->findOptionOrFail($id);
+        if ($this->usesServicesTable()) {
+            return new JsonResponse([
+                'data' => $this->serviceRepository->findOrFail($id),
+            ]);
+        }
+
+        $option = $this->findAttributeOptionOrFail($id);
 
         return new JsonResponse([
             'data' => $option,
@@ -131,7 +157,12 @@ class LeadAttributeOptionController extends Controller
     public function update(int $id): JsonResponse
     {
         $resource = $this->resourceConfig();
-        $option = $this->findOptionOrFail($id);
+
+        if ($this->usesServicesTable()) {
+            return $this->updateService($id, $resource);
+        }
+
+        $option = $this->findAttributeOptionOrFail($id);
 
         $this->validate(request(), [
             'name' => [
@@ -154,7 +185,7 @@ class LeadAttributeOptionController extends Controller
 
         DB::transaction(function () use ($option, $id, $newSortOrder, $oldSortOrder) {
             if ($newSortOrder !== $oldSortOrder) {
-                $this->swapSortOrderOccupant(
+                $this->swapAttributeOptionSortOrder(
                     (int) $option->attribute_id,
                     $newSortOrder,
                     $id,
@@ -184,7 +215,26 @@ class LeadAttributeOptionController extends Controller
     public function destroy(int $id): JsonResponse
     {
         $resource = $this->resourceConfig();
-        $this->findOptionOrFail($id);
+
+        if ($this->usesServicesTable()) {
+            try {
+                Event::dispatch('settings.'.$this->resourceKey().'.delete.before', $id);
+
+                $this->serviceRepository->delete($id);
+
+                Event::dispatch('settings.'.$this->resourceKey().'.delete.after', $id);
+
+                return new JsonResponse([
+                    'message' => trans($resource['lang'].'.index.delete-success'),
+                ]);
+            } catch (\Exception $exception) {
+                return new JsonResponse([
+                    'message' => trans($resource['lang'].'.index.delete-failed'),
+                ], 400);
+            }
+        }
+
+        $this->findAttributeOptionOrFail($id);
 
         try {
             Event::dispatch('settings.'.$this->resourceKey().'.delete.before', $id);
@@ -201,6 +251,87 @@ class LeadAttributeOptionController extends Controller
                 'message' => trans($resource['lang'].'.index.delete-failed'),
             ], 400);
         }
+    }
+
+    protected function storeService(array $resource): JsonResponse
+    {
+        $this->validate(request(), [
+            'name' => [
+                'required',
+                'max:255',
+                Rule::unique('services', 'name'),
+            ],
+            'sort_order' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        Event::dispatch('settings.'.$this->resourceKey().'.create.before');
+
+        $sortOrder = request()->filled('sort_order')
+            ? (int) request('sort_order')
+            : ((int) DB::table('services')->max('sort_order') + 1);
+
+        $service = DB::transaction(function () use ($sortOrder) {
+            $this->swapServiceSortOrder($sortOrder);
+
+            return $this->serviceRepository->create([
+                'name'       => request('name'),
+                'sort_order' => $sortOrder,
+            ]);
+        });
+
+        Event::dispatch('settings.'.$this->resourceKey().'.create.after', $service);
+
+        return new JsonResponse([
+            'data'    => $service,
+            'message' => trans($resource['lang'].'.index.create-success'),
+        ]);
+    }
+
+    protected function updateService(int $id, array $resource): JsonResponse
+    {
+        $service = $this->serviceRepository->findOrFail($id);
+
+        $this->validate(request(), [
+            'name' => [
+                'required',
+                'max:255',
+                Rule::unique('services', 'name')->ignore($service->id),
+            ],
+            'sort_order' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        Event::dispatch('settings.'.$this->resourceKey().'.update.before', $id);
+
+        $newSortOrder = request()->filled('sort_order')
+            ? (int) request('sort_order')
+            : (int) $service->sort_order;
+
+        $oldSortOrder = (int) $service->sort_order;
+
+        DB::transaction(function () use ($service, $id, $newSortOrder, $oldSortOrder) {
+            if ($newSortOrder !== $oldSortOrder) {
+                $this->swapServiceSortOrder($newSortOrder, $id, $oldSortOrder);
+            }
+
+            $this->serviceRepository->update([
+                'name'       => request('name'),
+                'sort_order' => $newSortOrder,
+            ], $id);
+        });
+
+        $service = $this->serviceRepository->find($id);
+
+        Event::dispatch('settings.'.$this->resourceKey().'.update.after', $service);
+
+        return new JsonResponse([
+            'data'    => $service,
+            'message' => trans($resource['lang'].'.index.update-success'),
+        ]);
+    }
+
+    protected function usesServicesTable(): bool
+    {
+        return ($this->resourceConfig()['storage'] ?? '') === 'services';
     }
 
     protected function resourceKey(): string
@@ -236,7 +367,7 @@ class LeadAttributeOptionController extends Controller
         return $attribute;
     }
 
-    protected function findOptionOrFail(int $id)
+    protected function findAttributeOptionOrFail(int $id)
     {
         $resource = $this->resourceConfig();
         $attribute = $this->resolveAttribute($resource['attribute_code']);
@@ -248,11 +379,7 @@ class LeadAttributeOptionController extends Controller
         return $option;
     }
 
-    /**
-     * If another option already owns the target sort order, move it to the
-     * previous order of the option being placed there (swap).
-     */
-    protected function swapSortOrderOccupant(
+    protected function swapAttributeOptionSortOrder(
         int $attributeId,
         int $targetSortOrder,
         ?int $ignoreOptionId = null,
@@ -281,6 +408,34 @@ class LeadAttributeOptionController extends Controller
         }
 
         DB::table('attribute_options')
+            ->where('id', $occupantId)
+            ->update(['sort_order' => $replacementSortOrder]);
+    }
+
+    protected function swapServiceSortOrder(
+        int $targetSortOrder,
+        ?int $ignoreServiceId = null,
+        ?int $fallbackSortOrder = null
+    ): void {
+        $query = DB::table('services')->where('sort_order', $targetSortOrder);
+
+        if ($ignoreServiceId) {
+            $query->where('id', '!=', $ignoreServiceId);
+        }
+
+        $occupantId = $query->value('id');
+
+        if (! $occupantId) {
+            return;
+        }
+
+        $replacementSortOrder = $fallbackSortOrder;
+
+        if ($replacementSortOrder === null) {
+            $replacementSortOrder = ((int) DB::table('services')->max('sort_order')) + 1;
+        }
+
+        DB::table('services')
             ->where('id', $occupantId)
             ->update(['sort_order' => $replacementSortOrder]);
     }

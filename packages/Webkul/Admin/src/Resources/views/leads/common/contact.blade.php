@@ -148,12 +148,20 @@
                 return {
                     is_searching: false,
 
-                    person: this.data ? this.data : {
-                        'name': '',
-                    },
+                    person: this.normalizePerson(this.data),
 
                     persons: [],
                 }
+            },
+
+            watch: {
+                data: {
+                    deep: true,
+                    immediate: false,
+                    handler(value) {
+                        this.person = this.normalizePerson(value);
+                    },
+                },
             },
 
             computed: {
@@ -175,8 +183,34 @@
             },
 
             methods: {
+                normalizePerson(value) {
+                    if (! value || typeof value !== 'object') {
+                        return { name: '' };
+                    }
+
+                    return {
+                        id: value.id ?? null,
+                        name: value.name ?? '',
+                        emails: value.emails?.length
+                            ? value.emails
+                            : [{'value': '', 'label': 'work'}],
+                        contact_numbers: value.contact_numbers?.length
+                            ? value.contact_numbers
+                            : [{'value': '', 'label': 'work'}],
+                        organization_id: value.organization_id ?? value.organization?.id ?? null,
+                        organization: value.organization
+                            ? {
+                                id: value.organization.id,
+                                name: value.organization.name,
+                            }
+                            : null,
+                        address: value.address ?? null,
+                        website: value.website ?? '',
+                    };
+                },
+
                 addPerson (person) {
-                    this.person = person;
+                    this.person = this.normalizePerson(person);
                 },
             }
         });

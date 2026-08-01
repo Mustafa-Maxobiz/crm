@@ -37,13 +37,17 @@
                     <x-admin::attributes.view
                         :custom-attributes="app('Webkul\Attribute\Repositories\AttributeRepository')->findWhere([
                             'entity_type' => 'leads',
-                            ['code', 'NOTIN', ['title', 'description', 'lead_pipeline_id', 'lead_pipeline_stage_id', 'source_sub_type']]
+                            ['code', 'NOTIN', ['title', 'description', 'lead_pipeline_id', 'lead_pipeline_stage_id', 'source_sub_type', 'service_offered']]
                         ])"
                         :entity="$lead"
                         :url="route('admin.leads.attributes.update', $lead->id)"
                         :allow-edit="true"
                         :locked-attribute-codes="$sdrLockedAttributeCodes"
                     />
+
+                    <div class="mt-3">
+                        @include('admin::leads.common.services', ['lead' => $lead])
+                    </div>
         
                     {!! view_render_event('admin.leads.view.attributes.form_controls.attributes.view.after', ['lead' => $lead]) !!}
                 </form>

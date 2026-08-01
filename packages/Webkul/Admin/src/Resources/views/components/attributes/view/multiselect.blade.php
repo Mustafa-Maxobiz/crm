@@ -4,17 +4,6 @@
         : $attribute->options()->orderBy('sort_order')->get(['id', 'name']);
 
     $selectedOption = old($attribute->code) ?: $value;
-
-    $canAddNew = $attribute->code === 'service_offered' && (
-        bouncer()->hasPermission('settings.lead.services_offered.create')
-        || bouncer()->hasPermission('leads.create')
-        || bouncer()->hasPermission('leads.edit')
-        || strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr'
-    );
-
-    $storeUrl = $attribute->code === 'service_offered'
-        ? route('admin.leads.services_offered.store')
-        : null;
 @endphp
 
 <x-admin::form.control-group.controls.inline.multiselect
@@ -28,6 +17,4 @@
     :placeholder="$attribute->name"
     :url="$url"
     :allow-edit="$allowEdit"
-    :can-add-new="$canAddNew"
-    :store-url="$storeUrl"
 />

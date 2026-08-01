@@ -114,7 +114,7 @@
                             <!-- Lead Details Title and Description -->
                             <x-admin::attributes
                                 :custom-attributes="app('Webkul\Attribute\Repositories\AttributeRepository')->findWhere([
-                                    ['code', 'NOTIN', ['lead_value', 'pricing_type', 'lead_type_id', 'lead_source_id', 'lead_sub_source_id', 'source_sub_type', 'source_link', 'expected_close_date', 'next_followup_date', 'user_id', 'lead_pipeline_id', 'lead_pipeline_stage_id']],
+                                    ['code', 'NOTIN', ['lead_value', 'pricing_type', 'lead_type_id', 'lead_source_id', 'lead_sub_source_id', 'source_sub_type', 'source_link', 'expected_close_date', 'next_followup_date', 'user_id', 'lead_pipeline_id', 'lead_pipeline_stage_id', 'service_offered']],
                                     'entity_type' => 'leads',
                                     'quick_add'   => 1
                                 ])"
@@ -127,6 +127,8 @@
                                 :entity="$lead"
                                 :disabled-attribute-codes="$sdrLockedAttributeCodes"
                             />
+
+                            @include('admin::leads.common.services', ['lead' => $lead])
 
                             <!-- Lead Details Other input fields -->
                             <div class="flex gap-4 max-sm:flex-wrap">
