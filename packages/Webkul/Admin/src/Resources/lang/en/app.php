@@ -51,6 +51,7 @@ return [
         'data-transfer'    => 'Data Transfer',
         'imports'          => 'Imports',
         'import'           => 'Import',
+        'disqualified-leads'=> 'Disqualified Leads',
         'event'            => 'Event',
         'campaigns'        => 'Campaigns',
     ],

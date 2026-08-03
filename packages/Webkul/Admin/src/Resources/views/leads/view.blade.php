@@ -106,7 +106,7 @@
                             @lang('admin::app.leads.disqualification.' . str_replace('_', '-', $lead->lead_disqualification_reason))
                         </span>
 
-                        @if (app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin())
+                        @if (bouncer()->hasPermission('leads.disqualified'))
                             @if ($lead->lead_disqualification_comment)
                                 <div class="w-full rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
                                     <span class="block text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">

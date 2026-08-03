@@ -35,7 +35,7 @@
 
             <!-- Create button for Leads -->
             <div class="flex items-center gap-x-2.5">
-                @if (app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin())
+                @if (bouncer()->hasPermission('leads.import'))
                     <x-admin::modal>
                         <x-slot:toggle>
                             <button
@@ -135,7 +135,9 @@
                             </button>
                         </x-slot>
                     </x-admin::modal>
+                @endif
 
+                @if (bouncer()->hasPermission('leads.disqualified'))
                     <a
                         href="{{ route('admin.leads.disqualified') }}"
                         class="secondary-button"

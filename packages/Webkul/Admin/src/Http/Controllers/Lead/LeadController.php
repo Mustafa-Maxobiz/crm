@@ -104,12 +104,10 @@ class LeadController extends Controller
     }
 
     /**
-     * Download admin lead import template.
+     * Download lead import template.
      */
     public function importTemplate(): StreamedResponse
     {
-        abort_unless($this->sourceAccessService->isAdmin(), 403);
-
         $headers = [
             'companies*',
             'lead_value*',
@@ -165,12 +163,10 @@ class LeadController extends Controller
     }
 
     /**
-     * Import leads from CSV/XLSX for admins.
+     * Import leads from CSV/XLSX.
      */
     public function import(): RedirectResponse|JsonResponse
     {
-        abort_unless($this->sourceAccessService->isAdmin(), 403);
-
         $data = request()->validate([
             'file' => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:10240'],
         ]);
@@ -247,8 +243,6 @@ class LeadController extends Controller
      */
     public function importStart(): JsonResponse
     {
-        abort_unless($this->sourceAccessService->isAdmin(), 403);
-
         $data = request()->validate([
             'file' => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:10240'],
         ]);
@@ -325,8 +319,6 @@ class LeadController extends Controller
      */
     public function importProcess(): JsonResponse
     {
-        abort_unless($this->sourceAccessService->isAdmin(), 403);
-
         $data = request()->validate([
             'token'  => ['required', 'string'],
             'offset' => ['required', 'integer', 'min:0'],
@@ -394,14 +386,10 @@ class LeadController extends Controller
     }
 
     /**
-     * Display admin-only DNC and incorrect-info leads.
+     * Display DNC and incorrect-info leads.
      */
     public function disqualified(): View|RedirectResponse
     {
-        if (! $this->sourceAccessService->isAdmin()) {
-            return redirect()->route('admin.leads.index');
-        }
-
         $baseQuery = Lead::query()
             ->with(['person.organization', 'user', 'source', 'subSource'])
             ->whereNotNull('lead_disqualification_reason')
@@ -1335,14 +1323,10 @@ class LeadController extends Controller
     }
 
     /**
-     * Restore a disqualified lead to SDR visibility.
+     * Restore a disqualified lead.
      */
     public function restoreDisqualified(int $id): RedirectResponse
     {
-        if (! $this->sourceAccessService->isAdmin()) {
-            return redirect()->route('admin.leads.index');
-        }
-
         Event::dispatch('lead.update.before', $id);
 
         $lead = $this->leadRepository->update([
@@ -1376,14 +1360,10 @@ class LeadController extends Controller
     }
 
     /**
-     * Reassign an admin-review lead back to SDR visibility.
+     * Reassign a review lead back to an owner.
      */
     protected function reassignDisqualifiedLead(int $id, string $expectedReason): RedirectResponse
     {
-        if (! $this->sourceAccessService->isAdmin()) {
-            return redirect()->route('admin.leads.index');
-        }
-
         $data = request()->validate([
             'user_id' => ['required', 'exists:users,id'],
         ]);

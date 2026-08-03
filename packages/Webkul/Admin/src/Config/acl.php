@@ -42,9 +42,19 @@ return [
         'sort'  => 4,
     ], [
         'key'   => 'leads.import',
-        'name'  => 'Import',
+        'name'  => 'admin::app.acl.import',
         'route' => ['admin.leads.import', 'admin.leads.import.start', 'admin.leads.import.process', 'admin.leads.import.template'],
         'sort'  => 5,
+    ], [
+        'key'   => 'leads.disqualified',
+        'name'  => 'admin::app.acl.disqualified-leads',
+        'route' => [
+            'admin.leads.disqualified',
+            'admin.leads.restore_disqualified',
+            'admin.leads.incorrect_info.reassign',
+            'admin.leads.ended.reassign',
+        ],
+        'sort'  => 6,
     ], [
         'key'   => 'meta_leads',
         'name'  => 'admin::app.acl.meta-leads',
