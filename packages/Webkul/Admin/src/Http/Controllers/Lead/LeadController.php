@@ -244,7 +244,7 @@ class LeadController extends Controller
 
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
 
-                $this->syncSourceTagForLead($lead);
+                $this->syncColdLeadTagForImport($lead);
 
                 Event::dispatch('lead.create.after', $lead);
 
@@ -406,7 +406,7 @@ class LeadController extends Controller
 
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
 
-                $this->syncSourceTagForLead($lead);
+                $this->syncColdLeadTagForImport($lead);
 
                 Event::dispatch('lead.create.after', $lead);
 
@@ -488,7 +488,7 @@ class LeadController extends Controller
 
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
 
-                $this->syncSourceTagForLead($lead);
+                $this->syncColdLeadTagForImport($lead);
 
                 Event::dispatch('lead.create.after', $lead);
 
@@ -1124,6 +1124,25 @@ class LeadController extends Controller
         }
 
         $lead->tags()->syncWithoutDetaching([$tag->id]);
+    }
+
+    /**
+     * Bulk imports always get the Cold Lead tag, for any selected source.
+     */
+    protected function syncColdLeadTagForImport($lead): void
+    {
+        $coldLeadTag = $this->findSourceTag('Cold Lead');
+        $warmLeadTag = $this->findSourceTag('Warm Lead');
+
+        if (! $coldLeadTag) {
+            return;
+        }
+
+        if ($warmLeadTag) {
+            $lead->tags()->detach($warmLeadTag->id);
+        }
+
+        $lead->tags()->syncWithoutDetaching([$coldLeadTag->id]);
     }
 
     protected function findSourceTag(string $name)

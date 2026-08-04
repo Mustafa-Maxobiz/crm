@@ -17,8 +17,24 @@
         id="v-datagrid-table-template"
     >
         <div class="w-full">
+            <!-- Top horizontal scrollbar (synced with table) -->
+            <div
+                ref="topScroll"
+                class="mb-1 overflow-x-auto overflow-y-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+                @scroll="syncScrollFromTop"
+            >
+                <div
+                    class="h-3"
+                    :style="{ width: `${horizontalScrollWidth}px` }"
+                ></div>
+            </div>
+
             <!-- Table view for larger screens, Card view for mobile -->
-            <div class="table-responsive box-shadow rounded-t-0 grid w-full overflow-x-auto border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+            <div
+                ref="tableScroll"
+                class="table-responsive box-shadow rounded-t-0 grid w-full overflow-x-auto border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+                @scroll="syncScrollFromTable"
+            >
                 <!-- Table Header - Always visible on all screens -->
                 <slot
                     name="header"
@@ -291,6 +307,53 @@
             template: '#v-datagrid-table-template',
 
             props: ['isLoading', 'available', 'applied'],
+
+            data() {
+                return {
+                    horizontalScrollWidth: 0,
+                    isSyncingScroll: false,
+                    resizeObserver: null,
+                };
+            },
+
+            watch: {
+                isLoading() {
+                    this.$nextTick(() => this.updateHorizontalScrollWidth());
+                },
+
+                available: {
+                    deep: true,
+                    handler() {
+                        this.$nextTick(() => this.updateHorizontalScrollWidth());
+                    },
+                },
+            },
+
+            mounted() {
+                this.$nextTick(() => this.updateHorizontalScrollWidth());
+
+                if (window.ResizeObserver && this.$refs.tableScroll) {
+                    this.resizeObserver = new ResizeObserver(() => {
+                        this.updateHorizontalScrollWidth();
+                    });
+
+                    this.resizeObserver.observe(this.$refs.tableScroll);
+
+                    if (this.$refs.tableScroll.firstElementChild) {
+                        this.resizeObserver.observe(this.$refs.tableScroll.firstElementChild);
+                    }
+                }
+
+                window.addEventListener('resize', this.updateHorizontalScrollWidth);
+            },
+
+            beforeUnmount() {
+                window.removeEventListener('resize', this.updateHorizontalScrollWidth);
+
+                if (this.resizeObserver) {
+                    this.resizeObserver.disconnect();
+                }
+            },
             
             computed: {
                 gridsCount() {
@@ -346,6 +409,39 @@
             },
 
             methods: {
+                updateHorizontalScrollWidth() {
+                    const tableScroll = this.$refs.tableScroll;
+
+                    if (! tableScroll) {
+                        return;
+                    }
+
+                    this.horizontalScrollWidth = Math.max(
+                        tableScroll.scrollWidth,
+                        tableScroll.clientWidth
+                    );
+                },
+
+                syncScrollFromTop() {
+                    if (this.isSyncingScroll || ! this.$refs.tableScroll || ! this.$refs.topScroll) {
+                        return;
+                    }
+
+                    this.isSyncingScroll = true;
+                    this.$refs.tableScroll.scrollLeft = this.$refs.topScroll.scrollLeft;
+                    this.isSyncingScroll = false;
+                },
+
+                syncScrollFromTable() {
+                    if (this.isSyncingScroll || ! this.$refs.tableScroll || ! this.$refs.topScroll) {
+                        return;
+                    }
+
+                    this.isSyncingScroll = true;
+                    this.$refs.topScroll.scrollLeft = this.$refs.tableScroll.scrollLeft;
+                    this.isSyncingScroll = false;
+                },
+
                 /**
                  * Select all records in the datagrid.
                  *

@@ -38,7 +38,7 @@ abstract class DataGrid
      *
      * @var int
      */
-    protected $itemsPerPage = 10;
+    protected $itemsPerPage = 20;
 
     /**
      * Per page options.

@@ -73,7 +73,7 @@
 
                                     <p class="mt-1">
                                         Required columns are marked with * in the template. Blank optional columns are imported as null. Blank schedule_followup uses auto schedule.
-                                        Select a <strong>Lead Source</strong> below — it will be applied to every imported lead. Cold Call gets the Cold Lead tag; other sources get Warm Lead.
+                                        Select a <strong>Lead Source</strong> below — it will be applied to every imported lead. All bulk-imported leads get the <strong>Cold Lead</strong> tag.
                                     </p>
 
                                     <p class="mt-2 text-xs font-semibold text-red-600 dark:text-red-400">
@@ -184,8 +184,24 @@
                                         </div>
                                     </div>
 
-                                    <div class="max-h-80 overflow-auto rounded-md border border-gray-200 dark:border-gray-800">
-                                        <table class="min-w-full text-left text-xs">
+                                    <div
+                                        id="lead-import-failed-top-scroll"
+                                        class="mb-1 overflow-x-auto overflow-y-hidden rounded-md border border-gray-200 dark:border-gray-800"
+                                    >
+                                        <div
+                                            id="lead-import-failed-top-scroll-spacer"
+                                            class="h-3"
+                                        ></div>
+                                    </div>
+
+                                    <div
+                                        id="lead-import-failed-table-scroll"
+                                        class="max-h-80 overflow-auto rounded-md border border-gray-200 dark:border-gray-800"
+                                    >
+                                        <table
+                                            id="lead-import-failed-table"
+                                            class="min-w-full text-left text-xs"
+                                        >
                                             <thead class="sticky top-0 bg-gray-50 text-gray-600 dark:bg-gray-950 dark:text-gray-300">
                                                 <tr>
                                                     <th class="whitespace-nowrap px-2 py-2">Action</th>
@@ -336,6 +352,10 @@
                 failed: document.getElementById('lead-import-failed'),
                 failedBody: document.getElementById('lead-import-failed-body'),
                 failedSummary: document.getElementById('lead-import-failed-summary'),
+                failedTopScroll: document.getElementById('lead-import-failed-top-scroll'),
+                failedTopSpacer: document.getElementById('lead-import-failed-top-scroll-spacer'),
+                failedTableScroll: document.getElementById('lead-import-failed-table-scroll'),
+                failedTable: document.getElementById('lead-import-failed-table'),
             });
 
             const setProgress = (elements, percent, status, isError = false) => {
@@ -403,6 +423,49 @@
                 flash('success', 'Failed rows removed from correction list.');
             };
 
+            const syncFailedTableScrollbars = () => {
+                const elements = importElements();
+                const topScroll = elements.failedTopScroll;
+                const topSpacer = elements.failedTopSpacer;
+                const tableScroll = elements.failedTableScroll;
+                const table = elements.failedTable;
+
+                if (! topScroll || ! topSpacer || ! tableScroll || ! table) {
+                    return;
+                }
+
+                topSpacer.style.width = `${table.scrollWidth}px`;
+
+                if (topScroll.dataset.scrollBound === '1') {
+                    return;
+                }
+
+                topScroll.dataset.scrollBound = '1';
+                tableScroll.dataset.scrollBound = '1';
+
+                let syncing = false;
+
+                topScroll.addEventListener('scroll', () => {
+                    if (syncing) {
+                        return;
+                    }
+
+                    syncing = true;
+                    tableScroll.scrollLeft = topScroll.scrollLeft;
+                    syncing = false;
+                });
+
+                tableScroll.addEventListener('scroll', () => {
+                    if (syncing) {
+                        return;
+                    }
+
+                    syncing = true;
+                    topScroll.scrollLeft = tableScroll.scrollLeft;
+                    syncing = false;
+                });
+            };
+
             const renderFailedRows = (rows, sourceId) => {
                 const elements = importElements();
 
@@ -450,6 +513,10 @@
                         </tr>
                     `;
                 }).join('');
+
+                requestAnimationFrame(() => {
+                    syncFailedTableScrollbars();
+                });
             };
 
             const collectFailedRowsFromTable = () => {
@@ -605,27 +672,37 @@
                 }
             }, true);
 
-            document.getElementById('lead-import-failed-body')?.addEventListener('click', (event) => {
-                const button = event.target.closest('[data-remove-index]');
+            document.addEventListener('click', async (event) => {
+                const removeButton = event.target.closest('#lead-import-failed [data-remove-index]');
 
-                if (! button) {
+                if (removeButton) {
+                    event.preventDefault();
+                    event.stopPropagation();
+
+                    const index = Number(removeButton.getAttribute('data-remove-index'));
+
+                    if (! Number.isNaN(index)) {
+                        removeFailedRow(index);
+                    }
+
                     return;
                 }
 
-                const index = Number(button.getAttribute('data-remove-index'));
+                if (event.target.closest('#lead-import-remove-all')) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    removeAllFailedRows();
 
-                if (Number.isNaN(index)) {
                     return;
                 }
 
-                removeFailedRow(index);
-            });
+                if (! event.target.closest('#lead-import-retry')) {
+                    return;
+                }
 
-            document.getElementById('lead-import-remove-all')?.addEventListener('click', () => {
-                removeAllFailedRows();
-            });
+                event.preventDefault();
+                event.stopPropagation();
 
-            document.getElementById('lead-import-retry')?.addEventListener('click', async () => {
                 const elements = importElements();
                 const sourceId = importLeadSourceId || Number(document.getElementById('lead-import-source')?.value || 0);
 
@@ -683,8 +760,12 @@
                     setProgress(elements, 100, 'Retry failed.', true);
                     flash('error', message);
                 } finally {
-                    elements.retry.disabled = false;
-                    elements.retry.classList.remove('opacity-70', 'cursor-not-allowed');
+                    const retryButton = document.getElementById('lead-import-retry');
+
+                    if (retryButton) {
+                        retryButton.disabled = false;
+                        retryButton.classList.remove('opacity-70', 'cursor-not-allowed');
+                    }
                 }
             });
         </script>
