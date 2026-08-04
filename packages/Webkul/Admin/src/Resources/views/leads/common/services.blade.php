@@ -13,7 +13,7 @@
     $canAddService = bouncer()->hasPermission('settings.lead.services_offered.create')
         || bouncer()->hasPermission('leads.create')
         || bouncer()->hasPermission('leads.edit')
-        || strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr';
+        || app(\Webkul\Lead\Services\SourceAccessService::class)->isSdrUser();
 @endphp
 
 <x-admin::form.control-group class="mb-2.5 w-full">

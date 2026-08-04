@@ -46,8 +46,14 @@ class DashboardController extends Controller
     public function index()
     {
         if ($this->isSdrUser()) {
+            $roleName = trim((string) auth()->guard('user')->user()?->role?->name);
+            $dashboardTitle = strcasecmp($roleName, 'lge') === 0
+                ? 'LGE Dashboard'
+                : 'SDR Dashboard';
+
             return view('admin::dashboard.sdr.index')->with([
                 'stateTimezones' => $this->usStateTimezoneService->allStates(),
+                'dashboardTitle' => $dashboardTitle,
             ]);
         }
 
@@ -343,7 +349,7 @@ class DashboardController extends Controller
 
     protected function isSdrUser(): bool
     {
-        return strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr';
+        return app(SourceAccessService::class)->isSdrUser();
     }
 
     protected function applyVisibleLeadJoinScope($query): void

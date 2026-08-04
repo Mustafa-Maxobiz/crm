@@ -211,7 +211,15 @@ class SourceAccessService
     {
         $user = $this->resolveUser($user);
 
-        return strtolower((string) $user?->role?->name) === 'sdr';
+        return $this->isSdrStyleRoleName($user?->role?->name);
+    }
+
+    /**
+     * SDR and LGE share the same calling dashboard / New-stage pool behavior.
+     */
+    public function isSdrStyleRoleName(?string $roleName): bool
+    {
+        return in_array(strtolower(trim((string) $roleName)), ['sdr', 'lge'], true);
     }
 
     /**

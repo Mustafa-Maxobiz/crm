@@ -245,9 +245,9 @@ class LeadForm extends FormRequest
             $organizationName = request('organization_name')
                 ?: request('person.organization_name')
                 ?: request()->input('person.organization_name');
-            $isSdr = strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr';
+            $isSdr = $this->sourceAccessService->isSdrUser();
 
-            // New company by name is always allowed; SDR can reassign company on leads they edit.
+            // New company by name is always allowed; SDR/LGE can reassign company on leads they edit.
             if (
                 $organizationId
                 && ! $organizationName

@@ -923,7 +923,7 @@ class LeadController extends Controller
 
     protected function isSdrUser(): bool
     {
-        return strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr';
+        return $this->sourceAccessService->isSdrUser();
     }
 
     /**

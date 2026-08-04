@@ -73,7 +73,7 @@
         ],
     ];
 
-    $isSdrUser = strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr';
+    $isSdrUser = app(\Webkul\Lead\Services\SourceAccessService::class)->isSdrUser();
 
     $canAddServiceOffered = bouncer()->hasPermission('settings.lead.services_offered.create')
         || bouncer()->hasPermission('leads.create')
@@ -444,7 +444,7 @@
                                     :key="'contact-' + editLeadId + '-' + (editPerson.id || 'new')"
                                     :data="editPerson"
                                     :can-edit-company='@json(
-                                        strtolower((string) auth()->guard("user")->user()?->role?->name) === "sdr"
+                                        app(\Webkul\Lead\Services\SourceAccessService::class)->isSdrUser()
                                             || bouncer()->hasPermission("contacts.organizations.edit")
                                             || bouncer()->hasPermission("contacts.organizations.create")
                                     )'

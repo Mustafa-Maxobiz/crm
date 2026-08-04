@@ -1,7 +1,7 @@
 {!! view_render_event('admin.leads.create.contact_person.form_controls.before') !!}
 
 @php
-    $canEditLeadCompany = strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr'
+    $canEditLeadCompany = app(\Webkul\Lead\Services\SourceAccessService::class)->isSdrUser()
         || bouncer()->hasPermission('contacts.organizations.edit')
         || bouncer()->hasPermission('contacts.organizations.create');
 @endphp

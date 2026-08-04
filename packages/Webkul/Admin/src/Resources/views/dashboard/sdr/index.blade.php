@@ -1,6 +1,6 @@
 <x-admin::layouts>
     <x-slot:title>
-        SDR Dashboard
+        {{ $dashboardTitle ?? 'SDR Dashboard' }}
     </x-slot>
 
     {!! view_render_event('admin.dashboard.sdr.index.header.before') !!}
@@ -8,7 +8,7 @@
     <div class="mb-5 flex items-center justify-between gap-4 max-sm:flex-wrap">
         <div class="grid gap-1.5">
             <p class="text-2xl font-semibold dark:text-white">
-                SDR Dashboard
+                {{ $dashboardTitle ?? 'SDR Dashboard' }}
             </p>
         </div>
     </div>
