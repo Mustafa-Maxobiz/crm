@@ -47,13 +47,16 @@ class DashboardController extends Controller
     {
         if ($this->isSdrUser()) {
             $roleName = trim((string) auth()->guard('user')->user()?->role?->name);
-            $dashboardTitle = strcasecmp($roleName, 'lge') === 0
-                ? 'LGE Dashboard'
-                : 'SDR Dashboard';
+            $isLgeUser = strcasecmp($roleName, 'lge') === 0;
+            $dashboardTitle = $isLgeUser ? 'LGE Dashboard' : 'SDR Dashboard';
+            $showUsFeatures = ! $isLgeUser;
 
             return view('admin::dashboard.sdr.index')->with([
-                'stateTimezones' => $this->usStateTimezoneService->allStates(),
+                'stateTimezones' => $showUsFeatures
+                    ? $this->usStateTimezoneService->allStates()
+                    : [],
                 'dashboardTitle' => $dashboardTitle,
+                'showUsFeatures' => $showUsFeatures,
             ]);
         }
 
@@ -174,6 +177,7 @@ class DashboardController extends Controller
         $todayStart = Carbon::now()->startOfDay();
         $todayEnd = Carbon::now()->endOfDay();
         $sourceAccessService = app(SourceAccessService::class);
+        $showUsFeatures = ! $this->isLgeUser();
 
         $meetingsBase = DB::table('activities')
             ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
@@ -214,43 +218,22 @@ class DashboardController extends Controller
             ->get()
             ->unique('id')
             ->values()
-            ->map(function ($activity) {
-                $usTimezone = $activity->person_timezone
-                    ?: $this->usStateTimezoneService->timezoneForState($activity->person_state);
-                $dual = $this->usStateTimezoneService->formatDualTime(
-                    $activity->schedule_from,
-                    $usTimezone
-                );
-                $priority = $this->usStateTimezoneService->priorityWindowSortMeta(
-                    $activity->schedule_from,
-                    $usTimezone
-                );
-                $addressLabel = $this->formatPersonAddressLabel([
-                    'city'    => $activity->person_city,
-                    'state'   => $activity->person_state,
-                    'country' => $activity->person_country,
-                ]);
-
-                return [
-                    'id'                 => 'meeting-'.$activity->id,
-                    'type'               => 'Meeting',
-                    'source'             => $activity->source_name,
-                    'source_group'       => $this->sourceGroup($activity->source_name),
-                    'title'              => $activity->title ?: 'Meeting',
-                    'person'             => $activity->person_name,
-                    'address'            => $addressLabel,
-                    'meta'               => $addressLabel
-                        ?: ($activity->location ?: 'Scheduled meeting'),
-                    'time'               => $dual['label'],
-                    'time_local'         => $dual['local'],
-                    'time_us'            => $dual['us'],
-                    'in_priority_window' => $priority['in_priority_window'],
-                    'priority_rank'      => $priority['priority_rank'],
-                    'us_sort_at'         => $priority['us_sort_at'],
-                    'sort_at'            => Carbon::parse($activity->schedule_from)->timestamp,
-                    'url'                => route('admin.activities.edit', $activity->id),
-                    'lead_url'           => $activity->lead_id ? route('admin.leads.view', $activity->lead_id) : null,
-                ];
+            ->map(function ($activity) use ($showUsFeatures) {
+                return $this->mapDashboardCalendarItem([
+                    'id'         => 'meeting-'.$activity->id,
+                    'type'       => 'Meeting',
+                    'source'     => $activity->source_name,
+                    'title'      => $activity->title ?: 'Meeting',
+                    'person'     => $activity->person_name,
+                    'city'       => $activity->person_city,
+                    'state'      => $activity->person_state,
+                    'country'    => $activity->person_country,
+                    'timezone'   => $activity->person_timezone,
+                    'fallback_meta' => $activity->location ?: 'Scheduled meeting',
+                    'at'         => $activity->schedule_from,
+                    'url'        => route('admin.activities.edit', $activity->id),
+                    'lead_url'   => $activity->lead_id ? route('admin.leads.view', $activity->lead_id) : null,
+                ], $showUsFeatures);
             });
 
         $followupsBase = DB::table('leads')
@@ -281,44 +264,37 @@ class DashboardController extends Controller
             )
             ->orderBy('leads.next_followup_date')
             ->get()
-            ->map(function ($lead) {
-                $usTimezone = $lead->person_timezone
-                    ?: $this->usStateTimezoneService->timezoneForState($lead->person_state);
-                $dual = $this->usStateTimezoneService->formatDualTime(
-                    $lead->next_followup_date,
-                    $usTimezone
-                );
-                $priority = $this->usStateTimezoneService->priorityWindowSortMeta(
-                    $lead->next_followup_date,
-                    $usTimezone
-                );
-                $addressLabel = $this->formatPersonAddressLabel([
-                    'city'    => $lead->person_city,
-                    'state'   => $lead->person_state,
-                    'country' => $lead->person_country,
-                ]);
-
-                return [
-                    'id'                 => 'followup-'.$lead->id,
-                    'type'               => 'Follow-up',
-                    'source'             => $lead->source_name,
-                    'source_group'       => $this->sourceGroup($lead->source_name),
-                    'title'              => $lead->title,
-                    'person'             => $lead->person_name,
-                    'address'            => $addressLabel,
-                    'meta'               => $addressLabel
-                        ?: ($lead->organization_name ?: 'Lead follow-up'),
-                    'time'               => $dual['label'],
-                    'time_local'         => $dual['local'],
-                    'time_us'            => $dual['us'],
-                    'in_priority_window' => $priority['in_priority_window'],
-                    'priority_rank'      => $priority['priority_rank'],
-                    'us_sort_at'         => $priority['us_sort_at'],
-                    'sort_at'            => Carbon::parse($lead->next_followup_date)->timestamp,
-                    'url'                => route('admin.leads.view', $lead->id),
-                    'lead_url'           => route('admin.leads.view', $lead->id),
-                ];
+            ->map(function ($lead) use ($showUsFeatures) {
+                return $this->mapDashboardCalendarItem([
+                    'id'         => 'followup-'.$lead->id,
+                    'type'       => 'Follow-up',
+                    'source'     => $lead->source_name,
+                    'title'      => $lead->title,
+                    'person'     => $lead->person_name,
+                    'city'       => $lead->person_city,
+                    'state'      => $lead->person_state,
+                    'country'    => $lead->person_country,
+                    'timezone'   => $lead->person_timezone,
+                    'fallback_meta' => $lead->organization_name ?: 'Lead follow-up',
+                    'at'         => $lead->next_followup_date,
+                    'url'        => route('admin.leads.view', $lead->id),
+                    'lead_url'   => route('admin.leads.view', $lead->id),
+                ], $showUsFeatures);
             });
+
+        $calendar = $todayMeetings->merge($todayFollowups);
+
+        if ($showUsFeatures) {
+            $calendar = $calendar->sortBy([
+                ['priority_rank', 'asc'],
+                ['us_sort_at', 'asc'],
+                ['sort_at', 'asc'],
+            ]);
+        } else {
+            $calendar = $calendar->sortBy([
+                ['sort_at', 'asc'],
+            ]);
+        }
 
         return response()->json([
             'summary' => [
@@ -326,14 +302,8 @@ class DashboardController extends Controller
                 'followups' => (int) $followupsCount,
                 'total'     => (int) $meetingsCount + (int) $followupsCount,
             ],
-            'today_calendar' => $todayMeetings
-                ->merge($todayFollowups)
-                ->sortBy([
-                    ['priority_rank', 'asc'],
-                    ['us_sort_at', 'asc'],
-                    ['sort_at', 'asc'],
-                ])
-                ->values(),
+            'today_calendar' => $calendar->values(),
+            'show_us_features' => $showUsFeatures,
         ]);
     }
 
@@ -342,6 +312,10 @@ class DashboardController extends Controller
      */
     public function usTimezones(): View
     {
+        if ($this->isLgeUser()) {
+            abort(404);
+        }
+
         return view('admin::dashboard.sdr.timezones')->with([
             'stateTimezones' => $this->usStateTimezoneService->allStates(),
         ]);
@@ -350,6 +324,66 @@ class DashboardController extends Controller
     protected function isSdrUser(): bool
     {
         return app(SourceAccessService::class)->isSdrUser();
+    }
+
+    protected function isLgeUser(): bool
+    {
+        return strcasecmp(
+            trim((string) auth()->guard('user')->user()?->role?->name),
+            'lge'
+        ) === 0;
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>
+     */
+    protected function mapDashboardCalendarItem(array $item, bool $showUsFeatures): array
+    {
+        $at = Carbon::parse($item['at']);
+        $addressLabel = $this->formatPersonAddressLabel([
+            'city'    => $item['city'] ?? null,
+            'state'   => $item['state'] ?? null,
+            'country' => $item['country'] ?? null,
+        ]);
+
+        $payload = [
+            'id'                 => $item['id'],
+            'type'               => $item['type'],
+            'source'             => $item['source'],
+            'source_group'       => $this->sourceGroup($item['source'] ?? null),
+            'title'              => $item['title'],
+            'person'             => $item['person'],
+            'address'            => $addressLabel,
+            'meta'               => $addressLabel ?: ($item['fallback_meta'] ?? ''),
+            'sort_at'            => $at->timestamp,
+            'url'                => $item['url'],
+            'lead_url'           => $item['lead_url'] ?? null,
+            'in_priority_window' => false,
+            'priority_rank'      => 1,
+            'us_sort_at'         => $at->timestamp,
+            'time_us'            => null,
+        ];
+
+        if ($showUsFeatures) {
+            $usTimezone = ($item['timezone'] ?? null)
+                ?: $this->usStateTimezoneService->timezoneForState($item['state'] ?? null);
+            $dual = $this->usStateTimezoneService->formatDualTime($item['at'], $usTimezone);
+            $priority = $this->usStateTimezoneService->priorityWindowSortMeta($item['at'], $usTimezone);
+
+            $payload['time'] = $dual['label'];
+            $payload['time_local'] = $dual['local'];
+            $payload['time_us'] = $dual['us'];
+            $payload['in_priority_window'] = $priority['in_priority_window'];
+            $payload['priority_rank'] = $priority['priority_rank'];
+            $payload['us_sort_at'] = $priority['us_sort_at'];
+        } else {
+            $local = $at->timezone(config('app.timezone'))->format('g:i A');
+            $payload['time'] = $local;
+            $payload['time_local'] = $local;
+        }
+
+        return $payload;
     }
 
     protected function applyVisibleLeadJoinScope($query): void

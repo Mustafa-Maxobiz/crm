@@ -21,6 +21,7 @@
         <div class="sdr-dashboard-left-scroll min-w-0">
             <v-sdr-lead-sections
                 sections-url="{{ route('admin.dashboard.lead_sections') }}"
+                :show-us-features='@json($showUsFeatures ?? true)'
             >
                 <div class="light-shimmer-bg dark:shimmer h-[620px] rounded-lg"></div>
             </v-sdr-lead-sections>
@@ -55,7 +56,7 @@
                             </p>
 
                             <p class="text-sm text-gray-500 dark:text-gray-400">
-                                Daily, weekly, and monthly SDR call performance.
+                                Daily, weekly, and monthly {{ ($showUsFeatures ?? true) ? 'SDR' : 'LGE' }} call performance.
                             </p>
                         </div>
                     </div>
@@ -69,10 +70,12 @@
                 </div>
             </v-sdr-call-summary>
 
-            @include('admin::dashboard.sdr.us-state-times', [
-                'stateTimezones' => $stateTimezones,
-                'isPreview'      => true,
-            ])
+            @if ($showUsFeatures ?? true)
+                @include('admin::dashboard.sdr.us-state-times', [
+                    'stateTimezones' => $stateTimezones,
+                    'isPreview'      => true,
+                ])
+            @endif
         </div>
     </div>
 
@@ -295,7 +298,7 @@
                                     ></p>
 
                                     <p
-                                        v-if="section.key === 'today-calendar'"
+                                        v-if="section.key === 'today-calendar' && showUsFeatures"
                                         class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300"
                                     >
                                         <span class="sdr-priority-legend-swatch"></span>
@@ -339,8 +342,8 @@
                                 tabindex="0"
                                 class="min-w-0 cursor-pointer rounded-md border border-gray-200 p-3 transition-all hover:border-brandColor hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-950"
                                 :class="{
-                                    'sdr-row-card-warm': isWarm(item) && ! item.in_priority_window,
-                                    'sdr-row-card-priority': item.in_priority_window,
+                                    'sdr-row-card-warm': isWarm(item) && (! showUsFeatures || ! item.in_priority_window),
+                                    'sdr-row-card-priority': showUsFeatures && item.in_priority_window,
                                 }"
                                 @click="openItem(item)"
                                 @keydown.enter="openItem(item)"
@@ -395,7 +398,7 @@
 
                                         <span
                                             class="sdr-row-time-badge sdr-row-time-badge-us"
-                                            v-if="item.time_us"
+                                            v-if="showUsFeatures && item.time_us"
                                             title="Prospect US timezone"
                                         >
                                             @{{ item.time_us }}
@@ -467,6 +470,10 @@
                         type: String,
                         required: true,
                     },
+                    showUsFeatures: {
+                        type: Boolean,
+                        default: true,
+                    },
                 },
 
                 data() {
@@ -493,7 +500,9 @@
                                     {
                                         key: 'today-calendar',
                                         title: "Today's Calendar",
-                                        description: 'Meetings and follow-ups due today.<br>Items with a green border are high priority during 11:00 AM – 4:00 PM in the prospect US timezone.',
+                                        description: this.showUsFeatures
+                                            ? 'Meetings and follow-ups due today.<br>Items with a green border are high priority during 11:00 AM – 4:00 PM in the prospect US timezone.'
+                                            : 'Meetings and follow-ups due today.',
                                         items: this.todayCalendar,
                                         pageSize: 10,
                                         tall: true,
