@@ -219,14 +219,32 @@ class LeadRepository extends Repository
                 $hasPersonData = $this->hasPersonData($data['person']);
                 
                 if ($hasPersonData) {
-                    $person = $this->personRepository->create(array_merge($data['person'], [
-                        'entity_type' => 'persons',
-                    ]));
-                    $data['person_id'] = $person->id;
+                    $personPayload = $data['person'];
 
-                    if (empty($data['organization_id']) && $person->organization_id) {
-                        $data['organization_id'] = $person->organization_id;
-                        $data['title'] = $person->organization?->name ?: ($data['title'] ?? '');
+                    // Ensure the unique identity calculation includes organization_id (e.g. org_id|phone).
+                    if (empty($personPayload['organization_id']) && ! empty($data['organization_id'])) {
+                        $personPayload['organization_id'] = $data['organization_id'];
+                    }
+
+                    $existingPerson = $this->personRepository->findByUniqueIdentity($personPayload);
+
+                    if ($existingPerson) {
+                        $data['person_id'] = $existingPerson->id;
+
+                        if (empty($data['organization_id']) && $existingPerson->organization_id) {
+                            $data['organization_id'] = $existingPerson->organization_id;
+                            $data['title'] = $existingPerson->organization?->name ?: ($data['title'] ?? '');
+                        }
+                    } else {
+                        $person = $this->personRepository->create(array_merge($data['person'], [
+                            'entity_type' => 'persons',
+                        ]));
+                        $data['person_id'] = $person->id;
+
+                        if (empty($data['organization_id']) && $person->organization_id) {
+                            $data['organization_id'] = $person->organization_id;
+                            $data['title'] = $person->organization?->name ?: ($data['title'] ?? '');
+                        }
                     }
                 } else {
                     // No person data provided, set person_id to null
@@ -323,14 +341,32 @@ class LeadRepository extends Repository
                 $hasPersonData = $this->hasPersonData($data['person']);
                 
                 if ($hasPersonData) {
-                    $person = $this->personRepository->create(array_merge($data['person'], [
-                        'entity_type' => 'persons',
-                    ]));
-                    $data['person_id'] = $person->id;
+                    $personPayload = $data['person'];
 
-                    if (empty($data['organization_id']) && $person->organization_id) {
-                        $data['organization_id'] = $person->organization_id;
-                        $data['title'] = $person->organization?->name ?: ($data['title'] ?? null);
+                    // Ensure the unique identity calculation includes organization_id (e.g. org_id|phone).
+                    if (empty($personPayload['organization_id']) && ! empty($data['organization_id'])) {
+                        $personPayload['organization_id'] = $data['organization_id'];
+                    }
+
+                    $existingPerson = $this->personRepository->findByUniqueIdentity($personPayload);
+
+                    if ($existingPerson) {
+                        $data['person_id'] = $existingPerson->id;
+
+                        if (empty($data['organization_id']) && $existingPerson->organization_id) {
+                            $data['organization_id'] = $existingPerson->organization_id;
+                            $data['title'] = $existingPerson->organization?->name ?: ($data['title'] ?? null);
+                        }
+                    } else {
+                        $person = $this->personRepository->create(array_merge($data['person'], [
+                            'entity_type' => 'persons',
+                        ]));
+                        $data['person_id'] = $person->id;
+
+                        if (empty($data['organization_id']) && $person->organization_id) {
+                            $data['organization_id'] = $person->organization_id;
+                            $data['title'] = $person->organization?->name ?: ($data['title'] ?? null);
+                        }
                     }
                 } else {
                     // No person data provided, set person_id to null
