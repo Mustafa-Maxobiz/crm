@@ -185,6 +185,8 @@
                         'normal': 'max-w-[525px]',
                         'medium': 'max-w-[768px]',
                         'large': 'max-w-[950px]',
+                        'xl': 'max-w-[1200px]',
+                        'extra-large': 'max-w-[90vw]',
                     }[this.size] || 'max-w-[525px]';
                 },
 

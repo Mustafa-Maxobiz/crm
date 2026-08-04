@@ -43,7 +43,7 @@ return [
     ], [
         'key'   => 'leads.import',
         'name'  => 'admin::app.acl.import',
-        'route' => ['admin.leads.import', 'admin.leads.import.start', 'admin.leads.import.process', 'admin.leads.import.template'],
+        'route' => ['admin.leads.import', 'admin.leads.import.start', 'admin.leads.import.process', 'admin.leads.import.retry', 'admin.leads.import.template'],
         'sort'  => 5,
     ], [
         'key'   => 'leads.disqualified',

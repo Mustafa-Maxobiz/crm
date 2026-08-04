@@ -24,6 +24,8 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
 
     Route::post('import/process', 'importProcess')->name('admin.leads.import.process');
 
+    Route::post('import/retry', 'importRetry')->name('admin.leads.import.retry');
+
     Route::get('disqualified', 'disqualified')->name('admin.leads.disqualified');
 
     Route::get('view/{id}', 'view')->name('admin.leads.view');

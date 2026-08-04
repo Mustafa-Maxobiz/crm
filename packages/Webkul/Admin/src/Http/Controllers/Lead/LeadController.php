@@ -117,6 +117,11 @@ class LeadController extends Controller
             'email',
             'phone',
             'company',
+            'address',
+            'city',
+            'state',
+            'country',
+            'postcode',
             'sales_owner_email',
             'pipeline',
             'stage',
@@ -131,13 +136,18 @@ class LeadController extends Controller
 
         $sample = [
             'Sample Lead',
-            '5000',
-            'New Business',
+            '0',
+            'Existing Business',
             'Fixed Price',
             'John Smith',
             'john@example.com',
             '+15551234567',
             'Sample Company',
+            '123 Main St Suite 100',
+            'San Jose',
+            'CA',
+            'US',
+            '95120',
             'sdr@example.com',
             'Default Pipeline',
             'New',
@@ -168,8 +178,17 @@ class LeadController extends Controller
     public function import(): RedirectResponse|JsonResponse
     {
         $data = request()->validate([
-            'file' => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:10240'],
+            'file'           => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:10240'],
+            'lead_source_id' => ['required', 'integer', 'exists:lead_sources,id'],
         ]);
+
+        $sourceId = (int) $data['lead_source_id'];
+
+        if (! $this->sourceAccessService->canUseLeadSourceSelection($sourceId)) {
+            return $this->importResponse(0, [
+                'You do not have access to the selected lead source.',
+            ], 403);
+        }
 
         try {
             $sheets = Excel::toArray(new class implements ToArray
@@ -221,7 +240,7 @@ class LeadController extends Controller
             try {
                 Event::dispatch('lead.create.before');
 
-                $lead = $this->leadRepository->create($this->prepareImportedLeadData($rowData));
+                $lead = $this->leadRepository->create($this->prepareImportedLeadData($rowData, $sourceId));
 
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
 
@@ -244,8 +263,17 @@ class LeadController extends Controller
     public function importStart(): JsonResponse
     {
         $data = request()->validate([
-            'file' => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:10240'],
+            'file'           => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:10240'],
+            'lead_source_id' => ['required', 'integer', 'exists:lead_sources,id'],
         ]);
+
+        $sourceId = (int) $data['lead_source_id'];
+
+        if (! $this->sourceAccessService->canUseLeadSourceSelection($sourceId)) {
+            return response()->json([
+                'message' => 'You do not have access to the selected lead source.',
+            ], 403);
+        }
 
         try {
             $sheets = Excel::toArray(new class implements ToArray
@@ -302,9 +330,11 @@ class LeadController extends Controller
         }
 
         file_put_contents($this->pendingImportPath($token), json_encode([
-            'rows'    => $importRows,
-            'created' => 0,
-            'errors'  => [],
+            'lead_source_id' => $sourceId,
+            'rows'           => $importRows,
+            'created'        => 0,
+            'errors'         => [],
+            'failed'         => [],
         ], JSON_THROW_ON_ERROR));
 
         return response()->json([
@@ -333,18 +363,38 @@ class LeadController extends Controller
         }
 
         $payload = json_decode(file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
+        $sourceId = (int) ($payload['lead_source_id'] ?? 0);
+
+        if (! $sourceId || ! $this->sourceAccessService->canUseLeadSourceSelection($sourceId)) {
+            @unlink($path);
+
+            return response()->json([
+                'message' => 'Import session is missing a valid lead source. Please upload the file again.',
+            ], 422);
+        }
+
         $rows = $payload['rows'] ?? [];
         $total = count($rows);
         $offset = (int) $data['offset'];
         $chunkSize = 1;
         $chunk = array_slice($rows, $offset, $chunkSize);
 
+        if (! isset($payload['failed']) || ! is_array($payload['failed'])) {
+            $payload['failed'] = [];
+        }
+
         foreach ($chunk as $row) {
             $rowData = $row['data'] ?? [];
             $rowErrors = $this->validateImportRow($rowData);
 
             if (! empty($rowErrors)) {
-                $payload['errors'][] = 'Row '.$row['row_number'].': '.implode(' ', $rowErrors);
+                $errorMessage = implode(' ', $rowErrors);
+                $payload['errors'][] = 'Row '.$row['row_number'].': '.$errorMessage;
+                $payload['failed'][] = [
+                    'row_number' => $row['row_number'],
+                    'data'       => $rowData,
+                    'error'      => $errorMessage,
+                ];
 
                 continue;
             }
@@ -352,7 +402,7 @@ class LeadController extends Controller
             try {
                 Event::dispatch('lead.create.before');
 
-                $lead = $this->leadRepository->create($this->prepareImportedLeadData($rowData));
+                $lead = $this->leadRepository->create($this->prepareImportedLeadData($rowData, $sourceId));
 
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
 
@@ -363,11 +413,17 @@ class LeadController extends Controller
                 $payload['created']++;
             } catch (Throwable $exception) {
                 $payload['errors'][] = 'Row '.$row['row_number'].': '.$exception->getMessage();
+                $payload['failed'][] = [
+                    'row_number' => $row['row_number'],
+                    'data'       => $rowData,
+                    'error'      => $exception->getMessage(),
+                ];
             }
         }
 
         $processed = min($offset + count($chunk), $total);
         $done = $processed >= $total;
+        $failedRows = $payload['failed'] ?? [];
 
         if ($done) {
             @unlink($path);
@@ -376,13 +432,103 @@ class LeadController extends Controller
         }
 
         return response()->json([
-            'processed' => $processed,
-            'total'     => $total,
-            'created'   => $payload['created'],
-            'errors'    => $payload['errors'],
-            'done'      => $done,
-            'message'   => $payload['created'].' lead'.($payload['created'] === 1 ? '' : 's').' imported.',
+            'processed'      => $processed,
+            'total'          => $total,
+            'created'        => $payload['created'],
+            'errors'         => $payload['errors'],
+            'failed_rows'    => $done ? array_values($failedRows) : [],
+            'lead_source_id' => $sourceId,
+            'done'           => $done,
+            'message'        => $payload['created'].' lead'.($payload['created'] === 1 ? '' : 's').' imported.',
         ]);
+    }
+
+    /**
+     * Retry importing corrected failed rows.
+     */
+    public function importRetry(): JsonResponse
+    {
+        $data = request()->validate([
+            'lead_source_id'    => ['required', 'integer', 'exists:lead_sources,id'],
+            'rows'              => ['required', 'array', 'min:1'],
+            'rows.*.row_number' => ['required', 'integer', 'min:1'],
+            'rows.*.data'       => ['required', 'array'],
+        ]);
+
+        $sourceId = (int) $data['lead_source_id'];
+
+        if (! $this->sourceAccessService->canUseLeadSourceSelection($sourceId)) {
+            return response()->json([
+                'message' => 'You do not have access to the selected lead source.',
+            ], 403);
+        }
+
+        $created = 0;
+        $failedRows = [];
+
+        foreach ($data['rows'] as $row) {
+            $rowNumber = (int) $row['row_number'];
+            $rowData = $this->normalizeRetriedImportRow($row['data'] ?? []);
+            $rowErrors = $this->validateImportRow($rowData);
+
+            if (! empty($rowErrors)) {
+                $failedRows[] = [
+                    'row_number' => $rowNumber,
+                    'data'       => $rowData,
+                    'error'      => implode(' ', $rowErrors),
+                ];
+
+                continue;
+            }
+
+            try {
+                Event::dispatch('lead.create.before');
+
+                $lead = $this->leadRepository->create($this->prepareImportedLeadData($rowData, $sourceId));
+
+                $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
+
+                $this->syncSourceTagForLead($lead);
+
+                Event::dispatch('lead.create.after', $lead);
+
+                $created++;
+            } catch (Throwable $exception) {
+                $failedRows[] = [
+                    'row_number' => $rowNumber,
+                    'data'       => $rowData,
+                    'error'      => $exception->getMessage(),
+                ];
+            }
+        }
+
+        return response()->json([
+            'created'        => $created,
+            'failed_rows'    => $failedRows,
+            'lead_source_id' => $sourceId,
+            'message'        => $created.' lead'.($created === 1 ? '' : 's').' imported from retry.',
+        ], empty($failedRows) ? 200 : 422);
+    }
+
+    /**
+     * Normalize editable retry payload values.
+     */
+    protected function normalizeRetriedImportRow(array $row): array
+    {
+        $normalized = [];
+
+        foreach ($row as $key => $value) {
+            $column = $this->normalizeImportColumnName((string) $key);
+
+            if (! $column) {
+                continue;
+            }
+
+            $column = $this->importColumnAliases()[$column] ?? $column;
+            $normalized[$column] = is_string($value) ? trim($value) : $value;
+        }
+
+        return $normalized;
     }
 
     /**
@@ -1971,6 +2117,11 @@ class LeadController extends Controller
             'contact_email'      => 'email',
             'contact_phone'      => 'phone',
             'phone_number'       => 'phone',
+            'street'             => 'address',
+            'address_line'       => 'address',
+            'zip'                => 'postcode',
+            'zipcode'            => 'postcode',
+            'postal_code'         => 'postcode',
             'expected_close'     => 'expected_close_date',
             'followup'           => 'next_followup_date',
             'next_follow_up'     => 'next_followup_date',
@@ -2065,7 +2216,7 @@ class LeadController extends Controller
         return $errors;
     }
 
-    protected function prepareImportedLeadData(array $row): array
+    protected function prepareImportedLeadData(array $row, int $leadSourceId): array
     {
         $pipeline = filled($row['pipeline'] ?? null)
             ? $this->pipelineRepository->find($this->resolveImportId('lead_pipelines', $row['pipeline']))
@@ -2092,15 +2243,34 @@ class LeadController extends Controller
             ? true
             : $this->booleanImportValue($row['schedule_followup'] ?? null, true);
 
-        // Bulk imports are always Cold Call / Cold Lead (no sub-source).
-        $coldCallSourceId = $this->resolveColdCallSourceId();
+        if (! $this->sourceAccessService->canUseLeadSourceSelection($leadSourceId)) {
+            throw new \InvalidArgumentException('You do not have access to the selected lead source.');
+        }
+
+        $addressLine = $this->nullableImportValue($row['address'] ?? null);
+        $city = $this->nullableImportValue($row['city'] ?? null);
+        $state = $this->nullableImportValue($row['state'] ?? null);
+        $country = $this->nullableImportValue($row['country'] ?? null);
+        $postcode = $this->nullableImportValue($row['postcode'] ?? null);
+
+        $personAddress = null;
+
+        if (collect([$addressLine, $city, $state, $country, $postcode])->contains(fn ($value) => filled($value))) {
+            $personAddress = [
+                'address'  => $addressLine,
+                'city'     => $city,
+                'state'    => $state,
+                'country'  => $country,
+                'postcode' => $postcode,
+            ];
+        }
 
         return [
             'entity_type'              => 'leads',
             'organization_name'        => trim((string) ($row['companies'] ?? $row['title'] ?? $row['company'] ?? '')),
             'description'              => $this->nullableImportValue($row['description'] ?? null),
             'lead_value'               => (float) $row['lead_value'],
-            'lead_source_id'           => $coldCallSourceId,
+            'lead_source_id'           => $leadSourceId,
             'lead_sub_source_id'       => null,
             'lead_type_id'             => $this->resolveImportId('lead_types', $row['type']),
             'pricing_type'             => $this->resolveAttributeOptionId('pricing_type', $row['pricing_type']),
@@ -2124,12 +2294,13 @@ class LeadController extends Controller
                 'contact_numbers'  => filled($row['phone'] ?? null)
                     ? [['value' => trim((string) $row['phone']), 'label' => 'work']]
                     : [],
+                'address'          => $personAddress,
             ],
         ];
     }
 
     /**
-     * Bulk-imported leads always use the Cold Call source.
+     * @deprecated Bulk import now uses the source selected in the import modal.
      */
     protected function resolveColdCallSourceId(): int
     {
