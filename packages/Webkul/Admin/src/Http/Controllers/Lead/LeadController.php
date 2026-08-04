@@ -591,15 +591,7 @@ class LeadController extends Controller
                     'lead_pipeline_stage_id' => $stage->id,
                 ]);
 
-            $isSharedNewSdrPool = $this->isSdrUser()
-                && $stage->code === 'new';
-
-            $userIds = bouncer()->getAuthorizedUserIds();
-
-            if (! $this->sourceAccessService->isAdmin() && ! $isSharedNewSdrPool && $userIds) {
-                $query->whereIn('leads.user_id', $userIds);
-            }
-
+            $this->sourceAccessService->applyLeadOwnerVisibilityScope($query);
             $this->sourceAccessService->applyLeadQueryScope($query);
 
             $this->applyKanbanSearch($query, request()->query('lead_search'));
@@ -797,12 +789,6 @@ class LeadController extends Controller
             $lead = $this->claimNewLeadForSdr($lead);
         }
 
-        $userIds = bouncer()->getAuthorizedUserIds();
-
-        if ($userIds && ! in_array($lead->user_id, $userIds)) {
-            return redirect()->route('admin.leads.index');
-        }
-
         $lead->load(['person.organization', 'products']);
 
         $person = $this->leadPersonFormPayload($lead->person);
@@ -823,12 +809,6 @@ class LeadController extends Controller
 
         if ($this->isSdrUser()) {
             $lead = $this->claimNewLeadForSdr($lead);
-        }
-
-        $userIds = bouncer()->getAuthorizedUserIds();
-
-        if ($userIds && ! in_array($lead->user_id, $userIds)) {
-            abort(403);
         }
 
         $lead->load(['person.organization', 'organization', 'tags', 'pipeline.stages']);
@@ -935,17 +915,6 @@ class LeadController extends Controller
         if ($this->isSdrUser()) {
             $lead = $this->claimNewLeadForSdr($lead);
         }
-
-        $userIds = bouncer()->getAuthorizedUserIds();
-
-        if (
-            $userIds
-            && ! in_array($lead->user_id, $userIds)
-        ) {
-            return redirect()->route('admin.leads.index');
-        }
-
-
 
         $lead->load('tags');
 
@@ -1328,18 +1297,6 @@ class LeadController extends Controller
             $isSharedNewSdrLead = $this->isSdrUser()
                 && ($lead->stage?->code ?? null) === 'new';
 
-            $userIds = bouncer()->getAuthorizedUserIds();
-
-            if (
-                $userIds
-                && ! in_array($lead->user_id, $userIds)
-                && ! $isSharedNewSdrLead
-            ) {
-                return response()->json([
-                    'message' => trans('admin::app.leads.source-access-denied'),
-                ], 403);
-            }
-
             $stage = $lead->pipeline->stages()
                 ->where('id', request()->input('lead_pipeline_stage_id'))
                 ->firstOrFail();
@@ -1452,12 +1409,6 @@ class LeadController extends Controller
         ]);
 
         $lead = $this->leadRepository->findOrFail($id);
-
-        $userIds = bouncer()->getAuthorizedUserIds();
-
-        if ($userIds && ! in_array($lead->user_id, $userIds)) {
-            return redirect()->route('admin.leads.index');
-        }
 
         if (! $this->sourceAccessService->canAccessLead($lead)) {
             return redirect()->route('admin.leads.index');
@@ -1580,7 +1531,6 @@ class LeadController extends Controller
      */
     public function search(): AnonymousResourceCollection
     {
-        $userIds = bouncer()->getAuthorizedUserIds();
         $limit = min(max((int) request('limit', 20), 1), 50);
         $queryTerm = trim((string) request('query', ''));
 
@@ -1605,11 +1555,8 @@ class LeadController extends Controller
         }
 
         $results = $repository
-            ->scopeQuery(function ($query) use ($userIds, $limit, $queryTerm) {
-                if ($userIds) {
-                    $query->whereIn('user_id', $userIds);
-                }
-
+            ->scopeQuery(function ($query) use ($limit, $queryTerm) {
+                $this->sourceAccessService->applyLeadOwnerVisibilityScope($query);
                 $this->sourceAccessService->applyLeadQueryScope($query);
 
                 if ($queryTerm !== '') {

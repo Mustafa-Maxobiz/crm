@@ -167,16 +167,8 @@ class LeadDataGrid extends DataGrid
             ['Warm Lead', 'Cold Lead', $coldCallSourceId ?: 0]
         );
 
-        if (! app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin() && $userIds = bouncer()->getAuthorizedUserIds()) {
-            if ($this->isSdrUser()) {
-                $queryBuilder->where(function ($query) use ($userIds) {
-                    $query
-                        ->whereIn('leads.user_id', $userIds)
-                        ->orWhere('lead_pipeline_stages.code', 'new');
-                });
-            } else {
-                $queryBuilder->whereIn('leads.user_id', $userIds);
-            }
+        if (! app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin()) {
+            app(\Webkul\Lead\Services\SourceAccessService::class)->applyLeadOwnerVisibilityTableScope($queryBuilder);
         }
 
         app(\Webkul\Lead\Services\SourceAccessService::class)->applyLeadTableScope($queryBuilder);
@@ -204,11 +196,6 @@ class LeadDataGrid extends DataGrid
         $this->addFilter('created_at', 'leads.created_at');
 
         return $queryBuilder;
-    }
-
-    protected function isSdrUser(): bool
-    {
-        return strtolower((string) auth()->guard('user')->user()?->role?->name) === 'sdr';
     }
 
     /**

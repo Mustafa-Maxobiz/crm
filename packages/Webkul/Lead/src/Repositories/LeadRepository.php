@@ -85,7 +85,7 @@ class LeadRepository extends Repository
             'pipeline',
             'stage',
         ])->scopeQuery(function ($query) use ($pipelineId, $pipelineStageId, $term, $createdAtRange) {
-            return $query->select(
+            $query = $query->select(
                 'leads.id as id',
                 'leads.created_at as created_at',
                 'title',
@@ -105,12 +105,10 @@ class LeadRepository extends Repository
                 ->where('leads.lead_pipeline_stage_id', $pipelineStageId)
                 ->when($createdAtRange, function ($query) use ($createdAtRange) {
                     return $query->whereBetween('leads.created_at', $createdAtRange);
-                })
-                ->where(function ($query) {
-                    if ($userIds = bouncer()->getAuthorizedUserIds()) {
-                        $query->whereIn('leads.user_id', $userIds);
-                    }
                 });
+
+            return app(\Webkul\Lead\Services\SourceAccessService::class)
+                ->applyLeadOwnerVisibilityScope($query);
         });
     }
 

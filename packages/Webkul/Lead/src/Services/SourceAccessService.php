@@ -18,6 +18,8 @@ class SourceAccessService
 
     protected array $expandedSourceIdsCache = [];
 
+    protected ?array $newStageIdsCache = null;
+
     /**
      * Source IDs assigned directly to the user/role. Null means all sources.
      *
@@ -205,6 +207,136 @@ class SourceAccessService
         return $user && $user->role?->permission_type === 'all';
     }
 
+    public function isSdrUser(?UserContract $user = null): bool
+    {
+        $user = $this->resolveUser($user);
+
+        return strtolower((string) $user?->role?->name) === 'sdr';
+    }
+
+    /**
+     * Pipeline stage IDs with code `new` (shared SDR pool).
+     *
+     * @return array<int>
+     */
+    public function getNewStageIds(): array
+    {
+        if ($this->newStageIdsCache !== null) {
+            return $this->newStageIdsCache;
+        }
+
+        return $this->newStageIdsCache = DB::table('lead_pipeline_stages')
+            ->where('code', 'new')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    public function leadIsInNewStage(LeadContract $lead): bool
+    {
+        if ($lead->relationLoaded('stage') && $lead->stage) {
+            return $lead->stage->code === 'new';
+        }
+
+        if (! $lead->lead_pipeline_stage_id) {
+            return false;
+        }
+
+        return in_array((int) $lead->lead_pipeline_stage_id, $this->getNewStageIds(), true);
+    }
+
+    /**
+     * SDR: own leads, or any lead still in New. Admin: all. Others: view_permission.
+     */
+    public function canAccessLeadByOwner(LeadContract $lead, ?UserContract $user = null): bool
+    {
+        if ($this->isAdmin($user)) {
+            return true;
+        }
+
+        $user = $this->resolveUser($user);
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($this->isSdrUser($user)) {
+            if ((int) $lead->user_id === (int) $user->id) {
+                return true;
+            }
+
+            return $this->leadIsInNewStage($lead);
+        }
+
+        $userIds = bouncer()->getAuthorizedUserIds();
+
+        if ($userIds === null) {
+            return true;
+        }
+
+        return in_array((int) $lead->user_id, array_map('intval', $userIds), true);
+    }
+
+    /**
+     * Apply owner visibility for lead listings.
+     * SDR users share only the New stage; other stages are owner-only.
+     * Admins are unrestricted.
+     */
+    public function applyLeadOwnerVisibilityScope(Builder $query, string $table = 'leads'): Builder
+    {
+        if ($this->isAdmin()) {
+            return $query;
+        }
+
+        if ($this->isSdrUser()) {
+            $userId = auth()->guard('user')->id();
+            $newStageIds = $this->getNewStageIds();
+
+            return $query->where(function ($ownerQuery) use ($userId, $newStageIds, $table) {
+                $ownerQuery->where("{$table}.user_id", $userId);
+
+                if (! empty($newStageIds)) {
+                    $ownerQuery->orWhereIn("{$table}.lead_pipeline_stage_id", $newStageIds);
+                }
+            });
+        }
+
+        if ($userIds = bouncer()->getAuthorizedUserIds()) {
+            $query->whereIn("{$table}.user_id", $userIds);
+        }
+
+        return $query;
+    }
+
+    /**
+     * Query-builder variant for datagrids / raw joins on `leads`.
+     */
+    public function applyLeadOwnerVisibilityTableScope(QueryBuilder $query): QueryBuilder
+    {
+        if ($this->isAdmin()) {
+            return $query;
+        }
+
+        if ($this->isSdrUser()) {
+            $userId = auth()->guard('user')->id();
+            $newStageIds = $this->getNewStageIds();
+
+            return $query->where(function ($ownerQuery) use ($userId, $newStageIds) {
+                $ownerQuery->where('leads.user_id', $userId);
+
+                if (! empty($newStageIds)) {
+                    $ownerQuery->orWhereIn('leads.lead_pipeline_stage_id', $newStageIds);
+                }
+            });
+        }
+
+        if ($userIds = bouncer()->getAuthorizedUserIds()) {
+            $query->whereIn('leads.user_id', $userIds);
+        }
+
+        return $query;
+    }
+
     public function canAccessSourceId(int $sourceId, ?UserContract $user = null): bool
     {
         $allowed = $this->getExpandedSourceIds($user);
@@ -288,7 +420,11 @@ class SourceAccessService
             return false;
         }
 
-        return $this->leadMatchesOrganizationScope($lead, $user);
+        if (! $this->leadMatchesOrganizationScope($lead, $user)) {
+            return false;
+        }
+
+        return $this->canAccessLeadByOwner($lead, $user);
     }
 
     public function applyLeadQueryScope(Builder $query): Builder
