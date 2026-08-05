@@ -86,6 +86,7 @@ class LeadDataGrid extends DataGrid
                 'lead_pipeline_stages.name as stage',
                 'lead_tags.tag_id as tag_id',
                 'users.id as user_id',
+                'users.name as user_name',
                 'persons.id as person_id',
                 'persons.name as person_name',
                 'persons.contact_numbers',
@@ -184,11 +185,11 @@ class LeadDataGrid extends DataGrid
         $this->addFilter('lead_source_search', 'lead_sources.name');
         $this->addFilter('lead_type_name', 'lead_types.id');
         $this->addFilter('person_name', 'persons.name');
-        $this->addFilter('industry', 'industry_options.name');
+        $this->addFilter('industry', 'industry_options.id');
         $this->addFilter('service_offered', 'leads.id');
         $this->addFilter('type', 'lead_pipeline_stages.code');
         $this->addFilter('stage', 'lead_pipeline_stages.id');
-        $this->addFilter('tag_name', 'tags.name');
+        $this->addFilter('tag_name', 'tags.id');
         $this->addFilter('next_followup_date', 'leads.next_followup_date');
         $this->addFilter('followup_count', 'leads.followup_count');
         $this->addFilter('last_followup_date', 'leads.last_followup_date');
@@ -196,6 +197,34 @@ class LeadDataGrid extends DataGrid
         $this->addFilter('created_at', 'leads.created_at');
 
         return $queryBuilder;
+    }
+
+    /**
+     * Process filters with special handling for services offered.
+     */
+    protected function processRequestedFilters(array $requestedFilters)
+    {
+        if (! empty($requestedFilters['service_offered'])) {
+            $serviceIds = collect((array) $requestedFilters['service_offered'])
+                ->map(fn ($id) => (int) $id)
+                ->filter()
+                ->values()
+                ->all();
+
+            unset($requestedFilters['service_offered']);
+
+            if (! empty($serviceIds)) {
+                $this->queryBuilder->whereExists(function ($query) use ($serviceIds) {
+                    $query
+                        ->select(DB::raw(1))
+                        ->from('lead_service')
+                        ->whereColumn('lead_service.lead_id', 'leads.id')
+                        ->whereIn('lead_service.service_id', $serviceIds);
+                });
+            }
+        }
+
+        return parent::processRequestedFilters($requestedFilters);
     }
 
     /**
@@ -284,23 +313,48 @@ class LeadDataGrid extends DataGrid
         ]);
 
         $this->addColumn([
-            'index'      => 'industry',
-            'label'      => trans('admin::app.leads.index.datagrid.industry'),
-            'type'       => 'string',
-            'searchable' => false,
-            'sortable'   => true,
-            'filterable' => true,
-            'closure'    => fn ($row) => $row->industry ?: '--',
+            'index'              => 'user',
+            'label'              => trans('admin::app.leads.index.datagrid.sales-person'),
+            'type'               => 'string',
+            'searchable'         => false,
+            'sortable'           => true,
+            'filterable'         => true,
+            'filterable_type'    => 'dropdown',
+            'filterable_options' => DB::table('users')
+                ->where('status', 1)
+                ->orderBy('name')
+                ->get(['name as label', 'id as value'])
+                ->map(fn ($row) => [
+                    'label' => $row->label,
+                    'value' => (int) $row->value,
+                ])
+                ->values()
+                ->all(),
+            'closure'            => fn ($row) => $row->user_name ?: '--',
         ]);
 
         $this->addColumn([
-            'index'      => 'service_offered',
-            'label'      => trans('admin::app.leads.index.datagrid.service-offered'),
-            'type'       => 'string',
-            'searchable' => false,
-            'sortable'   => false,
-            'filterable' => false,
-            'closure'    => fn ($row) => $row->service_offered ?: '--',
+            'index'              => 'industry',
+            'label'              => trans('admin::app.leads.index.datagrid.industry'),
+            'type'               => 'string',
+            'searchable'         => false,
+            'sortable'           => true,
+            'filterable'         => true,
+            'filterable_type'    => 'dropdown',
+            'filterable_options' => $this->getIndustryFilterOptions(),
+            'closure'            => fn ($row) => $row->industry ?: '--',
+        ]);
+
+        $this->addColumn([
+            'index'              => 'service_offered',
+            'label'              => trans('admin::app.leads.index.datagrid.service-offered'),
+            'type'               => 'string',
+            'searchable'         => false,
+            'sortable'           => false,
+            'filterable'         => true,
+            'filterable_type'    => 'dropdown',
+            'filterable_options' => app(\Webkul\Lead\Repositories\ServiceRepository::class)->getDropdownOptions(),
+            'closure'            => fn ($row) => $row->service_offered ?: '--',
         ]);
 
         $this->addColumn([
@@ -320,15 +374,17 @@ class LeadDataGrid extends DataGrid
             'searchable'         => false,
             'sortable'           => true,
             'filterable'         => true,
-            'filterable_type'    => 'searchable_dropdown',
+            'filterable_type'    => 'dropdown',
+            'filterable_options' => DB::table('tags')
+                ->orderBy('name')
+                ->get(['name as label', 'id as value'])
+                ->map(fn ($row) => [
+                    'label' => $row->label,
+                    'value' => (int) $row->value,
+                ])
+                ->values()
+                ->all(),
             'closure'            => fn ($row) => $row->tag_name ?? '--',
-            'filterable_options' => [
-                'repository' => TagRepository::class,
-                'column'     => [
-                    'label' => 'name',
-                    'value' => 'name',
-                ],
-            ],
         ]);
 
         $this->addColumn([
@@ -549,5 +605,30 @@ class LeadDataGrid extends DataGrid
                 'value' => $stage->id,
             ])->toArray(),
         ]);
+    }
+
+    /**
+     * Industry attribute options for the leads filter dropdown.
+     *
+     * @return array<int, array{label: string, value: int}>
+     */
+    protected function getIndustryFilterOptions(): array
+    {
+        return DB::table('attribute_options')
+            ->join('attributes', 'attributes.id', '=', 'attribute_options.attribute_id')
+            ->where('attributes.entity_type', 'leads')
+            ->where('attributes.code', 'industry')
+            ->orderBy('attribute_options.sort_order')
+            ->orderBy('attribute_options.name')
+            ->get([
+                'attribute_options.name as label',
+                'attribute_options.id as value',
+            ])
+            ->map(fn ($row) => [
+                'label' => $row->label,
+                'value' => (int) $row->value,
+            ])
+            ->values()
+            ->all();
     }
 }
