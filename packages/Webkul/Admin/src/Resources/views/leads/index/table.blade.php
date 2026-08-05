@@ -908,13 +908,35 @@
 
             mounted() {
                 document.addEventListener('keydown', this.handleServiceEscape);
+
+                this.unsubscribeLeadsSync = window.crmLeadsSync?.subscribe(() => {
+                    this.refreshFromLeadSync();
+                });
+
+                document.addEventListener('visibilitychange', this.handleLeadsVisibilityRefresh);
             },
 
             beforeUnmount() {
                 document.removeEventListener('keydown', this.handleServiceEscape);
+                document.removeEventListener('visibilitychange', this.handleLeadsVisibilityRefresh);
+                this.unsubscribeLeadsSync?.();
             },
 
             methods: {
+                refreshFromLeadSync() {
+                    clearTimeout(this._leadsSyncTimer);
+
+                    this._leadsSyncTimer = setTimeout(() => {
+                        this.$refs.datagrid?.get?.();
+                    }, 250);
+                },
+
+                handleLeadsVisibilityRefresh() {
+                    if (document.visibilityState === 'visible') {
+                        this.refreshFromLeadSync();
+                    }
+                },
+
                 setServiceTriggerRef(leadId, el) {
                     if (el) {
                         this.serviceTriggerRefs[leadId] = el;

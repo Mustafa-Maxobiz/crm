@@ -410,9 +410,39 @@
 
             mounted () {
                 this.boot();
+
+                this.unsubscribeLeadsSync = window.crmLeadsSync?.subscribe(() => {
+                    this.refreshFromLeadSync();
+                });
+
+                document.addEventListener('visibilitychange', this.handleLeadsVisibilityRefresh);
+            },
+
+            beforeUnmount() {
+                document.removeEventListener('visibilitychange', this.handleLeadsVisibilityRefresh);
+                this.unsubscribeLeadsSync?.();
             },
 
             methods: {
+                refreshFromLeadSync() {
+                    clearTimeout(this._leadsSyncTimer);
+
+                    this._leadsSyncTimer = setTimeout(() => {
+                        this.get()
+                            .then(response => {
+                                for (let [sortOrder, data] of Object.entries(response.data)) {
+                                    this.stageLeads[sortOrder] = data;
+                                }
+                            });
+                    }, 250);
+                },
+
+                handleLeadsVisibilityRefresh() {
+                    if (document.visibilityState === 'visible') {
+                        this.refreshFromLeadSync();
+                    }
+                },
+
                 /**
                  * Initialization: This function checks for any previously saved filters in local storage and applies them as needed.
                  *
