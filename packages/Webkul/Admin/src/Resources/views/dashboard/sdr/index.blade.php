@@ -587,14 +587,22 @@
                     },
 
                     openItem(item) {
-                        if (item.url) {
-                            window.location.href = item.url;
+                        if (! item.url) {
+                            return;
                         }
+
+                        if (item.lead_url && item.url === item.lead_url) {
+                            window.open(item.url, '_blank', 'noopener,noreferrer');
+
+                            return;
+                        }
+
+                        window.location.href = item.url;
                     },
 
                     openLead(item) {
                         if (item.lead_url || item.url) {
-                            window.location.href = item.lead_url || item.url;
+                            window.open(item.lead_url || item.url, '_blank', 'noopener,noreferrer');
                         }
                     },
 

@@ -24,6 +24,8 @@
                 @if ($callLog->lead_id && bouncer()->hasPermission('leads.view'))
                     <a
                         href="{{ route('admin.leads.view', $callLog->lead_id) }}"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         class="secondary-button"
                     >
                         @lang('admin::app.smrtphone.view.open-crm-lead')
@@ -141,7 +143,12 @@
                         <dt class="text-gray-500 dark:text-gray-400">@lang('admin::app.smrtphone.view.crm-lead')</dt>
                         <dd class="col-span-2 dark:text-white">
                             @if ($callLog->lead_id)
-                                <a href="{{ route('admin.leads.view', $callLog->lead_id) }}" class="text-blue-600 hover:underline">
+                                <a
+                                    href="{{ route('admin.leads.view', $callLog->lead_id) }}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="text-blue-600 hover:underline"
+                                >
                                     {{ $callLog->lead?->title ?: '#'.$callLog->lead_id }}
                                 </a>
                             @else

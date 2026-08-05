@@ -128,6 +128,8 @@
                                 <template v-for="lead in searchedResults.leads">
                                     <a
                                         :href="'{{ route('admin.leads.view', ':id') }}'.replace(':id', lead.id)"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
                                         class="flex cursor-pointer justify-between gap-2.5 border-b border-slate-300 p-4 last:border-b-0 hover:bg-gray-100 dark:border-gray-800 dark:hover:bg-gray-950"
                                     >
                                         <!-- Left Information -->

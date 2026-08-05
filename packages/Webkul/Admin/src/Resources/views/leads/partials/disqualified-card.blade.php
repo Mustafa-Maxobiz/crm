@@ -3,6 +3,8 @@
         <div class="min-w-0 flex-1">
             <a
                 href="{{ route('admin.leads.view', $lead->id) }}"
+                target="_blank"
+                rel="noopener noreferrer"
                 class="break-words text-base font-semibold text-gray-900 hover:text-red-600 hover:underline dark:text-white"
             >
                 {{ $lead->title }}
@@ -38,6 +40,8 @@
 
         <a
             href="{{ route('admin.leads.view', $lead->id) }}"
+            target="_blank"
+            rel="noopener noreferrer"
             class="secondary-button !min-h-[34px] shrink-0 !px-3 text-xs"
         >
             @lang('admin::app.leads.disqualification.view')
