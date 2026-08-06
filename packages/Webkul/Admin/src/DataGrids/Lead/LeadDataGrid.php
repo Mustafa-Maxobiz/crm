@@ -455,10 +455,11 @@ class LeadDataGrid extends DataGrid
             'sortable'           => true,
             'filterable'         => true,
             'filterable_type'    => 'dropdown',
-            'filterable_options' => $this->pipeline->stages->pluck('name', 'id')
-                ->map(function ($name, $id) {
-                    return ['value' => $id, 'label' => $name];
-                })
+            'filterable_options' => $this->getAccessiblePipelineStages()
+                ->map(fn ($stage) => [
+                    'value' => $stage->id,
+                    'label' => $stage->name,
+                ])
                 ->values()
                 ->all(),
         ]);
@@ -607,11 +608,20 @@ class LeadDataGrid extends DataGrid
             'title'   => trans('admin::app.leads.index.datagrid.mass-update'),
             'url'     => route('admin.leads.mass_update'),
             'method'  => 'POST',
-            'options' => $this->pipeline->stages->map(fn ($stage) => [
+            'options' => $this->getAccessiblePipelineStages()->map(fn ($stage) => [
                 'label' => $stage->name,
                 'value' => $stage->id,
-            ])->toArray(),
+            ])->values()->all(),
         ]);
+    }
+
+    /**
+     * Pipeline stages the current user may use for filters and mass updates.
+     */
+    protected function getAccessiblePipelineStages()
+    {
+        return app(\Webkul\Lead\Services\SourceAccessService::class)
+            ->filterAccessibleStages($this->pipeline->stages);
     }
 
     /**

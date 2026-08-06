@@ -103,6 +103,21 @@
                             'selectedIds' => $assignedOrganizationIds,
                         ])
                     </div>
+
+                    <div class="box-shadow rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+                        <p class="mb-2 text-base font-semibold text-gray-800 dark:text-white">
+                            @lang('admin::app.settings.roles.edit.pipeline-stages-access')
+                        </p>
+
+                        <p class="mb-4 text-sm text-gray-600 dark:text-gray-400">
+                            @lang('admin::app.settings.roles.edit.pipeline-stages-help')
+                        </p>
+
+                        @include('admin::settings.partials.pipeline-stage-checkboxes', [
+                            'pipelines' => $pipelines,
+                            'selectedStages' => $assignedPipelineStages ?? [],
+                        ])
+                    </div>
                 </div>
 
                 {!! view_render_event('admin.settings.roles.edit.content.left.after', ['role' => $role]) !!}

@@ -53,10 +53,13 @@
         ->values()
         ->all();
 
+    $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
+    $accessibleStages = $sourceAccessService->filterAccessibleStages($pipeline->stages);
+
     $inlineOptions = [
         'stage' => [
             'field'   => 'lead_pipeline_stage_id',
-            'items'   => $pipeline->stages->map(fn ($s) => [
+            'items'   => $accessibleStages->map(fn ($s) => [
                 'value' => $s->id,
                 'label' => $s->name,
                 'code'  => $s->code,
@@ -73,7 +76,7 @@
         ],
     ];
 
-    $isSdrUser = app(\Webkul\Lead\Services\SourceAccessService::class)->isSdrUser();
+    $isSdrUser = $sourceAccessService->isSdrUser();
 
     $canAddServiceOffered = bouncer()->hasPermission('settings.lead.services_offered.create')
         || bouncer()->hasPermission('leads.create')

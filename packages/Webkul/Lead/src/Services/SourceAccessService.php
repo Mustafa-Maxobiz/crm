@@ -20,6 +20,10 @@ class SourceAccessService
 
     protected ?array $newStageIdsCache = null;
 
+    protected array $accessibleStageIdsCache = [];
+
+    protected array $sharedStageIdsCache = [];
+
     /**
      * Source IDs assigned directly to the user/role. Null means all sources.
      *
@@ -223,7 +227,7 @@ class SourceAccessService
     }
 
     /**
-     * Pipeline stage IDs with code `new` (shared SDR pool).
+     * Pipeline stage IDs with code `new` (legacy shared SDR pool fallback).
      *
      * @return array<int>
      */
@@ -240,6 +244,118 @@ class SourceAccessService
             ->all();
     }
 
+    /**
+     * Stage IDs this role may use. Null means all stages (no pivot rows).
+     *
+     * @return array<int>|null
+     */
+    public function getAccessibleStageIds(?UserContract $user = null): ?array
+    {
+        $user = $this->resolveUser($user);
+        $cacheKey = $this->userCacheKey($user);
+
+        if (array_key_exists($cacheKey, $this->accessibleStageIdsCache)) {
+            return $this->accessibleStageIdsCache[$cacheKey];
+        }
+
+        if ($this->isAdmin($user)) {
+            return $this->accessibleStageIdsCache[$cacheKey] = null;
+        }
+
+        if (! $user) {
+            return $this->accessibleStageIdsCache[$cacheKey] = [];
+        }
+
+        $user->loadMissing(['role.pipelineStages']);
+
+        $stageIds = $user->role?->pipelineStages
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all() ?? [];
+
+        if (empty($stageIds)) {
+            return $this->accessibleStageIdsCache[$cacheKey] = null;
+        }
+
+        return $this->accessibleStageIdsCache[$cacheKey] = $stageIds;
+    }
+
+    /**
+     * Shared-pool stage IDs for the user/role.
+     * Empty pivot shared flags fall back to New stages for SDR/LGE roles.
+     *
+     * @return array<int>
+     */
+    public function getSharedStageIds(?UserContract $user = null): array
+    {
+        $user = $this->resolveUser($user);
+        $cacheKey = $this->userCacheKey($user);
+
+        if (array_key_exists($cacheKey, $this->sharedStageIdsCache)) {
+            return $this->sharedStageIdsCache[$cacheKey];
+        }
+
+        if ($this->isAdmin($user) || ! $user) {
+            return $this->sharedStageIdsCache[$cacheKey] = [];
+        }
+
+        $user->loadMissing(['role.pipelineStages']);
+
+        $sharedIds = $user->role?->pipelineStages
+            ->filter(fn ($stage) => (bool) ($stage->pivot->is_shared ?? false))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all() ?? [];
+
+        if (! empty($sharedIds)) {
+            return $this->sharedStageIdsCache[$cacheKey] = $sharedIds;
+        }
+
+        if ($this->isSdrUser($user)) {
+            return $this->sharedStageIdsCache[$cacheKey] = $this->getNewStageIds();
+        }
+
+        return $this->sharedStageIdsCache[$cacheKey] = [];
+    }
+
+    public function canAccessStageId(?int $stageId, ?UserContract $user = null): bool
+    {
+        $accessible = $this->getAccessibleStageIds($user);
+
+        if ($accessible === null) {
+            return true;
+        }
+
+        if (! $stageId) {
+            return false;
+        }
+
+        return in_array((int) $stageId, $accessible, true);
+    }
+
+    /**
+     * Filter a pipeline stage collection to stages the current user may use.
+     *
+     * @param  iterable<\Webkul\Lead\Contracts\Stage>  $stages
+     * @return \Illuminate\Support\Collection
+     */
+    public function filterAccessibleStages(iterable $stages, ?UserContract $user = null)
+    {
+        $accessible = $this->getAccessibleStageIds($user);
+
+        $collection = collect($stages);
+
+        if ($accessible === null) {
+            return $collection->values();
+        }
+
+        return $collection
+            ->filter(fn ($stage) => in_array((int) $stage->id, $accessible, true))
+            ->values();
+    }
+
     public function leadIsInNewStage(LeadContract $lead): bool
     {
         if ($lead->relationLoaded('stage') && $lead->stage) {
@@ -253,8 +369,21 @@ class SourceAccessService
         return in_array((int) $lead->lead_pipeline_stage_id, $this->getNewStageIds(), true);
     }
 
+    public function leadIsInSharedStage(LeadContract $lead, ?UserContract $user = null): bool
+    {
+        if (! $lead->lead_pipeline_stage_id) {
+            return false;
+        }
+
+        return in_array(
+            (int) $lead->lead_pipeline_stage_id,
+            $this->getSharedStageIds($user),
+            true
+        );
+    }
+
     /**
-     * SDR: own leads, or any lead still in New. Admin: all. Others: view_permission.
+     * SDR/LGE: own leads, or any lead in a shared stage. Admin: all. Others: view_permission.
      */
     public function canAccessLeadByOwner(LeadContract $lead, ?UserContract $user = null): bool
     {
@@ -273,7 +402,7 @@ class SourceAccessService
                 return true;
             }
 
-            return $this->leadIsInNewStage($lead);
+            return $this->leadIsInSharedStage($lead, $user);
         }
 
         $userIds = bouncer()->getAuthorizedUserIds();
@@ -287,7 +416,7 @@ class SourceAccessService
 
     /**
      * Apply owner visibility for lead listings.
-     * SDR users share only the New stage; other stages are owner-only.
+     * SDR/LGE share configured shared stages (default: New); other stages are owner-only.
      * Admins are unrestricted.
      */
     public function applyLeadOwnerVisibilityScope(Builder $query, string $table = 'leads'): Builder
@@ -298,13 +427,13 @@ class SourceAccessService
 
         if ($this->isSdrUser()) {
             $userId = auth()->guard('user')->id();
-            $newStageIds = $this->getNewStageIds();
+            $sharedStageIds = $this->getSharedStageIds();
 
-            return $query->where(function ($ownerQuery) use ($userId, $newStageIds, $table) {
+            return $query->where(function ($ownerQuery) use ($userId, $sharedStageIds, $table) {
                 $ownerQuery->where("{$table}.user_id", $userId);
 
-                if (! empty($newStageIds)) {
-                    $ownerQuery->orWhereIn("{$table}.lead_pipeline_stage_id", $newStageIds);
+                if (! empty($sharedStageIds)) {
+                    $ownerQuery->orWhereIn("{$table}.lead_pipeline_stage_id", $sharedStageIds);
                 }
             });
         }
@@ -327,13 +456,13 @@ class SourceAccessService
 
         if ($this->isSdrUser()) {
             $userId = auth()->guard('user')->id();
-            $newStageIds = $this->getNewStageIds();
+            $sharedStageIds = $this->getSharedStageIds();
 
-            return $query->where(function ($ownerQuery) use ($userId, $newStageIds) {
+            return $query->where(function ($ownerQuery) use ($userId, $sharedStageIds) {
                 $ownerQuery->where('leads.user_id', $userId);
 
-                if (! empty($newStageIds)) {
-                    $ownerQuery->orWhereIn('leads.lead_pipeline_stage_id', $newStageIds);
+                if (! empty($sharedStageIds)) {
+                    $ownerQuery->orWhereIn('leads.lead_pipeline_stage_id', $sharedStageIds);
                 }
             });
         }
@@ -343,6 +472,39 @@ class SourceAccessService
         }
 
         return $query;
+    }
+
+    /**
+     * Restrict listings to stages assigned to the role (when pivot is configured).
+     */
+    public function applyAccessibleStageScope(Builder $query, string $table = 'leads'): Builder
+    {
+        $accessible = $this->getAccessibleStageIds();
+
+        if ($accessible === null) {
+            return $query;
+        }
+
+        if (empty($accessible)) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->whereIn("{$table}.lead_pipeline_stage_id", $accessible);
+    }
+
+    public function applyAccessibleStageTableScope(QueryBuilder $query): QueryBuilder
+    {
+        $accessible = $this->getAccessibleStageIds();
+
+        if ($accessible === null) {
+            return $query;
+        }
+
+        if (empty($accessible)) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->whereIn('leads.lead_pipeline_stage_id', $accessible);
     }
 
     public function canAccessSourceId(int $sourceId, ?UserContract $user = null): bool
@@ -424,6 +586,13 @@ class SourceAccessService
             return false;
         }
 
+        if (! $this->canAccessStageId(
+            $lead->lead_pipeline_stage_id ? (int) $lead->lead_pipeline_stage_id : null,
+            $user
+        )) {
+            return false;
+        }
+
         if (! $this->leadMatchesSourceScope($lead, $user)) {
             return false;
         }
@@ -439,6 +608,8 @@ class SourceAccessService
     {
         $query = $this->applyDisqualificationQueryScope($query);
 
+        $query = $this->applyAccessibleStageScope($query);
+
         $query = $this->applySourceQueryScope($query);
 
         return $this->applyOrganizationQueryScope($query);
@@ -447,6 +618,8 @@ class SourceAccessService
     public function applyLeadTableScope(QueryBuilder $query): QueryBuilder
     {
         $query = $this->applyDisqualificationTableScope($query);
+
+        $query = $this->applyAccessibleStageTableScope($query);
 
         $query = $this->applySourceTableScope($query);
 

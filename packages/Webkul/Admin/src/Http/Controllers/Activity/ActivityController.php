@@ -127,19 +127,15 @@ class ActivityController extends Controller
                 return;
             }
 
-            $userIds = bouncer()->getAuthorizedUserIds();
+            $userId = auth()->guard('user')->id();
 
-            $query = $this->leadRepository
+            $lead = $this->leadRepository
                 ->getModel()
                 ->newQuery()
                 ->where('leads.id', (int) str_replace('followup-', '', $id))
-                ->lockForUpdate();
-
-            if (! is_null($userIds)) {
-                $query->whereIn('leads.user_id', $userIds);
-            }
-
-            $lead = $query->firstOrFail();
+                ->where('leads.user_id', $userId)
+                ->lockForUpdate()
+                ->firstOrFail();
 
             $this->completeFollowupNotification($lead);
         });
@@ -259,25 +255,19 @@ class ActivityController extends Controller
     /**
      * Base query for pending follow-up notifications shown in the header.
      * Includes follow-ups due within the next 15 minutes (and already due/overdue).
+     * Always scoped to the authenticated user — not CRM view_permission.
      */
     protected function dueFollowupNotificationQuery()
     {
-        $userIds = bouncer()->getAuthorizedUserIds();
+        $userId = auth()->guard('user')->id();
 
-        $query = $this->leadRepository
+        return $this->leadRepository
             ->getModel()
             ->newQuery()
             ->select('leads.*')
             ->whereNotNull('leads.next_followup_date')
-            ->where('leads.next_followup_date', '<=', Carbon::now()->addMinutes(15));
-
-        if (! is_null($userIds)) {
-            $query->where(function ($query) use ($userIds) {
-                $query->whereIn('leads.user_id', $userIds);
-            });
-        }
-
-        return $query;
+            ->where('leads.next_followup_date', '<=', Carbon::now()->addMinutes(15))
+            ->where('leads.user_id', $userId);
     }
 
     /**
@@ -395,32 +385,21 @@ class ActivityController extends Controller
     }
 
     /**
-     * Limit reminders to activities the user owns, participates in, or that belong to their leads.
+     * Limit bell reminders to the authenticated user only
+     * (activity owner or participant — not CRM global/group view permission).
      */
     protected function applyActivityNotificationAccessScope($query): void
     {
-        $userIds = bouncer()->getAuthorizedUserIds();
+        $userId = auth()->guard('user')->id();
 
-        if (is_null($userIds)) {
-            return;
-        }
-
-        $query->where(function ($query) use ($userIds) {
-            $query->whereIn('activities.user_id', $userIds)
-                ->orWhereExists(function ($participantQuery) use ($userIds) {
+        $query->where(function ($query) use ($userId) {
+            $query->where('activities.user_id', $userId)
+                ->orWhereExists(function ($participantQuery) use ($userId) {
                     $participantQuery
                         ->select(DB::raw(1))
                         ->from('activity_participants')
                         ->whereColumn('activity_participants.activity_id', 'activities.id')
-                        ->whereIn('activity_participants.user_id', $userIds);
-                })
-                ->orWhereExists(function ($leadOwnerQuery) use ($userIds) {
-                    $leadOwnerQuery
-                        ->select(DB::raw(1))
-                        ->from('lead_activities')
-                        ->join('leads', 'leads.id', '=', 'lead_activities.lead_id')
-                        ->whereColumn('lead_activities.activity_id', 'activities.id')
-                        ->whereIn('leads.user_id', $userIds);
+                        ->where('activity_participants.user_id', $userId);
                 });
         });
     }
@@ -459,26 +438,22 @@ class ActivityController extends Controller
 
     /**
      * Count unread inbox messages for the bell unread indicator.
+     * Scoped to emails on the authenticated user's leads — not global CRM view permission.
      */
     protected function unreadMessagesCount(): int
     {
-        $query = $this->emailRepository
+        $userId = auth()->guard('user')->id();
+
+        return $this->emailRepository
             ->getModel()
             ->newQuery()
             ->where('is_read', 0)
             ->whereNull('parent_id')
-            ->where('folders', 'like', '%"inbox"%');
-
-        if (! is_null($userIds = bouncer()->getAuthorizedUserIds())) {
-            $query->where(function ($query) use ($userIds) {
-                $query->whereNull('lead_id')
-                    ->orWhereHas('lead', function ($leadQuery) use ($userIds) {
-                        $leadQuery->whereIn('user_id', $userIds);
-                    });
-            });
-        }
-
-        return $query->count();
+            ->where('folders', 'like', '%"inbox"%')
+            ->whereHas('lead', function ($leadQuery) use ($userId) {
+                $leadQuery->where('user_id', $userId);
+            })
+            ->count();
     }
 
     /**

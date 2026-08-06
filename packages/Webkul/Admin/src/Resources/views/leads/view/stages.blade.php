@@ -1,9 +1,14 @@
 <!-- Stages Navigation -->
+@php
+    $accessibleViewStages = app(\Webkul\Lead\Services\SourceAccessService::class)
+        ->filterAccessibleStages($lead->pipeline->stages);
+@endphp
+
 {!! view_render_event('admin.leads.view.stages.before', ['lead' => $lead]) !!}
 
 <!-- Stages Vue Component -->
 <v-lead-stages>
-    <x-admin::shimmer.leads.view.stages :count="$lead->pipeline->stages->count() - 1" />
+    <x-admin::shimmer.leads.view.stages :count="max($accessibleViewStages->count() - 1, 0)" />
 </v-lead-stages>
 
 {!! view_render_event('admin.leads.view.stages.after', ['lead' => $lead]) !!}
@@ -327,7 +332,7 @@
 
                     pendingMeetingStage: null,
 
-                    stages: @json($lead->pipeline->stages),
+                    stages: @json($accessibleViewStages->values()),
 
                     lead: @json([
                         'id'    => $lead->id,

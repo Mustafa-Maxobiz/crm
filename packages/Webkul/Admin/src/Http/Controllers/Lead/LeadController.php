@@ -575,9 +575,13 @@ class LeadController extends Controller
             $stages = $pipeline->stages;
         }
 
+        $stages = $this->sourceAccessService->filterAccessibleStages($stages);
+
         // Get sort parameters (default: newest first)
         $sortBy = request()->query('sort_by', 'created_at');
         $sortOrder = request()->query('sort_order', 'desc');
+
+        $data = [];
 
         foreach ($stages as $stage) {
             /**
@@ -728,6 +732,18 @@ class LeadController extends Controller
 
         if (! empty($data['lead_pipeline_stage_id'])) {
             $stage = $this->stageRepository->findOrFail($data['lead_pipeline_stage_id']);
+
+            if (! $this->sourceAccessService->canAccessStageId((int) $stage->id)) {
+                if (request()->ajax()) {
+                    return response()->json([
+                        'message' => trans('admin::app.leads.source-access-denied'),
+                    ], 403);
+                }
+
+                session()->flash('error', trans('admin::app.leads.source-access-denied'));
+
+                return redirect()->back();
+            }
 
             $data['lead_pipeline_id'] = $stage->lead_pipeline_id;
         } else {
@@ -890,10 +906,11 @@ class LeadController extends Controller
         $data['person'] = $this->leadPersonFormPayload($lead->person);
 
         $data['stages'] = $lead->pipeline
-            ? $lead->pipeline->stages->map(fn ($stage) => [
-                'id'   => $stage->id,
-                'name' => $stage->name,
-            ])->values()->all()
+            ? $this->sourceAccessService->filterAccessibleStages($lead->pipeline->stages)
+                ->map(fn ($stage) => [
+                    'id'   => $stage->id,
+                    'name' => $stage->name,
+                ])->values()->all()
             : [];
 
         return response()->json([
@@ -1135,6 +1152,18 @@ class LeadController extends Controller
         if (isset($data['lead_pipeline_stage_id'])) {
             $stage = $this->stageRepository->findOrFail($data['lead_pipeline_stage_id']);
 
+            if (! $this->sourceAccessService->canAccessStageId((int) $stage->id)) {
+                if (request()->ajax()) {
+                    return response()->json([
+                        'message' => trans('admin::app.leads.source-access-denied'),
+                    ], 403);
+                }
+
+                session()->flash('error', trans('admin::app.leads.source-access-denied'));
+
+                return redirect()->back();
+            }
+
             $data['lead_pipeline_id'] = $stage->lead_pipeline_id;
         } else {
             $pipeline = $this->pipelineRepository->getDefaultPipeline();
@@ -1294,12 +1323,18 @@ class LeadController extends Controller
                 ], 403);
             }
 
-            $isSharedNewSdrLead = $this->isSdrUser()
-                && ($lead->stage?->code ?? null) === 'new';
+            $isSharedPoolLead = $this->isSdrUser()
+                && $this->sourceAccessService->leadIsInSharedStage($lead);
 
             $stage = $lead->pipeline->stages()
                 ->where('id', request()->input('lead_pipeline_stage_id'))
                 ->firstOrFail();
+
+            if (! $this->sourceAccessService->canAccessStageId((int) $stage->id)) {
+                return response()->json([
+                    'message' => trans('admin::app.leads.source-access-denied'),
+                ], 403);
+            }
 
             if ($response = $this->validateMeetingStageMove($lead, $stage)) {
                 return $response;
@@ -1319,7 +1354,7 @@ class LeadController extends Controller
 
             $attributes = ['lead_pipeline_stage_id'];
 
-            if ($isSharedNewSdrLead) {
+            if ($isSharedPoolLead) {
                 $payload['user_id'] = auth()->guard('user')->id();
                 $attributes[] = 'user_id';
             }
@@ -1599,15 +1634,27 @@ class LeadController extends Controller
      */
     public function massUpdate(MassUpdateRequest $massUpdateRequest): JsonResponse
     {
+        $stageId = (int) $massUpdateRequest->input('value');
+
+        if (! $this->sourceAccessService->canAccessStageId($stageId)) {
+            return response()->json([
+                'message' => trans('admin::app.leads.source-access-denied'),
+            ], 403);
+        }
+
         $leads = $this->leadRepository->findWhereIn('id', $massUpdateRequest->input('indices'));
 
         try {
             foreach ($leads as $lead) {
+                if (! $this->sourceAccessService->canAccessLead($lead)) {
+                    continue;
+                }
+
                 Event::dispatch('lead.update.before', $lead->id);
 
                 $this->leadRepository->update([
                     'entity_type'            => 'leads',
-                    'lead_pipeline_stage_id' => $massUpdateRequest->input('value'),
+                    'lead_pipeline_stage_id' => $stageId,
                 ], $lead->id, ['lead_pipeline_stage_id']);
 
                 Event::dispatch('lead.update.after', $this->leadRepository->find($lead->id));

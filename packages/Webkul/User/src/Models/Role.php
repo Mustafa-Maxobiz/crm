@@ -4,8 +4,9 @@ namespace Webkul\User\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Webkul\Lead\Models\SourceProxy;
 use Webkul\Contact\Models\OrganizationProxy;
+use Webkul\Lead\Models\SourceProxy;
+use Webkul\Lead\Models\StageProxy;
 use Webkul\User\Contracts\Role as RoleContract;
 
 class Role extends Model implements RoleContract
@@ -42,5 +43,15 @@ class Role extends Model implements RoleContract
     public function organizations(): BelongsToMany
     {
         return $this->belongsToMany(OrganizationProxy::modelClass(), 'role_organization', 'role_id', 'organization_id');
+    }
+
+    public function pipelineStages(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            StageProxy::modelClass(),
+            'role_pipeline_stage',
+            'role_id',
+            'lead_pipeline_stage_id'
+        )->withPivot('is_shared')->withTimestamps();
     }
 }

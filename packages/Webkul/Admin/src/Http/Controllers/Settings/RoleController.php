@@ -9,6 +9,7 @@ use Illuminate\View\View;
 use Webkul\Admin\DataGrids\Settings\RoleDataGrid;
 use Webkul\Admin\Http\Controllers\Controller;
 use Webkul\Contact\Repositories\OrganizationRepository;
+use Webkul\Lead\Repositories\PipelineRepository;
 use Webkul\Lead\Repositories\SourceRepository;
 use Webkul\User\Repositories\RoleRepository;
 
@@ -18,6 +19,7 @@ class RoleController extends Controller
         protected RoleRepository $roleRepository,
         protected SourceRepository $sourceRepository,
         protected OrganizationRepository $organizationRepository,
+        protected PipelineRepository $pipelineRepository,
     ) {}
 
     public function index(): View|JsonResponse
@@ -70,12 +72,16 @@ class RoleController extends Controller
 
     public function edit(int $id): View
     {
-        $role = $this->roleRepository->with(['sources', 'organizations'])->findOrFail($id);
+        $role = $this->roleRepository->with(['sources', 'organizations', 'pipelineStages'])->findOrFail($id);
 
         return view('admin::settings.roles.edit', array_merge($this->getAssignmentFormData(), [
             'role'                    => $role,
             'assignedSourceIds'       => $role->sources->pluck('id')->all(),
             'assignedOrganizationIds' => $role->organizations->pluck('id')->all(),
+            'assignedPipelineStages'  => $role->pipelineStages->map(fn ($stage) => [
+                'id'        => $stage->id,
+                'is_shared' => (bool) ($stage->pivot->is_shared ?? false),
+            ])->all(),
         ]));
     }
 
@@ -162,6 +168,7 @@ class RoleController extends Controller
         return [
             'sources'       => $this->sourceRepository->getModel()->roots()->orderBy('sort_order')->get(['id', 'name']),
             'organizations' => $this->organizationRepository->getModel()->orderBy('name')->get(['id', 'name']),
+            'pipelines'     => $this->pipelineRepository->with(['stages'])->all(),
         ];
     }
 
@@ -169,5 +176,28 @@ class RoleController extends Controller
     {
         $role->sources()->sync(request()->input('source_ids', []));
         $role->organizations()->sync(request()->input('organization_ids', []));
+
+        $stageIds = collect(request()->input('pipeline_stage_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $sharedIds = collect(request()->input('shared_pipeline_stage_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->all();
+
+        $sync = [];
+
+        foreach ($stageIds as $stageId) {
+            $sync[$stageId] = [
+                'is_shared' => in_array($stageId, $sharedIds, true),
+            ];
+        }
+
+        $role->pipelineStages()->sync($sync);
     }
 }

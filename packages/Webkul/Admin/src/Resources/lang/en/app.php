@@ -866,6 +866,7 @@ return [
                     'permission-type' => 'Permission Type',
                     'assigned-sources'=> 'Lead Sources',
                     'assigned-companies'=> 'Companies',
+                    'assigned-stages' => 'Pipeline Stages',
                 ],
             ],
 
@@ -884,6 +885,14 @@ return [
                 'lead-sources-help' => 'Default sources for users in this role. Leave empty to allow all sources. Users without their own source assignment will inherit these.',
                 'companies'      => 'Companies',
                 'companies-help' => 'Default companies for users in this role. Leave empty to allow all companies. Users without their own company assignment will inherit these.',
+                'pipeline-stages-access' => 'Pipeline Stages',
+                'pipeline-stages-help'   => 'Select a pipeline, then choose which stages this role can use. Leave empty to allow all stages. Mark Shared for pool stages (visible to everyone in the role, not only the owner).',
+                'pipeline'               => 'Pipeline',
+                'select-pipeline'        => 'Select pipeline',
+                'pipeline-stages'        => 'Stages',
+                'no-pipeline-stages'     => 'This pipeline has no stages.',
+                'selected-stages'        => 'Selected stages',
+                'stage-shared'           => 'Shared',
             ],
 
             'edit' => [
@@ -901,6 +910,14 @@ return [
                 'lead-sources-help' => 'Default sources for users in this role. Leave empty to allow all sources. Users without their own source assignment will inherit these.',
                 'companies'      => 'Companies',
                 'companies-help' => 'Default companies for users in this role. Leave empty to allow all companies. Users without their own company assignment will inherit these.',
+                'pipeline-stages-access' => 'Pipeline Stages',
+                'pipeline-stages-help'   => 'Select a pipeline, then choose which stages this role can use. Leave empty to allow all stages. Mark Shared for pool stages (visible to everyone in the role, not only the owner).',
+                'pipeline'               => 'Pipeline',
+                'select-pipeline'        => 'Select pipeline',
+                'pipeline-stages'        => 'Stages',
+                'no-pipeline-stages'     => 'This pipeline has no stages.',
+                'selected-stages'        => 'Selected stages',
+                'stage-shared'           => 'Shared',
             ],
         ],
 

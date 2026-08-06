@@ -38,6 +38,24 @@ class RoleDataGrid extends DataGrid
                 '=',
                 'roles.id'
             )
+            ->leftJoin(
+                DB::raw('(
+                    SELECT role_pipeline_stage.role_id,
+                           GROUP_CONCAT(
+                               CONCAT(
+                                   lead_pipeline_stages.name,
+                                   IF(role_pipeline_stage.is_shared, " (Shared)", "")
+                               )
+                               ORDER BY lead_pipeline_stages.sort_order SEPARATOR ", "
+                           ) AS assigned_stages
+                    FROM role_pipeline_stage
+                    INNER JOIN lead_pipeline_stages ON lead_pipeline_stages.id = role_pipeline_stage.lead_pipeline_stage_id
+                    GROUP BY role_pipeline_stage.role_id
+                ) AS role_stage_names'),
+                'role_stage_names.role_id',
+                '=',
+                'roles.id'
+            )
             ->addSelect(
                 'roles.id',
                 'roles.name',
@@ -45,6 +63,7 @@ class RoleDataGrid extends DataGrid
                 'roles.permission_type',
                 'role_source_names.assigned_sources',
                 'role_organization_names.assigned_organizations',
+                'role_stage_names.assigned_stages',
             );
 
         $this->addFilter('id', 'roles.id');
@@ -101,6 +120,16 @@ class RoleDataGrid extends DataGrid
             'searchable' => false,
             'filterable' => false,
             'closure'    => fn ($row) => $row->assigned_organizations ?: trans('admin::app.settings.roles.index.datagrid.all'),
+        ]);
+
+        $this->addColumn([
+            'index'      => 'assigned_stages',
+            'label'      => trans('admin::app.settings.roles.index.datagrid.assigned-stages'),
+            'type'       => 'string',
+            'sortable'   => false,
+            'searchable' => false,
+            'filterable' => false,
+            'closure'    => fn ($row) => $row->assigned_stages ?: trans('admin::app.settings.roles.index.datagrid.all'),
         ]);
 
         $this->addColumn([

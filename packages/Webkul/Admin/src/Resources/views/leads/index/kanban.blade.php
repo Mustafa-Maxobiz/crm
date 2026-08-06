@@ -356,7 +356,7 @@
                         updating: false,
                     },
 
-                    stages: @json($pipeline->stages->toArray()),
+                    stages: @json(app(\Webkul\Lead\Services\SourceAccessService::class)->filterAccessibleStages($pipeline->stages)->values()->all()),
 
                     stageLeads: {},
 
