@@ -20,7 +20,7 @@
     <div class="sdr-dashboard-split mt-4 grid grid-cols-2 gap-4 max-xl:grid-cols-1">
         <div class="sdr-dashboard-left-scroll min-w-0">
             <v-sdr-lead-sections
-                sections-url="{{ route('admin.dashboard.lead_sections') }}"
+                sections-url="{{ route('admin.dashboard.lead_sections', ['variant' => $dashboardVariant ?? 'sdr']) }}"
                 :show-us-features='@json($showUsFeatures ?? true)'
             >
                 <div class="light-shimmer-bg dark:shimmer h-[620px] rounded-lg"></div>
@@ -29,7 +29,7 @@
 
         <div class="sdr-dashboard-right-static grid min-w-0 content-start gap-4">
             <v-sdr-today-summary
-                sections-url="{{ route('admin.dashboard.lead_sections') }}"
+                sections-url="{{ route('admin.dashboard.lead_sections', ['variant' => $dashboardVariant ?? 'sdr']) }}"
             >
                 <div class="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
                     <div class="mb-3 grid gap-1">

@@ -11,7 +11,7 @@
         </div>
 
         <a
-            href="{{ route('admin.dashboard.index') }}"
+            href="{{ route('admin.dashboard.sdr') }}"
             class="secondary-button"
         >
             Back to Dashboard

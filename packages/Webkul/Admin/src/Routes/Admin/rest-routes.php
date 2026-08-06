@@ -13,6 +13,10 @@ use Webkul\Admin\Http\Controllers\User\AccountController;
 Route::controller(DashboardController::class)->prefix('dashboard')->group(function () {
     Route::get('', 'index')->name('admin.dashboard.index');
 
+    Route::get('sdr', 'sdr')->name('admin.dashboard.sdr');
+
+    Route::get('lge', 'lge')->name('admin.dashboard.lge');
+
     Route::get('stats', 'stats')->name('admin.dashboard.stats');
 
     Route::get('call-summary', 'callSummary')->name('admin.dashboard.call_summary');

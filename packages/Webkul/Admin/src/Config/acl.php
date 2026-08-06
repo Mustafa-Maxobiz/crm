@@ -3,14 +3,24 @@
 return [
     [
         'key'   => 'dashboard',
-        'name'  => 'admin::app.layouts.dashboard',
+        'name'  => 'admin::app.acl.dashboard',
         'route' => 'admin.dashboard.index',
         'sort'  => 1,
+    ], [
+        'key'   => 'sdr_dashboard',
+        'name'  => 'admin::app.acl.dashboard-sdr',
+        'route' => 'admin.dashboard.sdr',
+        'sort'  => 2,
+    ], [
+        'key'   => 'lge_dashboard',
+        'name'  => 'admin::app.acl.dashboard-lge',
+        'route' => 'admin.dashboard.lge',
+        'sort'  => 3,
     ], [
         'key'   => 'leads',
         'name'  => 'admin::app.acl.leads',
         'route' => 'admin.leads.index',
-        'sort'  => 2,
+        'sort'  => 4,
     ], [
         'key'   => 'leads.create',
         'name'  => 'admin::app.acl.create',

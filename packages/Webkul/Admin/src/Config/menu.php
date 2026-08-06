@@ -6,9 +6,31 @@ return [
      */
     [
         'key'        => 'dashboard',
-        'name'       => 'admin::app.layouts.dashboard',
+        'name'       => 'admin::app.acl.dashboard',
         'route'      => 'admin.dashboard.index',
         'sort'       => 1,
+        'icon-class' => 'icon-dashboard',
+    ],
+
+    /**
+     * SDR Dashboard.
+     */
+    [
+        'key'        => 'sdr_dashboard',
+        'name'       => 'admin::app.acl.dashboard-sdr',
+        'route'      => 'admin.dashboard.sdr',
+        'sort'       => 2,
+        'icon-class' => 'icon-dashboard',
+    ],
+
+    /**
+     * LGE Dashboard.
+     */
+    [
+        'key'        => 'lge_dashboard',
+        'name'       => 'admin::app.acl.dashboard-lge',
+        'route'      => 'admin.dashboard.lge',
+        'sort'       => 3,
         'icon-class' => 'icon-dashboard',
     ],
 
@@ -19,7 +41,7 @@ return [
         'key'        => 'leads',
         'name'       => 'admin::app.layouts.leads',
         'route'      => 'admin.leads.index',
-        'sort'       => 2,
+        'sort'       => 4,
         'icon-class' => 'icon-leads',
     ],
 
@@ -30,7 +52,7 @@ return [
         'key'        => 'meta_leads',
         'name'       => 'admin::app.layouts.meta-leads',
         'route'      => 'admin.meta_leads.index',
-        'sort'       => 3,
+        'sort'       => 5,
         'icon-class' => 'icon-leads',
     ],
 

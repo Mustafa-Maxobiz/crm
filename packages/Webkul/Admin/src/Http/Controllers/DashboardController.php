@@ -39,30 +39,39 @@ class DashboardController extends Controller
     ) {}
 
     /**
-     * Display a listing of the resource.
-     *
-     * @return \Illuminate\View\View
+     * Main / common dashboard.
      */
     public function index()
     {
-        if ($this->isSdrUser()) {
-            $roleName = trim((string) auth()->guard('user')->user()?->role?->name);
-            $isLgeUser = strcasecmp($roleName, 'lge') === 0;
-            $dashboardTitle = $isLgeUser ? 'LGE Dashboard' : 'SDR Dashboard';
-            $showUsFeatures = ! $isLgeUser;
-
-            return view('admin::dashboard.sdr.index')->with([
-                'stateTimezones' => $showUsFeatures
-                    ? $this->usStateTimezoneService->allStates()
-                    : [],
-                'dashboardTitle' => $dashboardTitle,
-                'showUsFeatures' => $showUsFeatures,
-            ]);
-        }
-
         return view('admin::dashboard.index')->with([
             'startDate' => $this->dashboardHelper->getStartDate(),
             'endDate'   => $this->dashboardHelper->getEndDate(),
+        ]);
+    }
+
+    /**
+     * SDR calling dashboard.
+     */
+    public function sdr(): View
+    {
+        return view('admin::dashboard.sdr.index')->with([
+            'stateTimezones' => $this->usStateTimezoneService->allStates(),
+            'dashboardTitle' => 'SDR Dashboard',
+            'showUsFeatures' => true,
+            'dashboardVariant' => 'sdr',
+        ]);
+    }
+
+    /**
+     * LGE calling dashboard (no US timezone features).
+     */
+    public function lge(): View
+    {
+        return view('admin::dashboard.sdr.index')->with([
+            'stateTimezones' => [],
+            'dashboardTitle' => 'LGE Dashboard',
+            'showUsFeatures' => false,
+            'dashboardVariant' => 'lge',
         ]);
     }
 
@@ -86,6 +95,8 @@ class DashboardController extends Controller
      */
     public function callSummary(): JsonResponse
     {
+        $this->ensureCallingDashboardAccess();
+
         $data = request()->validate([
             'period'     => ['nullable', 'in:day,week,month'],
             'start_date' => ['nullable', 'date'],
@@ -173,11 +184,14 @@ class DashboardController extends Controller
      */
     public function leadSections(): JsonResponse
     {
+        $this->ensureCallingDashboardAccess();
+
         $userId = auth()->guard('user')->id();
         $todayStart = Carbon::now()->startOfDay();
         $todayEnd = Carbon::now()->endOfDay();
         $sourceAccessService = app(SourceAccessService::class);
-        $showUsFeatures = ! $this->isLgeUser();
+        $variant = request()->query('variant', 'sdr');
+        $showUsFeatures = $variant === 'sdr';
 
         $meetingsBase = DB::table('activities')
             ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
@@ -312,8 +326,8 @@ class DashboardController extends Controller
      */
     public function usTimezones(): View
     {
-        if ($this->isLgeUser()) {
-            abort(404);
+        if (! bouncer()->hasPermission('sdr_dashboard')) {
+            abort(401);
         }
 
         return view('admin::dashboard.sdr.timezones')->with([
@@ -321,17 +335,19 @@ class DashboardController extends Controller
         ]);
     }
 
-    protected function isSdrUser(): bool
+    /**
+     * Allow SDR/LGE dashboard API access when the user has either calling dashboard permission.
+     */
+    protected function ensureCallingDashboardAccess(): void
     {
-        return app(SourceAccessService::class)->isSdrUser();
-    }
+        if (
+            bouncer()->hasPermission('sdr_dashboard')
+            || bouncer()->hasPermission('lge_dashboard')
+        ) {
+            return;
+        }
 
-    protected function isLgeUser(): bool
-    {
-        return strcasecmp(
-            trim((string) auth()->guard('user')->user()?->role?->name),
-            'lge'
-        ) === 0;
+        abort(401);
     }
 
     /**
