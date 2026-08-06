@@ -187,8 +187,8 @@ abstract class AbstractEntity
                 case 'datetime':
                     if ($entity->{$attribute['id']}) {
                         $value = ! is_object($entity->{$attribute['id']})
-                            ? Carbon::parse($entity->{$attribute['id']})
-                            : $entity->{$attribute['id']}->format('D M d, Y H:i A');
+                            ? Carbon::parse($entity->{$attribute['id']})->format('D M d, Y h:i A')
+                            : $entity->{$attribute['id']}->format('D M d, Y h:i A');
                     } else {
                         $value = 'N/A';
                     }

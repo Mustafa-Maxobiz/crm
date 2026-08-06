@@ -497,7 +497,7 @@ class LeadDataGrid extends DataGrid
                     return '--';
                 }
 
-                return $row->next_followup_date;
+                return core()->formatDate($row->next_followup_date);
             },
         ]);
 
@@ -524,7 +524,7 @@ class LeadDataGrid extends DataGrid
                     return '--';
                 }
 
-                return $row->last_followup_date;
+                return core()->formatDate($row->last_followup_date);
             },
         ]);
 
@@ -536,6 +536,13 @@ class LeadDataGrid extends DataGrid
             'sortable'        => true,
             'filterable'      => true,
             'filterable_type' => 'date_range',
+            'closure'         => function ($row) {
+                if (! $row->created_at) {
+                    return '--';
+                }
+
+                return core()->formatDate($row->created_at);
+            },
         ]);
     }
 

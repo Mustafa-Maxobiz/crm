@@ -261,7 +261,7 @@ class AttributeValueRepository extends Repository
 
             case 'datetime':
                 if ($value) {
-                    $label = Carbon::parse($value)->format('D M d, Y H:i A');
+                    $label = Carbon::parse($value)->format('D M d, Y h:i A');
                 } else {
                     $label = null;
                 }
@@ -270,7 +270,7 @@ class AttributeValueRepository extends Repository
 
             default:
                 if ($value instanceof Carbon) {
-                    $label = $value->format('D M d, Y H:i A');
+                    $label = $value->format('D M d, Y h:i A');
                 } else {
                     $label = $value;
                 }

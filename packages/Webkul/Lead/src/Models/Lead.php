@@ -63,12 +63,12 @@ class Lead extends Model implements LeadContract
      * @var array
      */
     protected $casts = [
-        'closed_at'           => 'datetime:D M d, Y H:i A',
-        'deleted_at'          => 'datetime:D M d, Y H:i A',
+        'closed_at'           => 'datetime:D M d, Y h:i A',
+        'deleted_at'          => 'datetime:D M d, Y h:i A',
         'expected_close_date' => 'date:D M d, Y',
-        'next_followup_date'  => 'datetime:D M d, Y H:i A',
-        'last_followup_date'  => 'datetime:D M d, Y H:i A',
-        'lead_disqualified_at'=> 'datetime:D M d, Y H:i A',
+        'next_followup_date'  => 'datetime:D M d, Y h:i A',
+        'last_followup_date'  => 'datetime:D M d, Y h:i A',
+        'lead_disqualified_at'=> 'datetime:D M d, Y h:i A',
     ];
 
     /**

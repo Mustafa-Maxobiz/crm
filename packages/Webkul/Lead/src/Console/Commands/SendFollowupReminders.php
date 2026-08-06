@@ -120,7 +120,7 @@ class SendFollowupReminders extends Command
             "Previous Attempts: %d\n" .
             "Status: %s\n\n" .
             "%s",
-            $followupDate->format('M d, Y H:i A'),
+            $followupDate->format('M d, Y h:i A'),
             $lead->title,
             $lead->person ? $lead->person->name : 'No contact assigned',
             $lead->followup_count,
