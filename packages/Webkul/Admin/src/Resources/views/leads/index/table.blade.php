@@ -26,6 +26,8 @@
         'title',
     ];
 
+    $showTitleInEditModal = lead_variant() === 'main';
+
     if (! $canEditLeadValue) {
         $modalExcludedAttributeCodes[] = 'lead_value';
     }
@@ -125,6 +127,7 @@
             <x-admin::datagrid
                 src="{{ route($leadsIndexRoute) }}"
                 ref="datagrid"
+                fixed-height
             >
                 <x-slot:toolbar-left-after>
                     <v-leads-table-sort></v-leads-table-sort>
@@ -326,6 +329,25 @@
                                     name="quick_add"
                                     value="1"
                                 />
+
+                                @if ($showTitleInEditModal)
+                                    <x-admin::form.control-group>
+                                        <x-admin::form.control-group.label class="required">
+                                            @lang('admin::app.leads.create.title-field')
+                                        </x-admin::form.control-group.label>
+
+                                        <x-admin::form.control-group.control
+                                            type="text"
+                                            name="title"
+                                            rules="required"
+                                            ::value="editLead.title"
+                                            :label="trans('admin::app.leads.create.title-field')"
+                                            :placeholder="trans('admin::app.leads.create.title-field')"
+                                        />
+
+                                        <x-admin::form.control-group.error control-name="title" />
+                                    </x-admin::form.control-group>
+                                @endif
 
                                 <x-admin::attributes
                                     :custom-attributes="$leadQuickAttributes"

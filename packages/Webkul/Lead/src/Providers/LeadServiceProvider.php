@@ -4,6 +4,7 @@ namespace Webkul\Lead\Providers;
 
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
+use Webkul\Lead\Console\Commands\BackfillLeadTitles;
 use Webkul\Lead\Console\Commands\SendFollowupReminders;
 
 class LeadServiceProvider extends ServiceProvider
@@ -22,6 +23,7 @@ class LeadServiceProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             $this->commands([
                 SendFollowupReminders::class,
+                BackfillLeadTitles::class,
             ]);
         }
     }

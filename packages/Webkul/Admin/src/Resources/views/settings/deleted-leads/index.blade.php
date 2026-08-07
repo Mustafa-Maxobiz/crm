@@ -20,7 +20,10 @@
 
         {!! view_render_event('admin.settings.deleted_leads.index.datagrid.before') !!}
 
-        <x-admin::datagrid :src="route('admin.settings.deleted_leads.index')" />
+        <x-admin::datagrid
+            :src="route('admin.settings.deleted_leads.index')"
+            fixed-height
+        />
 
         {!! view_render_event('admin.settings.deleted_leads.index.datagrid.after') !!}
     </div>

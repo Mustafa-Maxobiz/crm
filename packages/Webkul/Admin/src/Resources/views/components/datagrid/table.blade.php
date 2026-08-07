@@ -1,9 +1,14 @@
-@props(['isMultiRow' => false])
+@props([
+    'isMultiRow'                 => false,
+    'fixedHeight'                => false,
+    'bindFixedHeightFromParent'  => false,
+])
 
 <v-datagrid-table
     :is-loading="isLoading"
     :available="available"
     :applied="applied"
+    :fixed-height="{{ $bindFixedHeightFromParent ? 'fixedHeight' : json_encode((bool) $fixedHeight) }}"
     @selectAll="selectAll"
     @sort="sort"
     @actionSuccess="get"
@@ -32,7 +37,9 @@
             <!-- Table view for larger screens, Card view for mobile -->
             <div
                 ref="tableScroll"
-                class="table-responsive box-shadow rounded-t-0 grid w-full overflow-x-auto border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+                class="table-responsive box-shadow relative z-0 rounded-t-0 grid w-full border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+                :class="fixedHeight ? 'overflow-auto' : 'overflow-x-auto'"
+                :style="fixedHeight ? { height: 'calc(100vh - 280px)', maxHeight: 'calc(100vh - 280px)' } : null"
                 @scroll="syncScrollFromTable"
             >
                 <!-- Table Header - Always visible on all screens -->
@@ -51,7 +58,7 @@
 
                     <template v-else>
                         <div
-                            class="row grid min-h-[47px] items-center gap-2.5 border-b bg-gray-50 px-4 py-2.5 text-black dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 max-lg:hidden"
+                            class="row sticky top-0 z-[1] grid min-h-[47px] items-center gap-2.5 border-b bg-gray-50 px-4 py-2.5 text-black dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 max-lg:hidden"
                             :style="gridRowStyle"
                         >
                             <!-- Mass Actions -->
@@ -106,7 +113,7 @@
                         </div>
                         
                         <!-- Mobile Sort/Filter Header -->
-                        <div class="hidden border-b bg-gray-50 px-4 py-3 text-black dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 max-lg:block">
+                        <div class="sticky top-0 z-[1] hidden border-b bg-gray-50 px-4 py-3 text-black dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 max-lg:block">
                             <div class="flex items-center justify-between">
                                 <!-- Mass Actions for Mobile -->
                                 <div v-if="available.massActions.length">
@@ -306,7 +313,27 @@
         app.component('v-datagrid-table', {
             template: '#v-datagrid-table-template',
 
-            props: ['isLoading', 'available', 'applied'],
+            props: {
+                isLoading: {
+                    type: Boolean,
+                    default: false,
+                },
+
+                available: {
+                    type: Object,
+                    required: true,
+                },
+
+                applied: {
+                    type: Object,
+                    required: true,
+                },
+
+                fixedHeight: {
+                    type: Boolean,
+                    default: false,
+                },
+            },
 
             data() {
                 return {

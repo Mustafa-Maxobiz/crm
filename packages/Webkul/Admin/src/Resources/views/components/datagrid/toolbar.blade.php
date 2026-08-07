@@ -3,7 +3,7 @@
 </template>
 
 <template v-else>
-    <div class="flex items-center justify-between gap-4 rounded-t-lg border border-b-0 border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 max-md:flex-wrap">
+    <div class="relative z-50 flex items-center justify-between gap-4 rounded-t-lg border border-b-0 border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 max-md:flex-wrap">
         <!-- Left Toolbar -->
         <div class="toolbarLeft flex min-w-0 flex-1 gap-x-1 max-md:w-full">
             {{ $toolbarLeftBefore }}

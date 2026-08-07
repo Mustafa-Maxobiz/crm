@@ -917,7 +917,7 @@ class LeadController extends Controller
             ? ['id' => $organization->id, 'name' => $organization->name]
             : null;
 
-        // Keep title as display fallback for older screens.
+        // Prefer company as Title only when Title is empty (main create/edit uses a separate Title).
         if ($organization && empty($data['title'])) {
             $data['title'] = $organization->name;
         }
@@ -1296,15 +1296,6 @@ class LeadController extends Controller
     public function updateAttributes(int $id)
     {
         $data = request()->all();
-
-        if (
-            lead_variant() === 'sdr'
-            && array_key_exists('lead_value', $data)
-        ) {
-            return response()->json([
-                'message' => trans('admin::app.leads.locked-fields'),
-            ], 403);
-        }
 
         $lockedCodes = $this->lockedLeadAttributeCodes();
         $attemptedLocked = array_values(array_intersect(array_keys($data), $lockedCodes));

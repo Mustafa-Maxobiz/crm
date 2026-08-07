@@ -4,9 +4,13 @@
     'toolbarLeftAfter'   => null,
     'toolbarRightBefore' => null,
     'toolbarRightAfter'  => null,
+    'fixedHeight'        => false,
 ])
 
-<v-datagrid {{ $attributes }}>
+<v-datagrid
+    {{ $attributes }}
+    :fixed-height="@json((bool) $fixedHeight)"
+>
     {{ $slot }}
 </v-datagrid>
 
@@ -36,8 +40,10 @@
             </x-admin::datagrid.toolbar>
 
             <div class="flex">
-                <x-admin::datagrid.table :isMultiRow="$isMultiRow">
-                    <template #header="{
+                <x-admin::datagrid.table
+                    :isMultiRow="$isMultiRow"
+                    bind-fixed-height-from-parent
+                >                    <template #header="{
                         isLoading,
                         available,
                         applied,
@@ -85,7 +91,17 @@
         app.component('v-datagrid', {
             template: '#v-datagrid-template',
 
-            props: ['src'],
+            props: {
+                src: {
+                    type: String,
+                    required: true,
+                },
+
+                fixedHeight: {
+                    type: Boolean,
+                    default: false,
+                },
+            },
 
             data() {
                 return {

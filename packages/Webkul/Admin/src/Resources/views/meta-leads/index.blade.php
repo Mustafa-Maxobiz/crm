@@ -18,7 +18,10 @@
             </div>
         </div>
 
-        <x-admin::datagrid :src="route('admin.meta_leads.index')">
+        <x-admin::datagrid
+            :src="route('admin.meta_leads.index')"
+            fixed-height
+        >
             <x-admin::shimmer.datagrid />
         </x-admin::datagrid>
     </div>

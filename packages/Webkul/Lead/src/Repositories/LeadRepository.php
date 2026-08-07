@@ -170,7 +170,11 @@ class LeadRepository extends Repository
 
         if ($organization) {
             $data['organization_id'] = $organization->id;
-            $data['title'] = $organization->name;
+
+            // Keep an explicit Title (main leads). Only fall back to company when title is empty.
+            if (! filled($data['title'] ?? null)) {
+                $data['title'] = $organization->name;
+            }
 
             if (isset($data['person']) && is_array($data['person'])) {
                 $data['person']['organization_id'] = $organization->id;
@@ -183,6 +187,18 @@ class LeadRepository extends Repository
                 $data['person']['organization_id'] = null;
                 unset($data['person']['organization_name']);
             }
+        }
+
+        return $data;
+    }
+
+    /**
+     * Fill title from company only when the lead has no title yet.
+     */
+    private function fillTitleFromCompanyName(array $data, ?string $companyName): array
+    {
+        if (! filled($data['title'] ?? null) && filled($companyName)) {
+            $data['title'] = $companyName;
         }
 
         return $data;
@@ -210,7 +226,7 @@ class LeadRepository extends Repository
 
                 if (empty($data['organization_id']) && $person->organization_id) {
                     $data['organization_id'] = $person->organization_id;
-                    $data['title'] = $person->organization?->name ?: ($data['title'] ?? '');
+                    $data = $this->fillTitleFromCompanyName($data, $person->organization?->name);
                 }
             } else {
                 // Check if person data has any meaningful values
@@ -231,7 +247,7 @@ class LeadRepository extends Repository
 
                         if (empty($data['organization_id']) && $existingPerson->organization_id) {
                             $data['organization_id'] = $existingPerson->organization_id;
-                            $data['title'] = $existingPerson->organization?->name ?: ($data['title'] ?? '');
+                            $data = $this->fillTitleFromCompanyName($data, $existingPerson->organization?->name);
                         }
                     } else {
                         $person = $this->personRepository->create(array_merge($data['person'], [
@@ -241,7 +257,7 @@ class LeadRepository extends Repository
 
                         if (empty($data['organization_id']) && $person->organization_id) {
                             $data['organization_id'] = $person->organization_id;
-                            $data['title'] = $person->organization?->name ?: ($data['title'] ?? '');
+                            $data = $this->fillTitleFromCompanyName($data, $person->organization?->name);
                         }
                     }
                 } else {
@@ -332,7 +348,7 @@ class LeadRepository extends Repository
                     && $person->organization_id
                 ) {
                     $data['organization_id'] = $person->organization_id;
-                    $data['title'] = $person->organization?->name ?: ($data['title'] ?? null);
+                    $data = $this->fillTitleFromCompanyName($data, $person->organization?->name);
                 }
             } else {
                 // Check if person data has any meaningful values
@@ -353,7 +369,7 @@ class LeadRepository extends Repository
 
                         if (empty($data['organization_id']) && $existingPerson->organization_id) {
                             $data['organization_id'] = $existingPerson->organization_id;
-                            $data['title'] = $existingPerson->organization?->name ?: ($data['title'] ?? null);
+                            $data = $this->fillTitleFromCompanyName($data, $existingPerson->organization?->name);
                         }
                     } else {
                         $person = $this->personRepository->create(array_merge($data['person'], [
@@ -363,7 +379,7 @@ class LeadRepository extends Repository
 
                         if (empty($data['organization_id']) && $person->organization_id) {
                             $data['organization_id'] = $person->organization_id;
-                            $data['title'] = $person->organization?->name ?: ($data['title'] ?? null);
+                            $data = $this->fillTitleFromCompanyName($data, $person->organization?->name);
                         }
                     }
                 } else {
@@ -373,14 +389,14 @@ class LeadRepository extends Repository
             }
         }
 
-        // When person company changed, mirror onto lead.
+        // When person company changed, mirror company onto lead; keep an explicit title.
         if (
             isset($person)
             && array_key_exists('organization_id', $data['person'] ?? [])
             && ! array_key_exists('organization_name', $data)
         ) {
             $data['organization_id'] = $person->organization_id;
-            $data['title'] = $person->organization?->name ?: ($data['title'] ?? null);
+            $data = $this->fillTitleFromCompanyName($data, $person->organization?->name);
         }
 
         if (isset($data['lead_pipeline_stage_id'])) {
@@ -604,10 +620,22 @@ class LeadRepository extends Repository
         $newCompany = $person->organization?->name;
 
         if ($leadId) {
-            $this->getModel()->where('id', $leadId)->update([
+            $lead = $this->find($leadId);
+            $currentTitle = trim((string) ($lead?->title ?? ''));
+
+            $payload = [
                 'organization_id' => $person->organization_id,
-                'title'           => $newCompany ?: '',
-            ]);
+            ];
+
+            // Sync title from company only when empty or still mirroring the old company name.
+            if (
+                $currentTitle === ''
+                || ($oldCompany !== null && $currentTitle === $oldCompany)
+            ) {
+                $payload['title'] = $newCompany ?: '';
+            }
+
+            $this->getModel()->where('id', $leadId)->update($payload);
         }
 
         if ($leadId && $oldCompany !== $newCompany) {

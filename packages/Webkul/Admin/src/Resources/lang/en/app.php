@@ -311,7 +311,7 @@ return [
                 ],
 
                 'search' => [
-                    'title' => 'Search by ID, title, description, contact, source...',
+                    'title' => 'Search by ID, title, company name, description, contact, source...',
                 ],
             ],
 
@@ -2220,6 +2220,8 @@ return [
                 'id'                  => 'ID',
                 'sales-person'        => 'Sales Person',
                 'subject'             => 'Company Name',
+                'company-name'        => 'Company Name',
+                'title'               => 'Title',
                 'source'              => 'Source',
                 'lead-value'          => 'Lead Value',
                 'lead-type'           => 'Business Type',
@@ -2284,7 +2286,7 @@ return [
 
                 'toolbar' => [
                     'search' => [
-                        'title' => 'Search by ID, title, description, contact, source...',
+                        'title' => 'Search by ID, title, company name, description, contact, source...',
                     ],
 
                     'filters' => [
@@ -2331,6 +2333,7 @@ return [
 
         'create' => [
             'title'                   => 'Create Lead',
+            'title-field'             => 'Title',
             'save-btn'                => 'Save',
             'details'                 => 'Details',
             'details-info'            => 'Put The Basic Information of the Lead',

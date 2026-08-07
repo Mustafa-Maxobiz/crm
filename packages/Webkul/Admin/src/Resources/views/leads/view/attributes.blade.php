@@ -50,6 +50,32 @@
             >
                 <form @submit="handleSubmit($event, () => {})">
                     {!! view_render_event('admin.leads.view.attributes.form_controls.attributes.view.before', ['lead' => $lead]) !!}
+
+                    @if (lead_variant() === 'main')
+                        <div class="mb-1 flex flex-col gap-1">
+                            <div class="grid grid-cols-[1fr_2fr] items-center gap-1">
+                                <div class="label dark:text-white">
+                                    @lang('admin::app.leads.create.title-field')
+                                </div>
+
+                                <div class="font-medium dark:text-white">
+                                    <x-admin::form.control-group.controls.inline.text
+                                        type="inline"
+                                        ::name="'title'"
+                                        :value="$lead->title ?? ''"
+                                        :value-label="($lead->title ?? '') === '' ? '--' : $lead->title"
+                                        position="left"
+                                        rules="required"
+                                        :label="trans('admin::app.leads.create.title-field')"
+                                        :placeholder="trans('admin::app.leads.create.title-field')"
+                                        ::errors="errors"
+                                        :url="lead_route('attributes.update', $lead->id)"
+                                        :allow-edit="bouncer()->hasPermission(lead_permission('edit'))"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    @endif
         
                     <x-admin::attributes.view
                         :custom-attributes="app('Webkul\Attribute\Repositories\AttributeRepository')->findWhere([

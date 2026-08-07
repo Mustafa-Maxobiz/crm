@@ -243,24 +243,46 @@ class LeadDataGrid extends DataGrid
             'filterable' => true,
         ]);
 
-        $this->addColumn([
-            'index'      => 'title',
-            'label'      => trans('admin::app.leads.index.datagrid.subject'),
-            'type'       => 'string',
-            'searchable' => true,
-            'sortable'   => true,
-            'closure'    => fn ($row) => $row->company_name ?: $row->title,
-        ]);
+        if (lead_variant() === 'sdr') {
+            $this->addColumn([
+                'index'      => 'title',
+                'label'      => trans('admin::app.leads.index.datagrid.subject'),
+                'type'       => 'string',
+                'searchable' => true,
+                'sortable'   => true,
+                'closure'    => fn ($row) => $row->company_name ?: $row->title,
+            ]);
 
-        $this->addColumn([
-            'index'      => 'company_name',
-            'label'      => trans('admin::app.leads.index.datagrid.subject'),
-            'type'       => 'string',
-            'searchable' => true,
-            'sortable'   => true,
-            'filterable' => false,
-            'visibility' => false,
-        ]);
+            $this->addColumn([
+                'index'      => 'company_name',
+                'label'      => trans('admin::app.leads.index.datagrid.subject'),
+                'type'       => 'string',
+                'searchable' => true,
+                'sortable'   => true,
+                'filterable' => false,
+                'visibility' => false,
+            ]);
+        } else {
+            $this->addColumn([
+                'index'      => 'title',
+                'label'      => trans('admin::app.leads.index.datagrid.title'),
+                'type'       => 'string',
+                'searchable' => true,
+                'sortable'   => true,
+                'filterable' => true,
+                'closure'    => fn ($row) => $row->title ?: '--',
+            ]);
+
+            $this->addColumn([
+                'index'      => 'company_name',
+                'label'      => trans('admin::app.leads.index.datagrid.company-name'),
+                'type'       => 'string',
+                'searchable' => true,
+                'sortable'   => true,
+                'filterable' => false,
+                'visibility' => false,
+            ]);
+        }
 
         $this->addColumn([
             'index'      => 'description',
@@ -474,27 +496,6 @@ class LeadDataGrid extends DataGrid
                 ])
                 ->values()
                 ->all(),
-        ]);
-
-        $this->addColumn([
-            'index'              => 'lead_disqualification_reason',
-            'label'              => trans('admin::app.leads.index.datagrid.disqualification'),
-            'type'               => 'string',
-            'searchable'         => false,
-            'sortable'           => true,
-            'filterable'         => true,
-            'filterable_type'    => 'dropdown',
-            'filterable_options' => [
-                ['label' => trans('admin::app.leads.disqualification.do-not-call'), 'value' => 'do_not_call'],
-                ['label' => trans('admin::app.leads.disqualification.incorrect-info'), 'value' => 'incorrect_info'],
-            ],
-            'closure'            => function ($row) {
-                if (! $row->lead_disqualification_reason) {
-                    return '--';
-                }
-
-                return trans('admin::app.leads.disqualification.'.str_replace('_', '-', $row->lead_disqualification_reason));
-            },
         ]);
 
         $this->addColumn([
