@@ -5,8 +5,14 @@
 
     {!! view_render_event('admin.leads.create.form.before') !!}
 
+    @php
+        $valueAndPricingAttributeCodes = lead_variant() === 'sdr'
+            ? ['pricing_type']
+            : ['lead_value', 'pricing_type'];
+    @endphp
+
     <!-- Create Lead Form -->
-    <x-admin::form :action="route('admin.leads.store')">
+    <x-admin::form :action="lead_route('store')">
         <div class="flex flex-col gap-4">
             <div class="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
                 <div class="flex flex-col gap-2">
@@ -142,7 +148,7 @@
                                     <!-- Lead Value and Pricing Type -->
                                     <x-admin::attributes
                                         :custom-attributes="app('Webkul\Attribute\Repositories\AttributeRepository')->findWhere([
-                                            ['code', 'IN', ['lead_value', 'pricing_type']],
+                                            ['code', 'IN', $valueAndPricingAttributeCodes],
                                             'entity_type' => 'leads',
                                             'quick_add'   => 1
                                         ])"

@@ -1075,7 +1075,7 @@
                         };
 
                         this.$axios
-                            .get('{{ route('admin.leads.kanban.look_up') }}', {
+                            .get('{{ lead_route('kanban.look_up') }}', {
                                 params
                             })
                             .then(({

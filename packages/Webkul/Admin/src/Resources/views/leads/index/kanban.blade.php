@@ -43,9 +43,9 @@
                                     @{{ stage.name }} (@{{ stage.leads.meta.total }})
                                 </span>
 
-                                @if (bouncer()->hasPermission('leads.create'))
+                                @if (bouncer()->hasPermission(lead_permission('create')))
                                     <a
-                                        :href="'{{ route('admin.leads.create') }}' + '?stage_id=' + stage.id"
+                                        :href="'{{ lead_route('create') }}' + '?stage_id=' + stage.id"
                                         class="icon-add cursor-pointer rounded p-1 text-lg text-gray-600 transition-all hover:bg-gray-200 hover:text-gray-800 dark:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-white"
                                         target="_blank"
                                     >
@@ -107,9 +107,9 @@
                                             </p>
                                         </div>
 
-                                        @if (bouncer()->hasPermission('leads.create'))
+                                        @if (bouncer()->hasPermission(lead_permission('create')))
                                             <a
-                                                :href="'{{ route('admin.leads.create') }}' + '?stage_id=' + stage.id"
+                                                :href="'{{ lead_route('create') }}' + '?stage_id=' + stage.id"
                                                 class="secondary-button"
                                             >
                                                 @lang('admin::app.leads.index.kanban.create-lead-btn')
@@ -125,7 +125,7 @@
 
                                 <a
                                     class="lead-item flex cursor-pointer flex-col gap-5 rounded-md border border-gray-100 bg-gray-50 p-2 dark:border-gray-400 dark:bg-gray-400"
-                                    :href="'{{ route('admin.leads.view', 'replaceId') }}'.replace('replaceId', element.id)"
+                                    :href="'{{ lead_route('view', 'replaceId') }}'.replace('replaceId', element.id)"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                 >
@@ -524,7 +524,7 @@
                     });
 
                     return this.$axios
-                        .get("{{ route('admin.leads.get') }}", {
+                        .get("{{ lead_route('get') }}", {
                             params: {
                                 ...params,
 
@@ -665,7 +665,7 @@
 
                     this.stageLeads[stage.sort_order].leads.meta.total = this.stageLeads[stage.sort_order].leads.meta.total + 1;
 
-                    this.updateStage('{{ route('admin.leads.stage.update', '__LEAD_ID__') }}'.replace('__LEAD_ID__', event.added.element.id), {
+                    this.updateStage('{{ lead_route('stage.update', '__LEAD_ID__') }}'.replace('__LEAD_ID__', event.added.element.id), {
                         'lead_pipeline_stage_id': stage.id
                     })
                         .then(response => {
@@ -691,7 +691,7 @@
                 handleFormSubmit(params) {
                     this.finalized.updating = true;
 
-                    this.updateStage("{{ route('admin.leads.stage.update', '__LEAD_ID__') }}".replace('__LEAD_ID__', this.finalized.lead.id), {
+                    this.updateStage("{{ lead_route('stage.update', '__LEAD_ID__') }}".replace('__LEAD_ID__', this.finalized.lead.id), {
                         ...params,
                         lead_pipeline_stage_id: this.finalized.stage.id,
                     })

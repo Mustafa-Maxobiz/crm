@@ -7,6 +7,21 @@
         'lead_sub_source_id',
         'industry',
     ];
+
+    $hiddenAttributeCodes = [
+        'title',
+        'companies',
+        'organization_id',
+        'description',
+        'lead_pipeline_id',
+        'lead_pipeline_stage_id',
+        'source_sub_type',
+        'service_offered',
+    ];
+
+    if (lead_variant() === 'sdr') {
+        $hiddenAttributeCodes[] = 'lead_value';
+    }
 @endphp
 
 <div class="flex w-full flex-col gap-4 border-b border-gray-200 p-4 dark:border-gray-800">
@@ -15,9 +30,9 @@
             <div class="flex w-full items-center justify-between gap-4 font-semibold dark:text-white">
                 <h4>@lang('admin::app.leads.view.attributes.title')</h4>
                 
-                @if (bouncer()->hasPermission('leads.edit'))
+                @if (bouncer()->hasPermission(lead_permission('edit')))
                     <a
-                        href="{{ route('admin.leads.edit', $lead->id) }}"
+                        href="{{ lead_route('edit', $lead->id) }}"
                         class="icon-edit rounded-md p-1.5 text-2xl transition-all hover:bg-gray-100 dark:hover:bg-gray-950"
                         target="_blank"
                     ></a>
@@ -39,10 +54,10 @@
                     <x-admin::attributes.view
                         :custom-attributes="app('Webkul\Attribute\Repositories\AttributeRepository')->findWhere([
                             'entity_type' => 'leads',
-                            ['code', 'NOTIN', ['title', 'companies', 'organization_id', 'description', 'lead_pipeline_id', 'lead_pipeline_stage_id', 'source_sub_type', 'service_offered']]
+                            ['code', 'NOTIN', $hiddenAttributeCodes]
                         ])"
                         :entity="$lead"
-                        :url="route('admin.leads.attributes.update', $lead->id)"
+                        :url="lead_route('attributes.update', $lead->id)"
                         :allow-edit="true"
                         :locked-attribute-codes="$lockedLeadAttributeCodes"
                     />

@@ -3,6 +3,7 @@
 return [
     'acl' => [
         'leads'            => 'Leads',
+        'leads-sdr'        => 'SDR Leads',
         'lead'             => 'Lead',
         'quotes'           => 'Quotes',
         'mail'             => 'Mail',
@@ -2663,6 +2664,7 @@ return [
         'app-version'          => 'Version: :version',
         'dashboard'            => 'Dashboard',
         'leads'                => 'Leads',
+        'leads-sdr'            => 'SDR Leads',
         'meta-leads'           => 'Meta Leads',
         'smrtphone'            => 'smrtPhone Calls',
         'quotes'               => 'Quotes',

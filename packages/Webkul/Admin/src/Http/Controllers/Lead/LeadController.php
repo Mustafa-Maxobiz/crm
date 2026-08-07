@@ -77,16 +77,36 @@ class LeadController extends Controller
     }
 
     /**
-     * Display a listing of the resource.
+     * Main leads list.
      */
     public function index()
     {
+        return $this->listIndex('main');
+    }
+
+    /**
+     * SDR leads list.
+     */
+    public function sdr()
+    {
+        return $this->listIndex('sdr');
+    }
+
+    /**
+     * Shared list page for main and SDR lead screens.
+     */
+    protected function listIndex(string $leadVariant)
+    {
+        $this->shareLeadVariant($leadVariant);
+
+        $leadsIndexRoute = lead_route_name('index', $leadVariant);
+
         if (request()->ajax()) {
             return datagrid(LeadDataGrid::class)->process();
         }
 
         if (! request()->has('view_type')) {
-            return redirect()->route('admin.leads.index', array_merge(request()->query(), [
+            return redirect()->route($leadsIndexRoute, array_merge(request()->query(), [
                 'view_type' => 'table',
             ]));
         }
@@ -98,9 +118,32 @@ class LeadController extends Controller
         }
 
         return view('admin::leads.index', [
-            'pipeline' => $pipeline,
-            'columns'  => $this->getKanbanColumns(),
+            'pipeline'        => $pipeline,
+            'columns'         => $this->getKanbanColumns(),
+            'leadVariant'     => $leadVariant,
+            'leadsIndexRoute' => $leadsIndexRoute,
         ]);
+    }
+
+    /**
+     * Share lead variant helpers with all views for this request.
+     */
+    protected function shareLeadVariant(?string $variant = null): string
+    {
+        $leadVariant = $variant ?? lead_variant();
+
+        view()->share('leadVariant', $leadVariant);
+        view()->share('leadsIndexRoute', lead_route_name('index', $leadVariant));
+
+        return $leadVariant;
+    }
+
+    /**
+     * Index route name for the active lead variant.
+     */
+    protected function leadsIndexRouteName(): string
+    {
+        return lead_route_name('index');
     }
 
     /**
@@ -536,6 +579,8 @@ class LeadController extends Controller
      */
     public function disqualified(): View|RedirectResponse
     {
+        $this->shareLeadVariant();
+
         $baseQuery = Lead::query()
             ->with(['person.organization', 'user', 'source', 'subSource'])
             ->whereNotNull('lead_disqualification_reason')
@@ -716,6 +761,8 @@ class LeadController extends Controller
      */
     public function create(): View
     {
+        $this->shareLeadVariant();
+
         return view('admin::leads.create');
     }
 
@@ -787,7 +834,7 @@ class LeadController extends Controller
             $params['pipeline_id'] = $data['lead_pipeline_id'];
         }
 
-        return redirect()->route('admin.leads.index', $params ?? []);
+        return redirect()->route($this->leadsIndexRouteName(), $params ?? []);
     }
 
     /**
@@ -795,10 +842,12 @@ class LeadController extends Controller
      */
     public function edit(int $id): View|RedirectResponse
     {
+        $this->shareLeadVariant();
+
         $lead = $this->leadRepository->findOrFail($id);
 
         if (! $this->sourceAccessService->canAccessLead($lead)) {
-            return redirect()->route('admin.leads.index');
+            return redirect()->route($this->leadsIndexRouteName());
         }
 
         if ($this->isSdrUser()) {
@@ -923,10 +972,12 @@ class LeadController extends Controller
      */
     public function view(int $id)
     {
+        $this->shareLeadVariant();
+
         $lead = $this->leadRepository->findOrFail($id);
 
         if (! $this->sourceAccessService->canAccessLead($lead)) {
-            return redirect()->route('admin.leads.index');
+            return redirect()->route($this->leadsIndexRouteName());
         }
 
         if ($this->isSdrUser()) {
@@ -1198,7 +1249,7 @@ class LeadController extends Controller
         if (request()->has('closed_at')) {
             return redirect()->back();
         } else {
-            return redirect()->route('admin.leads.index', $data['lead_pipeline_id']);
+            return redirect()->route($this->leadsIndexRouteName(), $data['lead_pipeline_id']);
         }
     }
 
@@ -1208,8 +1259,12 @@ class LeadController extends Controller
     public function storeServiceOfferedOption(): JsonResponse
     {
         $canCreate = bouncer()->hasPermission('settings.lead.services_offered.create')
+            || bouncer()->hasPermission(lead_permission('create'))
+            || bouncer()->hasPermission(lead_permission('edit'))
             || bouncer()->hasPermission('leads.create')
             || bouncer()->hasPermission('leads.edit')
+            || bouncer()->hasPermission('sdr_leads.create')
+            || bouncer()->hasPermission('sdr_leads.edit')
             || $this->isSdrUser();
 
         abort_unless($canCreate, 403);
@@ -1446,7 +1501,7 @@ class LeadController extends Controller
         $lead = $this->leadRepository->findOrFail($id);
 
         if (! $this->sourceAccessService->canAccessLead($lead)) {
-            return redirect()->route('admin.leads.index');
+            return redirect()->route($this->leadsIndexRouteName());
         }
 
         Event::dispatch('lead.update.before', $id);
@@ -1470,7 +1525,7 @@ class LeadController extends Controller
             return redirect()->back();
         }
 
-        return redirect()->route('admin.leads.index');
+        return redirect()->route($this->leadsIndexRouteName());
     }
 
     /**
@@ -2028,10 +2083,18 @@ class LeadController extends Controller
 
         $tagIds = collect($tagNames)
             ->filter(fn ($name) => filled($name))
-            ->map(fn ($name) => trim($name))
-            ->filter()
+            ->map(fn ($name) => is_string($name) ? trim($name) : $name)
+            ->filter(fn ($name) => $name !== '' && $name !== null)
             ->unique()
-            ->map(function (string $name): int {
+            ->map(function ($value): ?int {
+                if (is_numeric($value)) {
+                    $tag = $this->tagRepository->find((int) $value);
+
+                    return $tag?->id;
+                }
+
+                $name = (string) $value;
+
                 $tag = $this->tagRepository->findOneWhere([
                     'name'    => $name,
                     'user_id' => auth()->id(),
@@ -2050,6 +2113,7 @@ class LeadController extends Controller
 
                 return $tag->id;
             })
+            ->filter()
             ->values()
             ->all();
 
@@ -2461,7 +2525,7 @@ class LeadController extends Controller
             ? $message.' '.count($errors).' row'.(count($errors) === 1 ? '' : 's').' failed. '.implode(' ', array_slice($errors, 0, 5))
             : $message);
 
-        return redirect()->route('admin.leads.index');
+        return redirect()->route($this->leadsIndexRouteName());
     }
 
     protected function pendingImportPath(string $token): string
@@ -2486,7 +2550,7 @@ class LeadController extends Controller
         $lead = $this->leadRepository->with(['person', 'tags'])->findOrFail($id);
 
         if (! $this->sourceAccessService->canAccessLead($lead)) {
-            return redirect()->route('admin.leads.index');
+            return redirect()->route($this->leadsIndexRouteName());
         }
 
         $organizationIds = array_values(array_unique(array_map('intval', $data['organization_ids'])));

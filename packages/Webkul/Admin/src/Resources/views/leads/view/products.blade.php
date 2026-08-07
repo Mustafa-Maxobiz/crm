@@ -325,7 +325,7 @@
                  * @return {void}
                  */
                 attachProduct(product) {
-                    this.$axios.post('{{ route('admin.leads.product.add', $lead->id) }}', {
+                    this.$axios.post('{{ lead_route('product.add', $lead->id) }}', {
                         _method: 'PUT',
                         ...product,
                     })
@@ -345,7 +345,7 @@
                 removeProduct() {
                     this.$emitter.emit('open-confirm-modal', {
                         agree: () => {
-                            this.$axios.post('{{ route('admin.leads.product.remove', $lead->id) }}', {
+                            this.$axios.post('{{ lead_route('product.remove', $lead->id) }}', {
                                 _method: 'DELETE',
                                 product_id: this.product.product_id,
                             })
@@ -371,7 +371,7 @@
                         return;
                     }
 
-                    return '{{ route('admin.leads.product.add', $lead->id) }}';
+                    return '{{ lead_route('product.add', $lead->id) }}';
                 }
             }
         });

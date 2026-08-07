@@ -33,8 +33,8 @@
 
                     <!-- Tags -->
                     <x-admin::tags
-                        :attach-endpoint="route('admin.leads.tags.attach', $lead->id)"
-                        :detach-endpoint="route('admin.leads.tags.detach', $lead->id)"
+                        :attach-endpoint="lead_route('tags.attach', $lead->id)"
+                        :detach-endpoint="lead_route('tags.detach', $lead->id)"
                         :added-tags="$lead->tags"
                         :lead-context="[
                             'id' => $lead->id,
@@ -106,7 +106,7 @@
                             @lang('admin::app.leads.disqualification.' . str_replace('_', '-', $lead->lead_disqualification_reason))
                         </span>
 
-                        @if (bouncer()->hasPermission('leads.disqualified'))
+                        @if (bouncer()->hasPermission(lead_permission('disqualified')))
                             @if ($lead->lead_disqualification_comment)
                                 <div class="w-full rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
                                     <span class="block text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
@@ -121,7 +121,7 @@
 
                             <form
                                 method="POST"
-                                action="{{ route('admin.leads.restore_disqualified', $lead->id) }}"
+                                action="{{ lead_route('restore_disqualified', $lead->id) }}"
                             >
                                 @csrf
 
@@ -133,7 +133,7 @@
                                 </button>
                             </form>
                         @endif
-                    @elseif (bouncer()->hasPermission('leads.edit'))
+                    @elseif (bouncer()->hasPermission(lead_permission('edit')))
                         @php
                             $leadDisqualificationLabels = [
                                 'doNotCall'            => trans('admin::app.leads.disqualification.do-not-call'),
@@ -149,7 +149,7 @@
                         @endphp
 
                         <v-lead-disqualification-actions
-                            action-url="{{ route('admin.leads.disqualify', $lead->id) }}"
+                            action-url="{{ lead_route('disqualify', $lead->id) }}"
                             csrf-token="{{ csrf_token() }}"
                             :labels='@json($leadDisqualificationLabels)'
                         ></v-lead-disqualification-actions>
@@ -166,7 +166,7 @@
             <!-- Contact Person -->
             @include ('admin::leads.view.person')
 
-            @if (bouncer()->hasPermission('leads.create'))
+            @if (bouncer()->hasPermission(lead_permission('create')))
                 <div class="border-b border-gray-200 p-4 dark:border-gray-800">
                     @php
                         $replicateOrganizations = collect(app(\Webkul\Contact\Repositories\OrganizationRepository::class)->getDropdownOptions())
@@ -213,7 +213,7 @@
 
                         <x-slot:content>
                             <v-replicate-lead
-                                action-url="{{ route('admin.leads.duplicate_to_companies', $lead->id) }}"
+                                action-url="{{ lead_route('duplicate_to_companies', $lead->id) }}"
                                 :companies='@json($replicateOrganizations)'
                                 :teams-by-company='@json($replicateTeamsByCompany)'
                             ></v-replicate-lead>
@@ -236,8 +236,8 @@
             {!! view_render_event('admin.leads.view.activities.before', ['lead' => $lead]) !!}
 
             <x-admin::activities
-                :endpoint="route('admin.leads.activities.index', $lead->id)"
-                :email-detach-endpoint="route('admin.leads.emails.detach', $lead->id)"
+                :endpoint="lead_route('activities.index', $lead->id)"
+                :email-detach-endpoint="lead_route('emails.detach', $lead->id)"
                 :activeType="request()->query('from') === 'quotes' ? 'quotes' : 'all'"
                 :prospect-timezone="app(\Webkul\Lead\Services\UsStateTimezoneService::class)->timezoneFromPerson($lead->person)"
                 :extra-types="[

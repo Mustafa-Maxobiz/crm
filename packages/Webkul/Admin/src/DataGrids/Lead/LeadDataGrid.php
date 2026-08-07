@@ -552,24 +552,24 @@ class LeadDataGrid extends DataGrid
      */
     public function prepareActions(): void
     {
-        if (bouncer()->hasPermission('leads.view')) {
+        if (bouncer()->hasPermission(lead_permission('view'))) {
             $this->addAction([
                 'index'  => 'view',
                 'icon'   => 'icon-eye',
                 'title'  => trans('admin::app.leads.index.datagrid.view'),
                 'method' => 'GET',
                 'target' => '_blank',
-                'url'    => fn ($row) => route('admin.leads.view', $row->id),
+                'url'    => fn ($row) => lead_route('view', $row->id),
             ]);
         }
 
-        if (bouncer()->hasPermission('leads.edit')) {
+        if (bouncer()->hasPermission(lead_permission('edit'))) {
             $this->addAction([
                 'index'  => 'edit',
                 'icon'   => 'icon-edit',
                 'title'  => trans('admin::app.leads.index.datagrid.edit'),
                 'method' => 'GET',
-                'url'    => fn ($row) => route('admin.leads.form_data', $row->id),
+                'url'    => fn ($row) => lead_route('form_data', $row->id),
             ]);
 
             $this->addAction([
@@ -581,13 +581,13 @@ class LeadDataGrid extends DataGrid
             ]);
         }
 
-        if (bouncer()->hasPermission('leads.delete')) {
+        if (bouncer()->hasPermission(lead_permission('delete'))) {
             $this->addAction([
                 'index'  => 'delete',
                 'icon'   => 'icon-delete',
                 'title'  => trans('admin::app.leads.index.datagrid.delete'),
                 'method' => 'delete',
-                'url'    => fn ($row) => route('admin.leads.delete', $row->id),
+                'url'    => fn ($row) => lead_route('delete', $row->id),
             ]);
         }
     }
@@ -601,12 +601,12 @@ class LeadDataGrid extends DataGrid
             'icon'   => 'icon-delete',
             'title'  => trans('admin::app.leads.index.datagrid.mass-delete'),
             'method' => 'POST',
-            'url'    => route('admin.leads.mass_delete'),
+            'url'    => lead_route('mass_delete'),
         ]);
 
         $this->addMassAction([
             'title'   => trans('admin::app.leads.index.datagrid.mass-update'),
-            'url'     => route('admin.leads.mass_update'),
+            'url'     => lead_route('mass_update'),
             'method'  => 'POST',
             'options' => $this->getAccessiblePipelineStages()->map(fn ($stage) => [
                 'label' => $stage->name,

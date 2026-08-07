@@ -1,5 +1,9 @@
 {!! view_render_event('admin.leads.index.view_switcher.before') !!}
 
+@php
+    $leadsIndexRoute = $leadsIndexRoute ?? 'admin.leads.index';
+@endphp
+
 <div class="flex items-center gap-4 max-md:w-full max-md:!justify-between">
     <x-admin::dropdown>
         <x-slot:toggle>
@@ -36,7 +40,7 @@
                 {!! view_render_event('admin.leads.index.view_switcher.pipeline.content.before', ['tempPipeline' => $tempPipeline]) !!}
 
                 <a
-                    href="{{ route('admin.leads.index', [
+                    href="{{ route($leadsIndexRoute, [
                         'pipeline_id' => $tempPipeline->id,
                         'view_type'   => request('view_type')
                     ]) }}"
@@ -73,7 +77,7 @@
 
             <a
                 class="flex"
-                href="{{ route('admin.leads.index', [
+                href="{{ route($leadsIndexRoute, [
                     'pipeline_id' => request('pipeline_id'),
                     'view_type'   => 'table',
                 ]) }}"
@@ -83,7 +87,7 @@
         @else
             <a
                 class="flex"
-                href="{{ route('admin.leads.index', [
+                href="{{ route($leadsIndexRoute, [
                     'pipeline_id' => request('pipeline_id'),
                     'view_type'   => 'kanban',
                 ]) }}"

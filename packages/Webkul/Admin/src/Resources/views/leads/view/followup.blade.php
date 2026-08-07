@@ -110,11 +110,11 @@
                 @endif
 
                 <!-- Mark Follow-up Complete Button -->
-                @if ($lead->next_followup_date && bouncer()->hasPermission('leads.edit'))
+                @if ($lead->next_followup_date && bouncer()->hasPermission(lead_permission('edit')))
                     <form
                         id="followup-complete-form-{{ $lead->id }}"
                         method="POST"
-                        action="{{ route('admin.leads.followup.complete', $lead->id) }}"
+                        action="{{ lead_route('followup.complete', $lead->id) }}"
                         onsubmit="const submitButton = document.querySelector('[data-followup-submit=&quot;{{ $lead->id }}&quot;]'); const triggerButton = document.querySelector('[data-followup-trigger=&quot;{{ $lead->id }}&quot;]'); if (submitButton) { submitButton.disabled = true; submitButton.textContent = 'Completing...'; } if (triggerButton) { triggerButton.classList.add('hidden'); }"
                     >
                         @csrf
@@ -155,7 +155,7 @@
     </x-admin::accordion>
 </div>
 
-@if ($lead->next_followup_date && bouncer()->hasPermission('leads.edit'))
+@if ($lead->next_followup_date && bouncer()->hasPermission(lead_permission('edit')))
     <dialog
         id="followup-complete-modal-{{ $lead->id }}"
         class="m-0 h-screen max-h-none w-screen max-w-none bg-transparent p-0 backdrop:bg-black/50"

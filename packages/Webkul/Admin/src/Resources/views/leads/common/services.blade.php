@@ -11,8 +11,12 @@
         : old('services', []);
 
     $canAddService = bouncer()->hasPermission('settings.lead.services_offered.create')
+        || bouncer()->hasPermission(lead_permission('create'))
+        || bouncer()->hasPermission(lead_permission('edit'))
         || bouncer()->hasPermission('leads.create')
         || bouncer()->hasPermission('leads.edit')
+        || bouncer()->hasPermission('sdr_leads.create')
+        || bouncer()->hasPermission('sdr_leads.edit')
         || app(\Webkul\Lead\Services\SourceAccessService::class)->isSdrUser();
 @endphp
 
@@ -27,6 +31,6 @@
         :value="$selectedServiceIds"
         validations=""
         :can-add-new="$canAddService"
-        :store-url="route('admin.leads.services_offered.store')"
+        :store-url="lead_route('services_offered.store')"
     />
 </x-admin::form.control-group>

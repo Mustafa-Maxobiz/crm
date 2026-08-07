@@ -11,13 +11,41 @@
             'lead_sub_source_id',
             'industry',
         ];
+
+        $valueAndPricingAttributeCodes = lead_variant() === 'sdr'
+            ? ['pricing_type']
+            : ['lead_value', 'pricing_type'];
+
+        $tagOptions = app(\Webkul\Tag\Repositories\TagRepository::class)
+            ->all(['id', 'name'])
+            ->sortBy('name')
+            ->values();
+
+        $selectedTagIds = old('tags', $lead->tags->pluck('id')->map(fn ($id) => (int) $id)->values()->all());
+
+        if (is_array($selectedTagIds)) {
+            $selectedTagIds = collect($selectedTagIds)
+                ->map(function ($value) use ($tagOptions) {
+                    if (is_numeric($value)) {
+                        return (int) $value;
+                    }
+
+                    $match = $tagOptions->firstWhere('name', $value);
+
+                    return $match?->id;
+                })
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->values()
+                ->all();
+        }
     @endphp
 
     {!! view_render_event('admin.leads.edit.form_controls.before', ['lead' => $lead]) !!}
 
     <!-- Edit Lead Form -->
     <x-admin::form         
-        :action="route('admin.leads.update', $lead->id)"
+        :action="lead_route('update', $lead->id)"
         method="PUT"
     >
         <div class="flex flex-col gap-4">
@@ -138,7 +166,7 @@
                                     <!-- Lead Value and Pricing Type -->
                                     <x-admin::attributes
                                         :custom-attributes="app('Webkul\Attribute\Repositories\AttributeRepository')->findWhere([
-                                            ['code', 'IN', ['lead_value', 'pricing_type']],
+                                            ['code', 'IN', $valueAndPricingAttributeCodes],
                                             'entity_type' => 'leads',
                                             'quick_add'   => 1
                                         ])"
@@ -231,15 +259,12 @@
                                             Tags
                                         </x-admin::form.control-group.label>
 
-                                        <x-admin::form.control-group.control
-                                            type="tags"
-                                            name="tags"
-                                            label="Tags"
-                                            :placeholder="trans('admin::app.components.tags.index.placeholder')"
-                                            :data="old('tags') ?: $lead->tags->pluck('name')->values()->all()"
-                                            input-rules="max:100"
-                                            :allow-duplicates="false"
-                                            suggestions-endpoint="{{ route('admin.settings.tags.search') }}"
+                                        <x-admin::attributes.edit.multiselect
+                                            :attribute="(object) ['code' => 'tags', 'name' => 'Tags', 'lookup_type' => null]"
+                                            :options="$tagOptions"
+                                            :value="$selectedTagIds"
+                                            validations=""
+                                            :can-add-new="false"
                                         />
 
                                         <x-admin::form.control-group.error control-name="tags" />

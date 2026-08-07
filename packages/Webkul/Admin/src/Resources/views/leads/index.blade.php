@@ -1,6 +1,10 @@
 <x-admin::layouts>
     <x-slot:title>
-        @lang('admin::app.leads.index.title')
+        @if (($leadVariant ?? 'main') === 'sdr')
+            @lang('admin::app.layouts.leads-sdr')
+        @else
+            @lang('admin::app.leads.index.title')
+        @endif
     </x-slot>
 
     <!-- Header -->
@@ -14,7 +18,11 @@
             <x-admin::breadcrumbs name="leads" />
 
             <div class="text-xl font-bold dark:text-white">
-                @lang('admin::app.leads.index.title')
+                @if (($leadVariant ?? 'main') === 'sdr')
+                    @lang('admin::app.layouts.leads-sdr')
+                @else
+                    @lang('admin::app.leads.index.title')
+                @endif
             </div>
         </div>
 
@@ -30,12 +38,12 @@
 
             @if ((request()->view_type ?? "table") == "table")
                 <!-- Export Modal -->
-                <x-admin::datagrid.export :src="route('admin.leads.index')" />
+                <x-admin::datagrid.export :src="route($leadsIndexRoute ?? 'admin.leads.index')" />
             @endif
 
             <!-- Create button for Leads -->
             <div class="flex items-center gap-x-2.5">
-                @if (bouncer()->hasPermission('leads.import'))
+                @if (bouncer()->hasPermission(lead_permission('import')))
                     @php
                         $importSources = app(\Webkul\Lead\Repositories\SourceRepository::class)->getRootDropdownOptions();
                     @endphp
@@ -60,7 +68,7 @@
                             <form
                                 id="lead-import-form"
                                 method="POST"
-                                action="{{ route('admin.leads.import') }}"
+                                action="{{ lead_route('import') }}"
                                 enctype="multipart/form-data"
                                 class="grid gap-4"
                             >
@@ -86,7 +94,7 @@
                                 </div>
 
                                 <a
-                                    href="{{ route('admin.leads.import.template') }}"
+                                    href="{{ lead_route('import.template') }}"
                                     class="secondary-button w-max"
                                 >
                                     Download Template
@@ -244,18 +252,18 @@
                     </x-admin::modal>
                 @endif
 
-                @if (bouncer()->hasPermission('leads.disqualified'))
+                @if (bouncer()->hasPermission(lead_permission('disqualified')))
                     <a
-                        href="{{ route('admin.leads.disqualified') }}"
+                        href="{{ lead_route('disqualified') }}"
                         class="secondary-button"
                     >
                         @lang('admin::app.leads.disqualification.short-title')
                     </a>
                 @endif
 
-                @if (bouncer()->hasPermission('leads.create'))
+                @if (bouncer()->hasPermission(lead_permission('create')))
                     <a
-                        href="{{ route('admin.leads.create', request()->query()) }}"
+                        href="{{ lead_route('create', request()->query()) }}"
                         class="primary-button"
                     >
                         @lang('admin::app.leads.index.create-btn')
@@ -318,9 +326,9 @@
         </script>
 
         <script type="module">
-            const leadImportStartUrl = @json(route('admin.leads.import.start'));
-            const leadImportProcessUrl = @json(route('admin.leads.import.process'));
-            const leadImportRetryUrl = @json(route('admin.leads.import.retry'));
+            const leadImportStartUrl = @json(lead_route('import.start'));
+            const leadImportProcessUrl = @json(lead_route('import.process'));
+            const leadImportRetryUrl = @json(lead_route('import.retry'));
             const leadImportMaxFileSize = 2 * 1024 * 1024;
             const failedEditFields = [
                 'companies',

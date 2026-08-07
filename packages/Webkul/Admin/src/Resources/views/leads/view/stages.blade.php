@@ -399,7 +399,7 @@
                     this.isUpdating = true;
 
                     this.$axios
-                        .put("{{ route('admin.leads.stage.update', $lead->id) }}", params ?? {
+                        .put("{{ lead_route('stage.update', $lead->id) }}", params ?? {
                             'lead_pipeline_stage_id': stage.id
                         })
                         .then ((response) => {

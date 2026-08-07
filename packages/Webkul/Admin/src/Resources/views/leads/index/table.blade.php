@@ -1,6 +1,8 @@
 {!! view_render_event('admin.leads.index.table.before') !!}
 
 @php
+    $leadsIndexRoute = $leadsIndexRoute ?? 'admin.leads.index';
+
     $lockedLeadAttributeCodes = [
         'lead_source_id',
         'lead_type_id',
@@ -79,8 +81,8 @@
     $isSdrUser = $sourceAccessService->isSdrUser();
 
     $canAddServiceOffered = bouncer()->hasPermission('settings.lead.services_offered.create')
-        || bouncer()->hasPermission('leads.create')
-        || bouncer()->hasPermission('leads.edit')
+        || bouncer()->hasPermission(lead_permission('create'))
+        || bouncer()->hasPermission(lead_permission('edit'))
         || $isSdrUser;
 
     $defaultMeetingParticipants = [
@@ -114,7 +116,7 @@
     >
         <div>
             <x-admin::datagrid
-                src="{{ route('admin.leads.index') }}"
+                src="{{ route($leadsIndexRoute) }}"
                 ref="datagrid"
             >
                 <x-slot:toolbar-left-after>
@@ -842,7 +844,7 @@
 
             data() {
                 return {
-                    src: "{{ route('admin.leads.index') }}",
+                    src: "{{ route($leadsIndexRoute) }}",
                     inlineOptions: @json($inlineOptions),
                     canAddServiceOffered: @json($canAddServiceOffered),
                     openServiceLeadId: null,
@@ -1081,7 +1083,7 @@
 
                     this.isCreatingService = true;
 
-                    this.$axios.post("{{ route('admin.leads.services_offered.store') }}", {
+                    this.$axios.post("{{ lead_route('services_offered.store') }}", {
                         name: this.serviceSearchableNewLabel,
                     }).then(response => {
                         const option = response.data.data;
@@ -1115,7 +1117,7 @@
                 saveServiceOffered(record) {
                     const ids = this.serviceDraftIds[record.id] ?? this.parseServiceIds(record);
 
-                    this.$axios.put(`{{ url('admin/leads/attributes/edit') }}/${record.id}`, {
+                    this.$axios.put(`{{ lead_url() . '/attributes/edit' }}/${record.id}`, {
                         entity_type: 'leads',
                         services: ids,
                         service_offered: ids,
@@ -1242,7 +1244,7 @@
                         payload[field] = value;
                     }
 
-                    this.$axios.put(`{{ url('admin/leads/attributes/edit') }}/${leadId}`, payload)
+                    this.$axios.put(`{{ lead_url() . '/attributes/edit' }}/${leadId}`, payload)
                         .then(response => {
                             this.$emitter.emit('add-flash', { type: 'success', message: response.data.message });
                             this.$refs.datagrid.get();
@@ -1372,7 +1374,7 @@
                         organizationPayload.organization_id = personPayload.organization_id || null;
                     }
 
-                    this.$axios.post(`{{ url('admin/leads/edit') }}/${this.editLeadId}`, {
+                    this.$axios.post(`{{ lead_url() . '/edit' }}/${this.editLeadId}`, {
                         ...params,
                         ...organizationPayload,
                         person: personPayload,
@@ -1445,7 +1447,7 @@
                 },
 
                 updateStage(leadId, stageId, extra = {}) {
-                    return this.$axios.put(`{{ url('admin/leads/stage/edit') }}/${leadId}`, {
+                    return this.$axios.put(`{{ lead_url() . '/stage/edit' }}/${leadId}`, {
                         lead_pipeline_stage_id: stageId,
                         ...extra,
                     }).then(response => {
@@ -1551,7 +1553,7 @@
                 },
 
                 replaceTag(leadId, oldTagId, newTagId) {
-                    return this.$axios.patch(`{{ url('admin/leads') }}/${leadId}/tags`, {
+                    return this.$axios.patch(`{{ lead_url() }}/${leadId}/tags`, {
                         tag_id: newTagId,
                         old_tag_id: oldTagId || null,
                     }).catch(error => {
@@ -1562,7 +1564,7 @@
 
                 attachTagAndDisqualify(leadId, oldTagId, newTagId, reason) {
                     this.replaceTag(leadId, oldTagId, newTagId).then(() => {
-                        return this.$axios.put(`{{ url('admin/leads/attributes/edit') }}/${leadId}`, {
+                        return this.$axios.put(`{{ lead_url() . '/attributes/edit' }}/${leadId}`, {
                             entity_type: 'leads',
                             lead_disqualification_reason: reason,
                         });
@@ -1588,7 +1590,7 @@
                             lead_id: leadId,
                         });
                     }).then(() => {
-                        return this.$axios.put(`{{ url('admin/leads/attributes/edit') }}/${leadId}`, {
+                        return this.$axios.put(`{{ lead_url() . '/attributes/edit' }}/${leadId}`, {
                             entity_type: 'leads',
                             lead_disqualification_reason: 'incorrect_info',
                         });

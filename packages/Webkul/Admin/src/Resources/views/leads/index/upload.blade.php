@@ -116,7 +116,7 @@
                 },
 
                 sendRequest(formData) {
-                    this.$axios.post("{{ route('admin.leads.create_by_ai') }}", formData, {
+                    this.$axios.post("{{ lead_route('create_by_ai') }}", formData, {
                         headers: {
                             'Content-Type': 'multipart/form-data',
                         }

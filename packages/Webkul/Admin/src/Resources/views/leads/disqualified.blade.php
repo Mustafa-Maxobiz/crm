@@ -6,7 +6,7 @@
     <div class="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
         <div class="flex flex-col gap-2">
             <div class="text-sm text-red-600">
-                <a href="{{ route('admin.leads.index') }}">
+                <a href="{{ lead_route('index') }}">
                     @lang('admin::app.leads.index.title')
                 </a>
                 /
@@ -19,7 +19,7 @@
         </div>
 
         <a
-            href="{{ route('admin.leads.index') }}"
+            href="{{ lead_route('index') }}"
             class="secondary-button"
         >
             @lang('admin::app.leads.disqualification.back-to-leads')
@@ -88,7 +88,7 @@
                         'lead' => $lead,
                         'showReassign' => true,
                         'users' => $users,
-                        'reassignRoute' => route('admin.leads.incorrect_info.reassign', $lead->id),
+                        'reassignRoute' => lead_route('incorrect_info.reassign', $lead->id),
                     ])
                 @empty
                     <div class="p-6 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -127,7 +127,7 @@
                         'lead' => $lead,
                         'showReassign' => true,
                         'users' => $users,
-                        'reassignRoute' => route('admin.leads.ended.reassign', $lead->id),
+                        'reassignRoute' => lead_route('ended.reassign', $lead->id),
                     ])
                 @empty
                     <div class="p-6 text-center text-sm text-gray-500 dark:text-gray-400">

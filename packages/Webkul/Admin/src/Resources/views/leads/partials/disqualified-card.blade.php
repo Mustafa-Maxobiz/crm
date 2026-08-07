@@ -2,7 +2,7 @@
     <div class="flex items-start justify-between gap-4 max-lg:flex-wrap">
         <div class="min-w-0 flex-1">
             <a
-                href="{{ route('admin.leads.view', $lead->id) }}"
+                href="{{ lead_route('view', $lead->id) }}"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="break-words text-base font-semibold text-gray-900 hover:text-red-600 hover:underline dark:text-white"
@@ -39,7 +39,7 @@
         </div>
 
         <a
-            href="{{ route('admin.leads.view', $lead->id) }}"
+            href="{{ lead_route('view', $lead->id) }}"
             target="_blank"
             rel="noopener noreferrer"
             class="secondary-button !min-h-[34px] shrink-0 !px-3 text-xs"
@@ -63,7 +63,7 @@
     @if ($showReassign)
         <form
             method="POST"
-            action="{{ $reassignRoute ?? route('admin.leads.incorrect_info.reassign', $lead->id) }}"
+            action="{{ $reassignRoute ?? lead_route('incorrect_info.reassign', $lead->id) }}"
             class="mt-3 flex flex-wrap items-end gap-3"
         >
             @csrf

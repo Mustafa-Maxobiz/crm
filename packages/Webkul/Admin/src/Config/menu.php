@@ -46,13 +46,24 @@ return [
     ],
 
     /**
+     * SDR Leads.
+     */
+    [
+        'key'        => 'sdr_leads',
+        'name'       => 'admin::app.layouts.leads-sdr',
+        'route'      => 'admin.leads.sdr',
+        'sort'       => 5,
+        'icon-class' => 'icon-leads',
+    ],
+
+    /**
      * Meta Leads.
      */
     [
         'key'        => 'meta_leads',
         'name'       => 'admin::app.layouts.meta-leads',
         'route'      => 'admin.meta_leads.index',
-        'sort'       => 5,
+        'sort'       => 6,
         'icon-class' => 'icon-leads',
     ],
 
@@ -63,7 +74,7 @@ return [
         'key'        => 'smrtphone',
         'name'       => 'admin::app.layouts.smrtphone',
         'route'      => 'admin.smrtphone.index',
-        'sort'       => 3,
+        'sort'       => 7,
         'icon-class' => 'icon-call',
     ],
 
@@ -74,7 +85,7 @@ return [
         'key'        => 'quotes',
         'name'       => 'admin::app.layouts.quotes',
         'route'      => 'admin.quotes.index',
-        'sort'       => 3,
+        'sort'       => 8,
         'icon-class' => 'icon-quote',
     ],
 
@@ -86,7 +97,7 @@ return [
         'name'       => 'admin::app.layouts.mail.title',
         'route'      => 'admin.mail.index',
         'params'     => ['route' => 'inbox'],
-        'sort'       => 4,
+        'sort'       => 9,
         'icon-class' => 'icon-mail',
     ], [
         'key'        => 'mail.inbox',
@@ -139,7 +150,7 @@ return [
         'key'        => 'activities',
         'name'       => 'admin::app.layouts.activities',
         'route'      => 'admin.activities.index',
-        'sort'       => 5,
+        'sort'       => 10,
         'icon-class' => 'icon-activity',
     ],
 
@@ -150,7 +161,7 @@ return [
         'key'        => 'contacts',
         'name'       => 'admin::app.layouts.contacts',
         'route'      => 'admin.contacts.persons.index',
-        'sort'       => 6,
+        'sort'       => 11,
         'icon-class' => 'icon-contact',
     ], [
         'key'        => 'contacts.persons',
@@ -179,7 +190,7 @@ return [
         'key'        => 'products',
         'name'       => 'admin::app.layouts.products',
         'route'      => 'admin.products.index',
-        'sort'       => 7,
+        'sort'       => 12,
         'icon-class' => 'icon-product',
     ],
 
@@ -190,7 +201,7 @@ return [
         'key'        => 'settings',
         'name'       => 'admin::app.layouts.settings',
         'route'      => 'admin.settings.index',
-        'sort'       => 8,
+        'sort'       => 13,
         'icon-class' => 'icon-setting',
     ], [
         'key'        => 'settings.user',
@@ -370,7 +381,7 @@ return [
         'key'        => 'configuration',
         'name'       => 'admin::app.layouts.configuration',
         'route'      => 'admin.configuration.index',
-        'sort'       => 9,
+        'sort'       => 14,
         'icon-class' => 'icon-configuration',
     ],
 

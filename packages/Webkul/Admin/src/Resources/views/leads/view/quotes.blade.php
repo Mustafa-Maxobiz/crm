@@ -191,7 +191,7 @@
                         agree: () => {
                             this.isLoading = true;
 
-                            this.$axios.delete("{{ route('admin.leads.quotes.delete', $lead->id) }}/" + quote.id)
+                            this.$axios.delete("{{ lead_route('quotes.delete', $lead->id) }}/" + quote.id)
                                 .then(response => {
                                     this.isLoading = false;
 
