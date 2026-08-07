@@ -165,7 +165,7 @@ return [
         'key'   => 'quotes',
         'name'  => 'admin::app.acl.quotes',
         'route' => 'admin.quotes.index',
-        'sort'  => 3,
+        'sort'  => 8,
     ], [
         'key'   => 'quotes.create',
         'name'  => 'admin::app.acl.create',
@@ -190,7 +190,7 @@ return [
         'key'   => 'mail',
         'name'  => 'admin::app.acl.mail',
         'route' => 'admin.mail.index',
-        'sort'  => 4,
+        'sort'  => 9,
     ], [
         'key'   => 'mail.inbox',
         'name'  => 'admin::app.acl.inbox',
@@ -240,7 +240,7 @@ return [
         'key'   => 'activities',
         'name'  => 'admin::app.acl.activities',
         'route' => 'admin.activities.index',
-        'sort'  => 5,
+        'sort'  => 10,
     ], [
         'key'   => 'activities.create',
         'name'  => 'admin::app.acl.create',
@@ -260,7 +260,7 @@ return [
         'key'   => 'contacts',
         'name'  => 'admin::app.acl.contacts',
         'route' => 'admin.contacts.users.index',
-        'sort'  => 6,
+        'sort'  => 11,
     ], [
         'key'   => 'contacts.persons',
         'name'  => 'admin::app.acl.persons',
@@ -330,7 +330,7 @@ return [
         'key'   => 'products',
         'name'  => 'admin::app.acl.products',
         'route' => 'admin.products.index',
-        'sort'  => 7,
+        'sort'  => 12,
     ], [
         'key'   => 'products.create',
         'name'  => 'admin::app.acl.create',
@@ -355,7 +355,7 @@ return [
         'key'   => 'settings',
         'name'  => 'admin::app.acl.settings',
         'route' => 'admin.settings.index',
-        'sort'  => 8,
+        'sort'  => 13,
     ], [
         'key'   => 'settings.user',
         'name'  => 'admin::app.acl.user',
@@ -740,6 +740,6 @@ return [
         'key'   => 'configuration',
         'name'  => 'admin::app.acl.configuration',
         'route' => 'admin.configuration.index',
-        'sort'  => 9,
+        'sort'  => 14,
     ],
 ];

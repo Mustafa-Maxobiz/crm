@@ -1297,6 +1297,15 @@ class LeadController extends Controller
     {
         $data = request()->all();
 
+        if (
+            lead_variant() === 'sdr'
+            && array_key_exists('lead_value', $data)
+        ) {
+            return response()->json([
+                'message' => trans('admin::app.leads.locked-fields'),
+            ], 403);
+        }
+
         $lockedCodes = $this->lockedLeadAttributeCodes();
         $attemptedLocked = array_values(array_intersect(array_keys($data), $lockedCodes));
 

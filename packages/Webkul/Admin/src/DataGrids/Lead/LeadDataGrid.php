@@ -72,6 +72,7 @@ class LeadDataGrid extends DataGrid
                 'leads.description',
                 'leads.source_link',
                 'leads.status',
+                'leads.lead_value',
                 'leads.next_followup_date',
                 'leads.followup_count',
                 'leads.last_followup_date',
@@ -184,6 +185,7 @@ class LeadDataGrid extends DataGrid
         $this->addFilter('lead_source_name', 'lead_sources.id');
         $this->addFilter('lead_source_search', 'lead_sources.name');
         $this->addFilter('lead_type_name', 'lead_types.id');
+        $this->addFilter('lead_value', 'leads.lead_value');
         $this->addFilter('person_name', 'persons.name');
         $this->addFilter('industry', 'industry_options.id');
         $this->addFilter('service_offered', 'leads.id');
@@ -310,6 +312,16 @@ class LeadDataGrid extends DataGrid
             'filterable'         => true,
             'filterable_type'    => 'dropdown',
             'filterable_options' => $this->typeRepository->all(['name as label', 'id as value'])->toArray(),
+        ]);
+
+        $this->addColumn([
+            'index'      => 'lead_value',
+            'label'      => trans('admin::app.leads.index.datagrid.lead-value'),
+            'type'       => 'string',
+            'searchable' => false,
+            'sortable'   => true,
+            'filterable' => true,
+            'visibility' => lead_variant() !== 'sdr',
         ]);
 
         $this->addColumn([

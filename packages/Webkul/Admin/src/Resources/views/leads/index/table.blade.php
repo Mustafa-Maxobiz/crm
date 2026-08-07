@@ -3,6 +3,9 @@
 @php
     $leadsIndexRoute = $leadsIndexRoute ?? 'admin.leads.index';
 
+    $canEditLeadValue = lead_variant() !== 'sdr'
+        && bouncer()->hasPermission(lead_permission('edit'));
+
     $lockedLeadAttributeCodes = [
         'lead_source_id',
         'lead_type_id',
@@ -22,6 +25,10 @@
         'companies',
         'title',
     ];
+
+    if (! $canEditLeadValue) {
+        $modalExcludedAttributeCodes[] = 'lead_value';
+    }
 
     $leadQuickAttributes = app(\Webkul\Attribute\Repositories\AttributeRepository::class)
         ->findWhere([
@@ -201,6 +208,22 @@
                                                 v-text="opt.label"
                                             ></option>
                                         </select>
+                                    </div>
+
+                                    {{-- Inline-editable Lead Value (main leads only) --}}
+                                    <div
+                                        v-else-if="column.index === 'lead_value' && canEditLeadValue"
+                                        class="min-w-0"
+                                        @click.stop
+                                    >
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            class="w-full min-w-[6rem] rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-gray-800 outline-none transition-all hover:border-gray-300 focus:border-brandColor focus:ring-1 focus:ring-brandColor dark:text-gray-300 dark:hover:border-gray-600 dark:focus:border-brandColor"
+                                            :value="record.lead_value ?? 0"
+                                            @change="updateLeadValue(record, $event.target.value)"
+                                        />
                                     </div>
 
                                     {{-- Regular read-only columns --}}
@@ -847,6 +870,7 @@
                     src: "{{ route($leadsIndexRoute) }}",
                     inlineOptions: @json($inlineOptions),
                     canAddServiceOffered: @json($canAddServiceOffered),
+                    canEditLeadValue: @json($canEditLeadValue),
                     openServiceLeadId: null,
                     openServiceRecord: null,
                     serviceDropdownStyle: {},
@@ -1135,6 +1159,48 @@
                             type: 'error',
                             message: error.response?.data?.message || 'Update failed.',
                         });
+                    });
+                },
+
+                updateLeadValue(record, rawValue) {
+                    if (! this.canEditLeadValue) {
+                        return;
+                    }
+
+                    const previous = record.lead_value;
+                    const value = rawValue === '' || rawValue === null ? 0 : Number(rawValue);
+
+                    if (Number.isNaN(value) || value < 0) {
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: 'Lead value must be a valid number.',
+                        });
+                        this.$refs.datagrid.get();
+
+                        return;
+                    }
+
+                    if (Number(previous) === value) {
+                        return;
+                    }
+
+                    record.lead_value = value;
+
+                    this.$axios.put(`{{ lead_url() . '/attributes/edit' }}/${record.id}`, {
+                        entity_type: 'leads',
+                        lead_value: value,
+                    }).then(response => {
+                        this.$emitter.emit('add-flash', {
+                            type: 'success',
+                            message: response.data.message,
+                        });
+                    }).catch(error => {
+                        record.lead_value = previous;
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: error.response?.data?.message || 'Update failed.',
+                        });
+                        this.$refs.datagrid.get();
                     });
                 },
 
