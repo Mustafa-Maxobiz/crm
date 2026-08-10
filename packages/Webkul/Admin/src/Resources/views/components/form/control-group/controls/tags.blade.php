@@ -59,7 +59,7 @@
 
                     <div
                         v-if="suggestionsEndpoint && showSuggestions"
-                        class="absolute left-0 right-0 top-full z-10 mt-1 rounded border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900"
+                        class="absolute left-0 right-0 top-full z-50 mt-1 rounded border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900"
                     >
                         <ul class="max-h-48 overflow-auto py-1">
                             <li

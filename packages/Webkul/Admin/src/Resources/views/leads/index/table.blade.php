@@ -314,7 +314,7 @@
                             </div>
 
                             <div
-                                class="flex max-h-[60vh] flex-col gap-4 overflow-y-auto pb-4"
+                                class="flex max-h-[60vh] flex-col gap-4 overflow-y-auto overflow-x-visible pb-4"
                                 v-if="! isEditLoading"
                                 :key="'edit-fields-' + editLeadId"
                             >

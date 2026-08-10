@@ -85,3 +85,29 @@ if (! function_exists('lead_url')) {
             : url('admin/leads');
     }
 }
+
+if (! function_exists('admin_menu_items')) {
+    /**
+     * Sidebar menu for the current user.
+     * Full admins get one Dashboard + one Leads page (all leads) + Meta Leads;
+     * SDR/LGE dashboards and SDR Leads are hidden for them.
+     */
+    function admin_menu_items(): \Illuminate\Support\Collection
+    {
+        $items = menu()->getItems('admin');
+
+        if (! app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin()) {
+            return $items;
+        }
+
+        $hidden = [
+            'sdr_dashboard',
+            'lge_dashboard',
+            'sdr_leads',
+        ];
+
+        return $items->reject(
+            fn ($item) => in_array($item->getKey(), $hidden, true)
+        )->values();
+    }
+}

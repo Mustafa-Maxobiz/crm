@@ -95,7 +95,7 @@
 
             <div
                 v-if="isOpen && (filteredOptions.length || (canAddNew && searchableNewLabel))"
-                class="absolute left-0 right-0 z-20 mt-1 max-h-48 overflow-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900"
+                class="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900"
             >
                 <button
                     type="button"

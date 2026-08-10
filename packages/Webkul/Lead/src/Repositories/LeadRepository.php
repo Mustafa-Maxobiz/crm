@@ -205,6 +205,33 @@ class LeadRepository extends Repository
     }
 
     /**
+     * Whether create payload requested a follow-up schedule.
+     * Explicit 0/false/off must skip auto follow-up; omit keeps legacy auto behavior.
+     */
+    private function shouldScheduleFollowupFromPayload(array $data): bool
+    {
+        if (! array_key_exists('schedule_followup', $data)) {
+            return true;
+        }
+
+        $value = $data['schedule_followup'];
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_numeric($value)) {
+            return (int) $value === 1;
+        }
+
+        if (is_string($value)) {
+            return in_array(strtolower(trim($value)), ['1', 'true', 'on', 'yes'], true);
+        }
+
+        return (bool) $value;
+    }
+
+    /**
      * Create.
      *
      * @return \Webkul\Lead\Contracts\Lead
@@ -279,9 +306,7 @@ class LeadRepository extends Repository
             $data['title'] = $data['title'] ?? '';
         }
 
-        $shouldScheduleFollowup = array_key_exists('schedule_followup', $data)
-            ? filter_var($data['schedule_followup'], FILTER_VALIDATE_BOOLEAN)
-            : true;
+        $shouldScheduleFollowup = $this->shouldScheduleFollowupFromPayload($data);
 
         if (! $shouldScheduleFollowup) {
             $data['next_followup_date'] = null;

@@ -103,7 +103,7 @@
 
             <!-- Dropdown (position dynamic based on space) -->
             <div
-                class="absolute z-10 w-full origin-top transform rounded-lg border bg-white shadow-lg dark:border-gray-800 dark:bg-gray-800"
+                class="absolute z-50 w-full origin-top transform rounded-lg border bg-white shadow-lg dark:border-gray-800 dark:bg-gray-800"
                 :class="dropdownPosition === 'bottom' ? 'top-full mt-1' : 'bottom-full mb-1'"
                 v-if="filteredOptions.length || (canAddNew && searchableNewLabel)"
             >

@@ -36,7 +36,7 @@
             <x-slot:content class="p-4">
                 <div class="journal-scroll h-[calc(100vh-100px)] overflow-auto">
                     <nav class="grid w-full gap-2">
-                        @foreach (menu()->getItems('admin') as $menuItem)
+                        @foreach (admin_menu_items() as $menuItem)
                             @php
                                 $hasActiveChild = $menuItem->haveChildren() && collect($menuItem->getChildren())->contains(fn($child) => $child->isActive());
 

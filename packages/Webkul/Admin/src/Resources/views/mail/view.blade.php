@@ -1125,15 +1125,13 @@
                                                 <input
                                                     type="hidden"
                                                     name="schedule_followup"
-                                                    value="0"
+                                                    :value="scheduleFollowup ? 1 : 0"
                                                 />
 
                                                 <x-admin::form.control-group>
                                                     <label class="flex cursor-pointer items-start gap-2 rounded border border-gray-200 p-3 text-sm dark:border-gray-800">
                                                         <input
                                                             type="checkbox"
-                                                            name="schedule_followup"
-                                                            value="1"
                                                             v-model="scheduleFollowup"
                                                             class="mt-1 rounded border-gray-300 text-brandColor focus:ring-brandColor dark:border-gray-600 dark:bg-gray-900"
                                                         />

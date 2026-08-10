@@ -104,7 +104,7 @@
                 <!-- Popup Box -->
                 <div
                     v-if="showPopup"
-                    class="absolute z-10 mt-1 w-full origin-top transform rounded-lg border border-gray-200 bg-white p-2 shadow-lg transition-transform dark:border-gray-800 dark:bg-gray-800"
+                    class="absolute z-50 mt-1 w-full origin-top transform rounded-lg border border-gray-200 bg-white p-2 shadow-lg transition-transform dark:border-gray-800 dark:bg-gray-800"
                     :class="dropdownPosition === 'bottom' ? 'top-full mt-1' : 'bottom-full mb-1'"
                 >
                     <!-- Search Bar -->

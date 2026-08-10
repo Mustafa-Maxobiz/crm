@@ -383,7 +383,8 @@ class SourceAccessService
     }
 
     /**
-     * SDR/LGE: own leads, or any lead in a shared stage. Admin: all. Others: view_permission.
+     * SDR/LGE: own leads, or any lead in a shared stage. Admin: all.
+     * Main (non-SDR): own leads only (sales person + admin).
      */
     public function canAccessLeadByOwner(LeadContract $lead, ?UserContract $user = null): bool
     {
@@ -405,19 +406,13 @@ class SourceAccessService
             return $this->leadIsInSharedStage($lead, $user);
         }
 
-        $userIds = bouncer()->getAuthorizedUserIds();
-
-        if ($userIds === null) {
-            return true;
-        }
-
-        return in_array((int) $lead->user_id, array_map('intval', $userIds), true);
+        return (int) $lead->user_id === (int) $user->id;
     }
 
     /**
      * Apply owner visibility for lead listings.
      * SDR/LGE share configured shared stages (default: New); other stages are owner-only.
-     * Admins are unrestricted.
+     * Main non-admin users see only their own leads. Admins are unrestricted.
      */
     public function applyLeadOwnerVisibilityScope(Builder $query, string $table = 'leads'): Builder
     {
@@ -438,11 +433,7 @@ class SourceAccessService
             });
         }
 
-        if ($userIds = bouncer()->getAuthorizedUserIds()) {
-            $query->whereIn("{$table}.user_id", $userIds);
-        }
-
-        return $query;
+        return $query->where("{$table}.user_id", auth()->guard('user')->id());
     }
 
     /**
@@ -467,11 +458,7 @@ class SourceAccessService
             });
         }
 
-        if ($userIds = bouncer()->getAuthorizedUserIds()) {
-            $query->whereIn('leads.user_id', $userIds);
-        }
-
-        return $query;
+        return $query->where('leads.user_id', auth()->guard('user')->id());
     }
 
     /**

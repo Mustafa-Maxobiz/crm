@@ -777,7 +777,40 @@ class LeadController extends Controller
 
         $data['status'] = 1;
 
-        if (! empty($data['lead_pipeline_stage_id'])) {
+        // Normalize checkbox: unmarked must disable auto follow-up.
+        if (array_key_exists('schedule_followup', $data)) {
+            $data['schedule_followup'] = request()->boolean('schedule_followup');
+        }
+
+        if (! ($data['schedule_followup'] ?? true)) {
+            $data['next_followup_date'] = null;
+        }
+
+        $isMainCreate = lead_variant() === 'main';
+
+        // Main create: default Sales Owner to creator (editable to forward); always start in New stage.
+        if ($isMainCreate) {
+            if (empty($data['user_id'])) {
+                $data['user_id'] = auth()->guard('user')->id();
+            }
+
+            if (empty($data['lead_pipeline_id'])) {
+                $pipeline = $this->pipelineRepository->getDefaultPipeline();
+                $data['lead_pipeline_id'] = $pipeline->id;
+            } else {
+                $pipeline = $this->pipelineRepository->findOrFail($data['lead_pipeline_id']);
+            }
+
+            $newStage = $pipeline->stages()->where('code', 'new')->first();
+
+            if ($newStage) {
+                $data['lead_pipeline_stage_id'] = $newStage->id;
+                $stage = $newStage;
+            } else {
+                $stage = $pipeline->stages()->first();
+                $data['lead_pipeline_stage_id'] = $stage->id;
+            }
+        } elseif (! empty($data['lead_pipeline_stage_id'])) {
             $stage = $this->stageRepository->findOrFail($data['lead_pipeline_stage_id']);
 
             if (! $this->sourceAccessService->canAccessStageId((int) $stage->id)) {
