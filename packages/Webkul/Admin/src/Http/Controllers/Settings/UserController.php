@@ -196,9 +196,16 @@ class UserController extends Controller
      */
     public function search(): JsonResource
     {
-        $users = $this->userRepository
-            ->pushCriteria(app(RequestCriteria::class))
-            ->all();
+        $repository = $this->userRepository
+            ->pushCriteria(app(RequestCriteria::class));
+
+        if (request()->boolean('active_only')) {
+            $repository = $repository->findWhere(['status' => 1]);
+
+            return UserResource::collection($repository);
+        }
+
+        $users = $repository->all();
 
         return UserResource::collection($users);
     }

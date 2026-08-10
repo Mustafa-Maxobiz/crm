@@ -57,13 +57,24 @@ return [
     ],
 
     /**
+     * LGE Leads.
+     */
+    [
+        'key'        => 'lge_leads',
+        'name'       => 'admin::app.layouts.leads-lge',
+        'route'      => 'admin.leads.lge',
+        'sort'       => 6,
+        'icon-class' => 'icon-leads',
+    ],
+
+    /**
      * Meta Leads.
      */
     [
         'key'        => 'meta_leads',
         'name'       => 'admin::app.layouts.meta-leads',
         'route'      => 'admin.meta_leads.index',
-        'sort'       => 6,
+        'sort'       => 7,
         'icon-class' => 'icon-leads',
     ],
 
@@ -74,7 +85,7 @@ return [
         'key'        => 'smrtphone',
         'name'       => 'admin::app.layouts.smrtphone',
         'route'      => 'admin.smrtphone.index',
-        'sort'       => 7,
+        'sort'       => 8,
         'icon-class' => 'icon-call',
     ],
 
@@ -85,7 +96,7 @@ return [
         'key'        => 'quotes',
         'name'       => 'admin::app.layouts.quotes',
         'route'      => 'admin.quotes.index',
-        'sort'       => 8,
+        'sort'       => 9,
         'icon-class' => 'icon-quote',
     ],
 
@@ -97,7 +108,7 @@ return [
         'name'       => 'admin::app.layouts.mail.title',
         'route'      => 'admin.mail.index',
         'params'     => ['route' => 'inbox'],
-        'sort'       => 9,
+        'sort'       => 10,
         'icon-class' => 'icon-mail',
     ], [
         'key'        => 'mail.inbox',

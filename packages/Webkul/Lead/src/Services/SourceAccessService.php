@@ -215,11 +215,18 @@ class SourceAccessService
     {
         $user = $this->resolveUser($user);
 
-        return $this->isSdrStyleRoleName($user?->role?->name);
+        return strtolower(trim((string) $user?->role?->name)) === 'sdr';
+    }
+
+    public function isLgeUser(?UserContract $user = null): bool
+    {
+        $user = $this->resolveUser($user);
+
+        return strtolower(trim((string) $user?->role?->name)) === 'lge';
     }
 
     /**
-     * SDR and LGE share the same calling dashboard / New-stage pool behavior.
+     * Calling dashboard role names.
      */
     public function isSdrStyleRoleName(?string $roleName): bool
     {
@@ -283,7 +290,7 @@ class SourceAccessService
 
     /**
      * Shared-pool stage IDs for the user/role.
-     * Empty pivot shared flags fall back to New stages for SDR/LGE roles.
+     * Empty pivot shared flags fall back to New stages for SDR only.
      *
      * @return array<int>
      */
@@ -383,8 +390,8 @@ class SourceAccessService
     }
 
     /**
-     * SDR/LGE: own leads, or any lead in a shared stage. Admin: all.
-     * Main (non-SDR): own leads only (sales person + admin).
+     * SDR: own leads, or any lead in a shared stage. Admin: all.
+     * LGE/main custom roles: own leads only.
      */
     public function canAccessLeadByOwner(LeadContract $lead, ?UserContract $user = null): bool
     {
@@ -411,8 +418,8 @@ class SourceAccessService
 
     /**
      * Apply owner visibility for lead listings.
-     * SDR/LGE share configured shared stages (default: New); other stages are owner-only.
-     * Main non-admin users see only their own leads. Admins are unrestricted.
+     * SDR shares configured shared stages (default: New); other stages are owner-only.
+     * LGE/main custom roles see only their own leads. Admins are unrestricted.
      */
     public function applyLeadOwnerVisibilityScope(Builder $query, string $table = 'leads'): Builder
     {

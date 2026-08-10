@@ -23,7 +23,11 @@ class TagDataGrid extends DataGrid
             )
             ->leftJoin('users', 'tags.user_id', '=', 'users.id');
 
-        if ($userIds = bouncer()->getAuthorizedUserIds()) {
+        $isAdmin = auth()->guard('user')->user()?->role?->permission_type === 'all';
+
+        $userIds = bouncer()->getAuthorizedUserIds();
+
+        if (! $isAdmin && $userIds) {
             $queryBuilder->whereIn('tags.user_id', $userIds);
         }
 
@@ -56,6 +60,15 @@ class TagDataGrid extends DataGrid
             'searchable' => true,
             'sortable'   => true,
             'filterable' => true,
+            'closure'    => function ($row) {
+                $color = $row->color ?: '#E5E7EB';
+
+                return sprintf(
+                    '<span class="flex items-center gap-2"><span class="block h-4 w-4 rounded-full border border-gray-200" style="background-color: %s"></span><span>%s</span></span>',
+                    e($color),
+                    e($row->name)
+                );
+            },
         ]);
 
         $this->addColumn([

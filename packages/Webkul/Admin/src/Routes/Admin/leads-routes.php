@@ -180,4 +180,93 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
             Route::delete('{quote_id?}', 'delete')->name('admin.leads.sdr.quotes.delete');
         });
     });
+
+    /**
+     * LGE leads — parallel list/detail/action routes (separate ACL).
+     */
+    Route::prefix('lge')->group(function () {
+        Route::get('', 'lge')->name('admin.leads.lge');
+
+        Route::get('create', 'create')->name('admin.leads.lge.create');
+
+        Route::post('create', 'store')->name('admin.leads.lge.store');
+
+        Route::post('create-by-ai', 'createByAI')->name('admin.leads.lge.create_by_ai');
+
+        Route::get('import/template', 'importTemplate')->name('admin.leads.lge.import.template');
+
+        Route::post('import', 'import')->name('admin.leads.lge.import');
+
+        Route::post('import/start', 'importStart')->name('admin.leads.lge.import.start');
+
+        Route::post('import/process', 'importProcess')->name('admin.leads.lge.import.process');
+
+        Route::post('import/retry', 'importRetry')->name('admin.leads.lge.import.retry');
+
+        Route::get('disqualified', 'disqualified')->name('admin.leads.lge.disqualified');
+
+        Route::get('view/{id}', 'view')->name('admin.leads.lge.view');
+
+        Route::get('edit/{id}', 'edit')->name('admin.leads.lge.edit');
+
+        Route::get('edit/{id}/form-data', 'formData')->name('admin.leads.lge.form_data');
+
+        Route::put('edit/{id}', 'update')->name('admin.leads.lge.update');
+
+        Route::put('attributes/edit/{id}', 'updateAttributes')->name('admin.leads.lge.attributes.update');
+
+        Route::post('services-offered', 'storeServiceOfferedOption')->name('admin.leads.lge.services_offered.store');
+
+        Route::put('stage/edit/{id}', 'updateStage')->name('admin.leads.lge.stage.update');
+
+        Route::post('disqualify/{id}', 'disqualify')->name('admin.leads.lge.disqualify');
+
+        Route::post('restore/{id}', 'restoreDisqualified')->name('admin.leads.lge.restore_disqualified');
+
+        Route::post('incorrect-info/{id}/reassign', 'reassignIncorrectInfo')->name('admin.leads.lge.incorrect_info.reassign');
+
+        Route::post('ended/{id}/reassign', 'reassignEndedLead')->name('admin.leads.lge.ended.reassign');
+
+        Route::get('search', 'search')->name('admin.leads.lge.search');
+
+        Route::delete('{id}', 'destroy')->name('admin.leads.lge.delete');
+
+        Route::post('mass-update', 'massUpdate')->name('admin.leads.lge.mass_update');
+
+        Route::post('mass-destroy', 'massDestroy')->name('admin.leads.lge.mass_delete');
+
+        Route::get('get/{pipeline_id?}', 'get')->name('admin.leads.lge.get');
+
+        Route::delete('product/{lead_id}', 'removeProduct')->name('admin.leads.lge.product.remove');
+
+        Route::put('product/{lead_id}', 'addProduct')->name('admin.leads.lge.product.add');
+
+        Route::post('followup/complete/{id}', 'followupComplete')->name('admin.leads.lge.followup.complete');
+
+        Route::post('duplicate/{id}', 'duplicateToCompanies')->name('admin.leads.lge.duplicate_to_companies');
+
+        Route::get('kanban/look-up', [LeadController::class, 'kanbanLookup'])->name('admin.leads.lge.kanban.look_up');
+
+        Route::controller(ActivityController::class)->prefix('{id}/activities')->group(function () {
+            Route::get('', 'index')->name('admin.leads.lge.activities.index');
+        });
+
+        Route::controller(TagController::class)->prefix('{id}/tags')->group(function () {
+            Route::post('', 'attach')->name('admin.leads.lge.tags.attach');
+
+            Route::patch('', 'replace')->name('admin.leads.lge.tags.replace');
+
+            Route::delete('', 'detach')->name('admin.leads.lge.tags.detach');
+        });
+
+        Route::controller(EmailController::class)->prefix('{id}/emails')->group(function () {
+            Route::post('', 'store')->name('admin.leads.lge.emails.store');
+
+            Route::delete('', 'detach')->name('admin.leads.lge.emails.detach');
+        });
+
+        Route::controller(QuoteController::class)->prefix('{id}/quotes')->group(function () {
+            Route::delete('{quote_id?}', 'delete')->name('admin.leads.lge.quotes.delete');
+        });
+    });
 });

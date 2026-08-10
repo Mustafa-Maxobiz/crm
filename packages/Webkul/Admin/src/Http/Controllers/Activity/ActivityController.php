@@ -103,7 +103,7 @@ class ActivityController extends Controller
 
         $meetingNotifications = $this->dueActivityNotifications();
 
-        $notifications = $followupNotifications
+        $notifications = collect($followupNotifications->all())
             ->merge($meetingNotifications)
             ->sortBy('schedule_from')
             ->values();
@@ -176,6 +176,8 @@ class ActivityController extends Controller
      */
     public function store(): RedirectResponse|JsonResponse
     {
+        $this->ensureCurrentUserParticipant();
+
         $this->validate(request(), [
             'type'          => 'required',
             'comment'       => ['required_if:type,note', 'required_if:stage_meeting,1'],
@@ -288,6 +290,7 @@ class ActivityController extends Controller
                 'activities.title',
                 'activities.comment',
                 'activities.location',
+                'activities.user_id',
                 'activities.schedule_from',
                 'activities.schedule_to',
                 'leads.title as lead_title',
@@ -306,6 +309,7 @@ class ActivityController extends Controller
                 'activities.title',
                 'activities.comment',
                 'activities.location',
+                'activities.user_id',
                 'activities.schedule_from',
                 'activities.schedule_to',
                 'leads.title',
@@ -351,7 +355,7 @@ class ActivityController extends Controller
                     'schedule_to'   => $activity->schedule_to ? Carbon::parse($activity->schedule_to)->toIso8601String() : null,
                     'lead_title'    => $activity->lead_title,
                     'person_name'   => $activity->person_name,
-                    'edit_url'      => route('admin.activities.edit', $activity->id),
+                    'edit_url'      => $this->canModifyActivity($activity) ? route('admin.activities.edit', $activity->id) : null,
                 ];
             })
             ->filter()
@@ -463,6 +467,8 @@ class ActivityController extends Controller
     {
         $activity = $this->activityRepository->findOrFail($id);
 
+        abort_unless($this->canModifyActivity($activity), 403);
+
         $leadId = old('lead_id') ?? optional($activity->leads()->first())->id;
 
         $lookUpEntityData = $this->attributeRepository->getLookUpEntity('leads', $leadId);
@@ -477,9 +483,13 @@ class ActivityController extends Controller
     {
         $existingActivity = $this->activityRepository->findOrFail($id);
 
+        abort_unless($this->canModifyActivity($existingActivity), 403);
+
         if (request('activity_status') === 'meeting_scheduled') {
             $this->prepareMeetingScheduleRequest($existingActivity);
         }
+
+        $this->ensureCurrentUserParticipant();
 
         $this->validateActivityStatusRequest();
 
@@ -535,6 +545,10 @@ class ActivityController extends Controller
         $activities = $this->activityRepository->findWhereIn('id', $massUpdateRequest->input('indices'));
 
         foreach ($activities as $activity) {
+            if (! $this->canModifyActivity($activity)) {
+                abort(403);
+            }
+
             Event::dispatch('activity.update.before', $activity->id);
 
             $activity = $this->activityRepository->update([
@@ -652,6 +666,8 @@ class ActivityController extends Controller
             'participants' => $participants,
             'type'         => 'meeting',
         ]);
+
+        $this->ensureCurrentUserParticipant();
     }
 
     /**
@@ -745,6 +761,39 @@ class ActivityController extends Controller
     }
 
     /**
+     * Creator must always be part of a meeting so it appears on their side too.
+     */
+    protected function ensureCurrentUserParticipant(): void
+    {
+        if (! in_array(request('type'), ['meeting'], true) && ! request('stage_meeting')) {
+            return;
+        }
+
+        $participants = (array) request('participants', []);
+        $participants['users'] = array_values(array_unique(array_filter([
+            ...(array) ($participants['users'] ?? []),
+            auth()->guard('user')->id(),
+        ])));
+
+        request()->merge(['participants' => $participants]);
+    }
+
+    protected function canModifyActivity($activity): bool
+    {
+        $user = auth()->guard('user')->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->role?->permission_type === 'all') {
+            return true;
+        }
+
+        return (int) $activity->user_id === (int) $user->id;
+    }
+
+    /**
      * Download file from storage.
      */
     public function download(int $id): StreamedResponse
@@ -764,6 +813,8 @@ class ActivityController extends Controller
     public function destroy(int $id): JsonResponse
     {
         $activity = $this->activityRepository->findOrFail($id);
+
+        abort_unless($this->canModifyActivity($activity), 403);
 
         try {
             Event::dispatch('activity.delete.before', $id);
@@ -791,6 +842,10 @@ class ActivityController extends Controller
 
         try {
             foreach ($activities as $activity) {
+                if (! $this->canModifyActivity($activity)) {
+                    abort(403);
+                }
+
                 Event::dispatch('activity.delete.before', $activity->id);
 
                 $this->activityRepository->delete($activity->id);

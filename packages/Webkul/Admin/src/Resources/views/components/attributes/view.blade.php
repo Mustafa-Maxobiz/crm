@@ -17,13 +17,19 @@
                 <div class="label dark:text-white">{{ $attribute->name }}</div>
 
                 <div class="font-medium dark:text-white">
-                    @include ($typeView, [
-                        'attribute' => $attribute,
-                        'value'     => isset($entity) ? $entity[$attribute->code] : null,
-                        'allowEdit' => $attributeAllowEdit,
-                        'url'       => $url,
-                        'entity'    => $entity,
-                    ])
+                    @if ($attribute->code === 'user_id' && isset($entity))
+                        <span class="flex min-h-[34px] items-center pl-2.5">
+                            {{ $entity->user?->name ?: '--' }}
+                        </span>
+                    @else
+                        @include ($typeView, [
+                            'attribute' => $attribute,
+                            'value'     => isset($entity) ? $entity[$attribute->code] : null,
+                            'allowEdit' => $attributeAllowEdit,
+                            'url'       => $url,
+                            'entity'    => $entity,
+                        ])
+                    @endif
                 </div>
             </div>
         @endif

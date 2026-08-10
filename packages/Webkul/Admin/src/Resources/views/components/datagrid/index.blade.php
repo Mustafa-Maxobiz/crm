@@ -277,6 +277,14 @@
                                 meta
                             } = response.data;
 
+                            if (meta?.current_page) {
+                                this.applied.pagination.page = meta.current_page;
+                            }
+
+                            if (meta?.per_page) {
+                                this.applied.pagination.perPage = meta.per_page;
+                            }
+
                             this.available.id = id;
 
                             this.available.columns = columns;

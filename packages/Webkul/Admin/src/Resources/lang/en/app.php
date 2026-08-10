@@ -4,6 +4,7 @@ return [
     'acl' => [
         'leads'            => 'Leads',
         'leads-sdr'        => 'SDR Leads',
+        'leads-lge'        => 'LGE Leads',
         'lead'             => 'Lead',
         'quotes'           => 'Quotes',
         'mail'             => 'Mail',
@@ -2668,6 +2669,7 @@ return [
         'dashboard'            => 'Dashboard',
         'leads'                => 'Leads',
         'leads-sdr'            => 'SDR Leads',
+        'leads-lge'            => 'LGE Leads',
         'meta-leads'           => 'Meta Leads',
         'smrtphone'            => 'smrtPhone Calls',
         'quotes'               => 'Quotes',

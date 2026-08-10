@@ -6,7 +6,7 @@
     {!! view_render_event('admin.leads.create.form.before') !!}
 
     @php
-        $valueAndPricingAttributeCodes = lead_variant() === 'sdr'
+        $valueAndPricingAttributeCodes = lead_variant() !== 'main'
             ? ['pricing_type']
             : ['lead_value', 'pricing_type'];
 

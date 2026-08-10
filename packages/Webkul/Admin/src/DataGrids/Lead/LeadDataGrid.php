@@ -243,7 +243,7 @@ class LeadDataGrid extends DataGrid
             'filterable' => true,
         ]);
 
-        if (lead_variant() === 'sdr') {
+        if (lead_variant() !== 'main') {
             $this->addColumn([
                 'index'      => 'title',
                 'label'      => trans('admin::app.leads.index.datagrid.subject'),
@@ -343,7 +343,7 @@ class LeadDataGrid extends DataGrid
             'searchable' => false,
             'sortable'   => true,
             'filterable' => true,
-            'visibility' => lead_variant() !== 'sdr',
+            'visibility' => lead_variant() === 'main',
         ]);
 
         $this->addColumn([

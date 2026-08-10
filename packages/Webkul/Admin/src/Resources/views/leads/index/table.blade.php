@@ -3,7 +3,7 @@
 @php
     $leadsIndexRoute = $leadsIndexRoute ?? 'admin.leads.index';
 
-    $canEditLeadValue = lead_variant() !== 'sdr'
+    $canEditLeadValue = lead_variant() === 'main'
         && bouncer()->hasPermission(lead_permission('edit'));
 
     $lockedLeadAttributeCodes = [
@@ -65,15 +65,18 @@
         ->all();
 
     $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
-    $accessibleStages = $sourceAccessService->filterAccessibleStages($pipeline->stages);
+    $accessibleStages = lead_variant() === 'lge'
+        ? $pipeline->stages->values()
+        : $sourceAccessService->filterAccessibleStages($pipeline->stages);
 
     $inlineOptions = [
         'stage' => [
             'field'   => 'lead_pipeline_stage_id',
             'items'   => $accessibleStages->map(fn ($s) => [
-                'value' => $s->id,
-                'label' => $s->name,
-                'code'  => $s->code,
+                'value'      => $s->id,
+                'label'      => $s->name,
+                'code'       => $s->code,
+                'sort_order' => $s->sort_order,
             ])->values()->all(),
         ],
         'tag_name' => [
@@ -694,7 +697,11 @@
                                         Participants
                                     </x-admin::form.control-group.label>
 
-                                    <v-activity-participants :participants="defaultMeetingParticipants"></v-activity-participants>
+                                    <v-activity-participants
+                                        :participants="defaultMeetingParticipants"
+                                        :show-all-users="true"
+                                        :users-only="true"
+                                    ></v-activity-participants>
 
                                     <p
                                         class="mt-1 text-xs text-red-600"
@@ -706,14 +713,14 @@
 
                                 <x-admin::form.control-group class="!mb-0">
                                     <x-admin::form.control-group.label class="required">
-                                        Location
+                                        Meeting Channel
                                     </x-admin::form.control-group.label>
 
                                     <x-admin::form.control-group.control
                                         type="text"
                                         name="location"
                                         rules="required"
-                                        label="Location"
+                                        label="Meeting Channel"
                                     />
 
                                     <x-admin::form.control-group.error control-name="location" />
@@ -786,6 +793,57 @@
                             @{{ followupMode === 'custom' ? 'Save Custom' : 'Custom' }}
                         </button>
                     </div>
+                </x-slot>
+            </x-admin::modal>
+
+            <!-- LGE SDR Handoff Modal -->
+            <x-admin::modal
+                ref="lgeSdrHandoffModal"
+                position="center"
+            >
+                <x-slot:header>
+                    <h3 class="text-base font-semibold dark:text-white">
+                        Assign SDR Owner
+                    </h3>
+                </x-slot>
+
+                <x-slot:content>
+                    <p class="mb-4 text-sm text-gray-600 dark:text-gray-300">
+                        Select the SDR who will own this lead after the meeting.
+                    </p>
+
+                    <x-admin::form.control-group class="!mb-0">
+                        <x-admin::form.control-group.label class="required">
+                            SDR User
+                        </x-admin::form.control-group.label>
+
+                        <select
+                            v-model="pendingHandoffSdrUserId"
+                            class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-brandColor dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                        >
+                            <option value="">Select SDR</option>
+
+                            <option
+                                v-for="user in sdrOwnerOptions"
+                                :key="'handoff-sdr-' + user.id"
+                                :value="user.id"
+                            >
+                                @{{ user.name }} <template v-if="user.email">(@{{ user.email }})</template>
+                            </option>
+                        </select>
+                    </x-admin::form.control-group>
+                </x-slot>
+
+                <x-slot:footer>
+                    <button
+                        type="button"
+                        class="primary-button"
+                        :disabled="isHandoffSaving"
+                        @click="applyLgeSdrHandoff"
+                    >
+                        <template v-if="isHandoffSaving">Saving...</template>
+                        <template v-else>Assign & Move</template>
+                    </button>
                 </x-slot>
             </x-admin::modal>
 
@@ -924,6 +982,12 @@
                     isMeetingSaving: false,
                     meetingErrors: {},
                     defaultMeetingParticipants: @json($defaultMeetingParticipants),
+                    isLgeLeadVariant: @json(($leadVariant ?? 'main') === 'lge'),
+                    sdrOwnerOptions: @json($sdrOwnerOptions ?? []),
+                    pendingHandoffLeadId: null,
+                    pendingHandoffStageId: null,
+                    pendingHandoffSdrUserId: '',
+                    isHandoffSaving: false,
                     followupMode: null,
                     customFollowupDate: '',
                     isFollowupSaving: false,
@@ -1309,6 +1373,15 @@
                             return;
                         }
 
+                        if (this.requiresLgeSdrHandoff(record, selectedOpt, config.items)) {
+                            this.pendingHandoffLeadId = leadId;
+                            this.pendingHandoffStageId = value;
+                            this.pendingHandoffSdrUserId = '';
+                            this.$refs.lgeSdrHandoffModal.open();
+
+                            return;
+                        }
+
                         this.updateStage(leadId, value)
                             .then(() => this.$refs.datagrid.get())
                             .catch(error => {
@@ -1542,6 +1615,49 @@
                         this.$emitter.emit('add-flash', { type: 'success', message: response.data.message });
 
                         return response;
+                    });
+                },
+
+                requiresLgeSdrHandoff(record, targetStage, stages) {
+                    if (! this.isLgeLeadVariant || ! targetStage) {
+                        return false;
+                    }
+
+                    const currentStage = stages.find(stage => stage.value == record.lead_pipeline_stage_id);
+                    const meetingStage = stages.find(stage => stage.code === 'meeting');
+
+                    return currentStage?.code === 'meeting'
+                        && meetingStage
+                        && Number(targetStage.sort_order) > Number(meetingStage.sort_order);
+                },
+
+                applyLgeSdrHandoff() {
+                    if (! this.pendingHandoffSdrUserId) {
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: 'Please select an SDR user.',
+                        });
+
+                        return;
+                    }
+
+                    this.isHandoffSaving = true;
+
+                    this.updateStage(this.pendingHandoffLeadId, this.pendingHandoffStageId, {
+                        sdr_user_id: this.pendingHandoffSdrUserId,
+                    }).then(() => {
+                        this.isHandoffSaving = false;
+                        this.$refs.lgeSdrHandoffModal.close();
+                        this.pendingHandoffLeadId = null;
+                        this.pendingHandoffStageId = null;
+                        this.pendingHandoffSdrUserId = '';
+                        this.$refs.datagrid.get();
+                    }).catch(error => {
+                        this.isHandoffSaving = false;
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: error.response?.data?.message || error.response?.data?.errors?.sdr_user_id?.[0] || 'Update failed.',
+                        });
                     });
                 },
 

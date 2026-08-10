@@ -2,6 +2,8 @@
     <x-slot:title>
         @if (($leadVariant ?? 'main') === 'sdr')
             @lang('admin::app.layouts.leads-sdr')
+        @elseif (($leadVariant ?? 'main') === 'lge')
+            @lang('admin::app.layouts.leads-lge')
         @else
             @lang('admin::app.leads.index.title')
         @endif
@@ -20,6 +22,8 @@
             <div class="text-xl font-bold dark:text-white">
                 @if (($leadVariant ?? 'main') === 'sdr')
                     @lang('admin::app.layouts.leads-sdr')
+                @elseif (($leadVariant ?? 'main') === 'lge')
+                    @lang('admin::app.layouts.leads-lge')
                 @else
                     @lang('admin::app.leads.index.title')
                 @endif

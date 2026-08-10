@@ -1,5 +1,17 @@
 {!! view_render_event('admin.leads.index.kanban.before') !!}
 
+@php
+    $defaultMeetingParticipants = [
+        'users' => auth()->guard('user')->user()
+            ? [[
+                'id'   => auth()->guard('user')->id(),
+                'name' => auth()->guard('user')->user()->name,
+            ]]
+            : [],
+        'persons' => [],
+    ];
+@endphp
+
 <!-- Kanban Vue Component -->
 <v-leads-kanban ref="leadsKanban">
     <div class="flex flex-col gap-4">
@@ -9,6 +21,10 @@
 </v-leads-kanban>
 
 {!! view_render_event('admin.leads.index.kanban.after') !!}
+
+<div class="hidden">
+    @include('admin::components.activities.actions.activity.participants')
+</div>
 
 @pushOnce('scripts')
     <script
@@ -327,6 +343,123 @@
                     </x-admin::modal>
                 </form>
             </x-admin::form>
+
+            <!-- Meeting Activity Modal -->
+            <x-admin::form
+                v-slot="{ meta, errors, handleSubmit }"
+                as="div"
+                ref="meetingModalForm"
+            >
+                <form @submit="handleSubmit($event, saveMeetingAndMove)">
+                    <x-admin::modal
+                        ref="meetingActivityModal"
+                        position="center"
+                        size="medium"
+                        @toggle="handleMeetingModalToggle"
+                    >
+                        <x-slot:header>
+                            <h3 class="text-base font-semibold dark:text-white">
+                                Add Meeting
+                            </h3>
+                        </x-slot>
+
+                        <x-slot:content>
+                            <div class="grid gap-4">
+                                <div class="flex gap-4 max-sm:flex-wrap">
+                                    <x-admin::form.control-group class="w-full">
+                                        <x-admin::form.control-group.label class="required">
+                                            Schedule From
+                                        </x-admin::form.control-group.label>
+
+                                        <x-admin::form.control-group.control
+                                            type="datetime"
+                                            name="schedule_from"
+                                            rules="required"
+                                            label="Schedule From"
+                                        />
+
+                                        <x-admin::form.control-group.error control-name="schedule_from" />
+                                    </x-admin::form.control-group>
+
+                                    <x-admin::form.control-group class="w-full">
+                                        <x-admin::form.control-group.label class="required">
+                                            Schedule To
+                                        </x-admin::form.control-group.label>
+
+                                        <x-admin::form.control-group.control
+                                            type="datetime"
+                                            name="schedule_to"
+                                            rules="required|after_datetime:@schedule_from"
+                                            label="Schedule To"
+                                        />
+
+                                        <x-admin::form.control-group.error control-name="schedule_to" />
+                                    </x-admin::form.control-group>
+                                </div>
+
+                                <x-admin::form.control-group>
+                                    <x-admin::form.control-group.label class="required">
+                                        Comment
+                                    </x-admin::form.control-group.label>
+
+                                    <x-admin::form.control-group.control
+                                        type="textarea"
+                                        name="comment"
+                                        rules="required|max:500"
+                                        label="Comment"
+                                    />
+
+                                    <x-admin::form.control-group.error control-name="comment" />
+                                </x-admin::form.control-group>
+
+                                <x-admin::form.control-group>
+                                    <x-admin::form.control-group.label class="required">
+                                        Participants
+                                    </x-admin::form.control-group.label>
+
+                                    <v-activity-participants
+                                        :participants="defaultMeetingParticipants"
+                                        :show-all-users="true"
+                                        :users-only="true"
+                                    ></v-activity-participants>
+
+                                    <p
+                                        class="mt-1 text-xs text-red-600"
+                                        v-if="meetingErrors.participants"
+                                    >
+                                        @{{ meetingErrors.participants }}
+                                    </p>
+                                </x-admin::form.control-group>
+
+                                <x-admin::form.control-group class="!mb-0">
+                                    <x-admin::form.control-group.label class="required">
+                                        Meeting Channel
+                                    </x-admin::form.control-group.label>
+
+                                    <x-admin::form.control-group.control
+                                        type="text"
+                                        name="location"
+                                        rules="required"
+                                        label="Meeting Channel"
+                                    />
+
+                                    <x-admin::form.control-group.error control-name="location" />
+                                </x-admin::form.control-group>
+                            </div>
+                        </x-slot>
+
+                        <x-slot:footer>
+                            <x-admin::button
+                                button-type="submit"
+                                class="primary-button"
+                                title="Save Meeting"
+                                ::loading="isMeetingSaving"
+                                ::disabled="isMeetingSaving"
+                            />
+                        </x-slot>
+                    </x-admin::modal>
+                </form>
+            </x-admin::form>
         </template>
     </script>
 
@@ -355,6 +488,16 @@
                         stage: null,
                         updating: false,
                     },
+
+                    pendingStageLeadId: null,
+
+                    pendingStageId: null,
+
+                    isMeetingSaving: false,
+
+                    meetingErrors: {},
+
+                    defaultMeetingParticipants: @json($defaultMeetingParticipants),
 
                     stages: @json(app(\Webkul\Lead\Services\SourceAccessService::class)->filterAccessibleStages($pipeline->stages)->values()->all()),
 
@@ -661,6 +804,19 @@
                         return;
                     }
 
+                    if (
+                        stage.code === 'meeting'
+                        && event.added
+                        && event.added.element
+                    ) {
+                        this.pendingStageLeadId = event.added.element.id;
+                        this.pendingStageId = stage.id;
+                        this.meetingErrors = {};
+                        this.$refs.meetingActivityModal.open();
+
+                        return;
+                    }
+
                     stage.lead_value = parseFloat(stage.lead_value) + parseFloat(event.added.element.lead_value);
 
                     this.stageLeads[stage.sort_order].leads.meta.total = this.stageLeads[stage.sort_order].leads.meta.total + 1;
@@ -686,6 +842,82 @@
                  */
                 updateStage(url, params) {
                     return this.$axios.put(url, params);
+                },
+
+                hasParticipants(participants = {}) {
+                    return ['users', 'persons'].some(type => {
+                        return (participants[type] || []).some(participantId => !! participantId);
+                    });
+                },
+
+                saveMeetingAndMove(params, { setErrors }) {
+                    this.meetingErrors = {};
+
+                    if (! this.hasParticipants(params.participants || {})) {
+                        this.meetingErrors = {
+                            participants: 'Please select at least one participant.',
+                        };
+
+                        return;
+                    }
+
+                    this.isMeetingSaving = true;
+
+                    this.$axios.post("{{ route('admin.activities.store') }}", {
+                        ...params,
+                        type: 'meeting',
+                        activity_status: 'scheduled',
+                        stage_meeting: 1,
+                        lead_id: this.pendingStageLeadId,
+                    }).then(() => {
+                        return this.updateStage('{{ lead_route('stage.update', '__LEAD_ID__') }}'.replace('__LEAD_ID__', this.pendingStageLeadId), {
+                            lead_pipeline_stage_id: this.pendingStageId,
+                        });
+                    }).then(() => {
+                        this.isMeetingSaving = false;
+                        this.pendingStageLeadId = null;
+                        this.pendingStageId = null;
+                        this.$refs.meetingActivityModal.close();
+                        this.refreshKanban();
+                    }).catch(error => {
+                        this.isMeetingSaving = false;
+
+                        if (error.response?.status === 422) {
+                            setErrors(error.response.data.errors || {});
+                            this.meetingErrors = {
+                                participants: error.response.data.errors?.participants?.[0],
+                            };
+
+                            return;
+                        }
+
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: error.response?.data?.message || 'Meeting could not be saved.',
+                        });
+                    });
+                },
+
+                handleMeetingModalToggle(state) {
+                    if (state.isActive || this.isMeetingSaving) {
+                        return;
+                    }
+
+                    if (this.pendingStageLeadId || this.pendingStageId) {
+                        this.pendingStageLeadId = null;
+                        this.pendingStageId = null;
+                        this.meetingErrors = {};
+                        this.refreshKanban();
+                    }
+                },
+
+                refreshKanban() {
+                    this.get()
+                        .then(response => {
+                            for (let [sortOrder, data] of Object.entries(response.data)) {
+                                this.stageLeads[sortOrder] = data;
+                            }
+                        });
                 },
 
                 handleFormSubmit(params) {

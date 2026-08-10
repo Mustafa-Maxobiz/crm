@@ -382,12 +382,22 @@ abstract class DataGrid
      */
     protected function processRequestedPagination($requestedPagination): LengthAwarePaginator
     {
-        return $this->queryBuilder->paginate(
-            $requestedPagination['per_page'] ?? $this->itemsPerPage,
+        $perPage = $requestedPagination['per_page'] ?? $this->itemsPerPage;
+
+        $page = $requestedPagination['page'] ?? 1;
+
+        $paginator = $this->queryBuilder->paginate(
+            $perPage,
             ['*'],
             'page',
-            $requestedPagination['page'] ?? 1
+            $page
         );
+
+        if ($page > 1 && $paginator->total() > 0 && $paginator->isEmpty()) {
+            return $this->queryBuilder->paginate($perPage, ['*'], 'page', 1);
+        }
+
+        return $paginator;
     }
 
     /**

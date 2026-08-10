@@ -312,17 +312,32 @@
                                     v-if="section.key === 'today-calendar'"
                                     class="flex shrink-0 flex-nowrap items-center gap-1.5"
                                 >
-                                    <span class="sdr-summary-badge meeting">
+                                    <button
+                                        type="button"
+                                        class="sdr-summary-badge meeting"
+                                        :class="{'active': isCalendarFilterActive('meeting')}"
+                                        @click="setCalendarFilter('meeting')"
+                                    >
                                         Meetings @{{ summary.meetings }}
-                                    </span>
+                                    </button>
 
-                                    <span class="sdr-summary-badge followup">
+                                    <button
+                                        type="button"
+                                        class="sdr-summary-badge followup"
+                                        :class="{'active': isCalendarFilterActive('followup')}"
+                                        @click="setCalendarFilter('followup')"
+                                    >
                                         Follow-ups @{{ summary.followups }}
-                                    </span>
+                                    </button>
 
-                                    <span class="sdr-summary-badge total">
+                                    <button
+                                        type="button"
+                                        class="sdr-summary-badge total"
+                                        :class="{'active': isCalendarFilterActive('all')}"
+                                        @click="setCalendarFilter('all')"
+                                    >
                                         Total @{{ summary.total }}
-                                    </span>
+                                    </button>
                                 </div>
 
                                 <span
@@ -479,6 +494,7 @@
                 data() {
                     return {
                         todayCalendar: [],
+                        calendarFilter: 'all',
                         summary: {
                             meetings: 0,
                             followups: 0,
@@ -503,13 +519,25 @@
                                         description: this.showUsFeatures
                                             ? 'Meetings and follow-ups due today.<br>Items with a green border are high priority during 11:00 AM – 4:00 PM in the prospect US timezone.'
                                             : 'Meetings and follow-ups due today.',
-                                        items: this.todayCalendar,
+                                        items: this.filteredTodayCalendar,
                                         pageSize: 10,
                                         tall: true,
                                     },
                                 ],
                             },
                         ];
+                    },
+
+                    filteredTodayCalendar() {
+                        if (this.calendarFilter === 'meeting') {
+                            return this.todayCalendar.filter((item) => item.type === 'Meeting');
+                        }
+
+                        if (this.calendarFilter === 'followup') {
+                            return this.todayCalendar.filter((item) => item.type === 'Follow-up');
+                        }
+
+                        return this.todayCalendar;
                     },
                 },
 
@@ -565,6 +593,15 @@
 
                     nextPage(key, section) {
                         this.pages[key] = Math.min(this.totalPages(section), this.pageFor(key) + 1);
+                    },
+
+                    setCalendarFilter(filter) {
+                        this.calendarFilter = filter;
+                        this.pages['today-calendar'] = 1;
+                    },
+
+                    isCalendarFilterActive(filter) {
+                        return this.calendarFilter === filter;
                     },
 
                     itemTypeClass(item) {
@@ -901,13 +938,22 @@
 
             .sdr-summary-badge {
                 align-items: center;
+                border: 1px solid transparent;
                 border-radius: 9999px;
+                cursor: pointer;
                 display: inline-flex;
                 font-size: 11px;
                 font-weight: 700;
                 height: 28px;
                 padding: 0 10px;
+                transition: all 160ms ease;
                 white-space: nowrap;
+            }
+
+            .sdr-summary-badge:hover,
+            .sdr-summary-badge.active {
+                border-color: currentColor;
+                box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8);
             }
 
             .sdr-summary-badge.meeting {

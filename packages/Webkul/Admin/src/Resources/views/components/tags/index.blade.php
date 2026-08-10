@@ -202,8 +202,10 @@
                 <form @submit="handleSubmit($event, saveNotAnswerActivity)">
                     <x-admin::modal
                         ref="notAnswerActivityModal"
+                        class="not-answer-activity-modal"
                         position="center"
                         size="medium"
+                        @close="clearNotAnswerModalState"
                     >
                         <x-slot:header>
                             <h3 class="text-base font-semibold dark:text-white">
@@ -278,11 +280,11 @@
                             </div>
                         </x-slot>
 
-                        <x-slot:footer>
+                        <x-slot:footer class="gap-2.5">
                             <button
                                 type="button"
                                 class="secondary-button"
-                                @click="$refs.notAnswerActivityModal.close()"
+                                @click="closeNotAnswerModal"
                             >
                                 Cancel
                             </button>
@@ -536,7 +538,7 @@
                                 self.pendingNotAnswerTag = params;
                                 self.notAnswerErrors = {};
                                 self.isStoring = false;
-                                self.$refs.notAnswerActivityModal.open();
+                                self.openNotAnswerModal();
 
                                 return;
                             }
@@ -577,7 +579,7 @@
                             }
 
                             self.pendingNotAnswerTag = null;
-                            self.$refs.notAnswerActivityModal.close();
+                            self.closeNotAnswerModal();
 
                             if (response.data.data) {
                                 self.$emitter.emit('on-activity-added', response.data.data);
@@ -607,6 +609,22 @@
 
                 isNotAnswerTag(tag) {
                     return (tag.name || '').trim().toLowerCase() === 'not answered';
+                },
+
+                openNotAnswerModal() {
+                    document.body.classList.add('not-answer-activity-modal-open');
+
+                    this.$refs.notAnswerActivityModal.open();
+                },
+
+                closeNotAnswerModal() {
+                    this.clearNotAnswerModalState();
+
+                    this.$refs.notAnswerActivityModal.close();
+                },
+
+                clearNotAnswerModalState() {
+                    document.body.classList.remove('not-answer-activity-modal-open');
                 },
 
                 removeDetachedTags(tagIds) {
@@ -663,4 +681,12 @@
             },
         });
     </script>
+@endPushOnce
+
+@pushOnce('styles')
+    <style>
+        .not-answer-activity-modal-open .icon-stats-up {
+            display: none !important;
+        }
+    </style>
 @endPushOnce

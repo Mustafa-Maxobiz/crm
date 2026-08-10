@@ -267,6 +267,10 @@ class LeadRepository extends Repository
                         $personPayload['organization_id'] = $data['organization_id'];
                     }
 
+                    if (empty($personPayload['user_id']) && ! empty($data['user_id'])) {
+                        $personPayload['user_id'] = $data['user_id'];
+                    }
+
                     $existingPerson = $this->personRepository->findByUniqueIdentity($personPayload);
 
                     if ($existingPerson) {

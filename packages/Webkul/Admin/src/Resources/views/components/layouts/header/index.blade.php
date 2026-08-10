@@ -209,11 +209,19 @@
 
                             <div class="min-w-0 flex-1">
                                 <a
+                                    v-if="notification.edit_url"
                                     class="block truncate text-sm font-semibold text-gray-800 hover:text-brandColor dark:text-white"
                                     :href="notification.edit_url"
                                 >
                                     @{{ notification.title || capitalize(notification.type) }}
                                 </a>
+
+                                <span
+                                    v-else
+                                    class="block truncate text-sm font-semibold text-gray-800 dark:text-white"
+                                >
+                                    @{{ notification.title || capitalize(notification.type) }}
+                                </span>
 
                                 <p
                                     class="mt-1 truncate text-xs text-gray-600 dark:text-gray-300"

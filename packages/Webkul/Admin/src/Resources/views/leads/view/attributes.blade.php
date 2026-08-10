@@ -19,7 +19,7 @@
         'service_offered',
     ];
 
-    if (lead_variant() === 'sdr') {
+    if (lead_variant() !== 'main') {
         $hiddenAttributeCodes[] = 'lead_value';
     }
 @endphp
