@@ -1,9 +1,21 @@
 <!-- Stages Navigation -->
 @php
-    $accessibleViewStages = lead_variant() === 'lge'
+    $accessibleViewStages = in_array(lead_variant(), ['sdr', 'lge'], true)
         ? $lead->pipeline->stages->values()
         : app(\Webkul\Lead\Services\SourceAccessService::class)
             ->filterAccessibleStages($lead->pipeline->stages);
+
+    $currentUser = auth()->guard('user')->user();
+    $meetingStage = $lead->pipeline->stages->firstWhere('code', 'meeting');
+    $isLgeLeadVariant = lead_variant() === 'lge';
+    $isCallingRoleView = in_array(lead_variant(), ['sdr', 'lge'], true);
+    $stageEditingLocked = $currentUser
+        && $isCallingRoleView
+        && (int) ($lead->lead_owner_id ?? 0) === (int) $currentUser->id
+        && (int) $lead->user_id !== (int) $currentUser->id
+        && $meetingStage
+        && $lead->stage
+        && (int) $lead->stage->sort_order >= (int) $meetingStage->sort_order;
 @endphp
 
 {!! view_render_event('admin.leads.view.stages.before', ['lead' => $lead]) !!}
@@ -24,7 +36,7 @@
         $hasMeetingActivity = $lead->activities()->where('type', 'meeting')->exists();
 
         $defaultMeetingParticipants = [
-            'users' => lead_variant() !== 'lge' && auth()->guard('user')->user()
+            'users' => ! in_array(lead_variant(), ['sdr', 'lge'], true) && auth()->guard('user')->user()
                 ? [[
                     'id'   => auth()->guard('user')->id(),
                     'name' => auth()->guard('user')->user()->name,
@@ -38,7 +50,7 @@
         <!-- Stages Container -->
         <div
             class="flex w-full max-w-full"
-            :class="{'opacity-50 pointer-events-none': isUpdating}"
+            :class="{'opacity-50 pointer-events-none': isUpdating || stageEditingLocked}"
         >
             <!-- Stages Item -->
             <template v-for="stage in stages">
@@ -270,7 +282,7 @@
                                     <x-admin::form.control-group.error control-name="comment" />
                                 </x-admin::form.control-group>
 
-                                @if (lead_variant() === 'lge')
+                                @if (in_array(lead_variant(), ['sdr', 'lge'], true))
                                     <x-admin::form.control-group>
                                         <x-admin::form.control-group.label class="required">
                                             Assigned Owner
@@ -302,7 +314,7 @@
                                         :participants="defaultMeetingParticipants"
                                         :show-all-users="true"
                                         :users-only="true"
-                                        :user-role-names="['administrator', 'lead']"
+                                        :user-role-names="['administrator', 'lead', 'lead clouser', 'lead closer']"
                                     ></v-activity-participants>
 
                                     <p
@@ -408,6 +420,7 @@
             data() {
                 return {
                     isUpdating: false,
+                    stageEditingLocked: @json($stageEditingLocked),
 
                     currentStage: @json($lead->stage),
 
@@ -417,7 +430,8 @@
 
                     stages: @json($accessibleViewStages->values()),
 
-                    isLgeLeadVariant: @json(lead_variant() === 'lge'),
+                    isLgeLeadVariant: @json($isLgeLeadVariant),
+                    isCallingRoleLeadVariant: @json($isCallingRoleView),
 
                     meetingOwnerOptions: @json($meetingOwnerOptions ?? []),
 
@@ -476,6 +490,15 @@
                 },
 
                 update(stage, params = null) {
+                    if (this.stageEditingLocked) {
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: 'You can view this lead, but stage changes are locked after meeting assignment.',
+                        });
+
+                        return;
+                    }
+
                     if (this.currentStage.code == stage.code) {
                         return;
                     }

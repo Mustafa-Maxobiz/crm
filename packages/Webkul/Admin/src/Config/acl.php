@@ -12,15 +12,20 @@ return [
         'route' => 'admin.dashboard.sdr',
         'sort'  => 2,
     ], [
+        'key'   => 'lead_clouser_dashboard',
+        'name'  => 'admin::app.acl.dashboard-lead-clouser',
+        'route' => 'admin.dashboard.lead_clouser',
+        'sort'  => 3,
+    ], [
         'key'   => 'lge_dashboard',
         'name'  => 'admin::app.acl.dashboard-lge',
         'route' => 'admin.dashboard.lge',
-        'sort'  => 3,
+        'sort'  => 4,
     ], [
         'key'   => 'leads',
         'name'  => 'admin::app.acl.leads',
         'route' => 'admin.leads.index',
-        'sort'  => 4,
+        'sort'  => 5,
     ], [
         'key'   => 'leads.create',
         'name'  => 'admin::app.acl.create',
@@ -69,10 +74,36 @@ return [
         ],
         'sort'  => 6,
     ], [
+        'key'   => 'lead_clouser_leads',
+        'name'  => 'admin::app.acl.leads-lead-clouser',
+        'route' => 'admin.leads.lead_clouser',
+        'sort'  => 6,
+    ], [
+        'key'   => 'lead_clouser_leads.view',
+        'name'  => 'admin::app.acl.view',
+        'route' => 'admin.leads.lead_clouser.view',
+        'sort'  => 1,
+    ], [
+        'key'   => 'lead_clouser_leads.edit',
+        'name'  => 'admin::app.acl.edit',
+        'route' => [
+            'admin.leads.lead_clouser.edit',
+            'admin.leads.lead_clouser.form_data',
+            'admin.leads.lead_clouser.update',
+            'admin.leads.lead_clouser.mass_update',
+            'admin.leads.lead_clouser.tags.attach',
+            'admin.leads.lead_clouser.tags.replace',
+            'admin.leads.lead_clouser.tags.detach',
+            'admin.leads.lead_clouser.services_offered.store',
+            'admin.leads.lead_clouser.attributes.update',
+            'admin.leads.lead_clouser.stage.update',
+        ],
+        'sort'  => 2,
+    ], [
         'key'   => 'sdr_leads',
         'name'  => 'admin::app.acl.leads-sdr',
         'route' => 'admin.leads.sdr',
-        'sort'  => 5,
+        'sort'  => 7,
     ], [
         'key'   => 'sdr_leads.create',
         'name'  => 'admin::app.acl.create',

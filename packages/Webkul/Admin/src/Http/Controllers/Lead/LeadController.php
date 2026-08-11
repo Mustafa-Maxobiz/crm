@@ -102,6 +102,14 @@ class LeadController extends Controller
     }
 
     /**
+     * Lead Clouser leads list.
+     */
+    public function leadClouser()
+    {
+        return $this->listIndex('lead_clouser');
+    }
+
+    /**
      * Shared list page for main and SDR lead screens.
      */
     protected function listIndex(string $leadVariant)
@@ -798,15 +806,20 @@ class LeadController extends Controller
 
         $isMainCreate = lead_variant() === 'main';
         $isLgeCreate = lead_variant() === 'lge';
+        $isCallingRoleCreate = in_array(lead_variant(), ['lge', 'sdr'], true);
 
         // Main create: default Sales Owner to creator (editable to forward); always start in New stage.
-        if ($isMainCreate || $isLgeCreate) {
+        if ($isMainCreate || $isCallingRoleCreate) {
             if (empty($data['user_id'])) {
                 $data['user_id'] = auth()->guard('user')->id();
             }
 
-            if ($isLgeCreate) {
+            if ($isCallingRoleCreate) {
                 $data['user_id'] = auth()->guard('user')->id();
+            }
+
+            if ($isCallingRoleCreate && empty($data['lead_owner_id'])) {
+                $data['lead_owner_id'] = auth()->guard('user')->id();
             }
 
             if (empty($data['lead_pipeline_id'])) {
@@ -898,6 +911,10 @@ class LeadController extends Controller
             return redirect()->route($this->leadsIndexRouteName());
         }
 
+        if ($this->isPipelineOnlyLeadForCurrentUser($lead)) {
+            return redirect()->route($this->leadsIndexRouteName());
+        }
+
         if ($this->isSdrUser()) {
             $lead = $this->claimNewLeadForSdr($lead);
         }
@@ -917,6 +934,10 @@ class LeadController extends Controller
         $lead = $this->leadRepository->findOrFail($id);
 
         if (! $this->sourceAccessService->canAccessLead($lead)) {
+            abort(403);
+        }
+
+        if ($this->isPipelineOnlyLeadForCurrentUser($lead)) {
             abort(403);
         }
 
@@ -1028,6 +1049,10 @@ class LeadController extends Controller
             return redirect()->route($this->leadsIndexRouteName());
         }
 
+        if ($this->isPipelineOnlyLeadForCurrentUser($lead)) {
+            return redirect()->route($this->leadsIndexRouteName());
+        }
+
         if ($this->isSdrUser()) {
             $lead = $this->claimNewLeadForSdr($lead);
         }
@@ -1048,6 +1073,40 @@ class LeadController extends Controller
     protected function isLgeUser(): bool
     {
         return lead_variant() === 'lge' || $this->sourceAccessService->isLgeUser();
+    }
+
+    protected function isCallingRoleUser(): bool
+    {
+        return $this->isSdrUser() || $this->isLgeUser();
+    }
+
+    protected function isPipelineOnlyLeadForCurrentUser($lead): bool
+    {
+        $user = auth()->guard('user')->user();
+
+        if (! $user || $user->role?->permission_type === 'all') {
+            return false;
+        }
+
+        if ((int) $lead->user_id === (int) $user->id) {
+            return false;
+        }
+
+        if ((int) ($lead->lead_owner_id ?? 0) !== (int) $user->id) {
+            return false;
+        }
+
+        if (! $this->isCallingRoleUser()) {
+            return false;
+        }
+
+        $lead->loadMissing(['pipeline.stages', 'stage']);
+
+        $meetingStage = $lead->pipeline?->stages?->firstWhere('code', 'meeting');
+
+        return $meetingStage
+            && $lead->stage
+            && (int) $lead->stage->sort_order >= (int) $meetingStage->sort_order;
     }
 
     /**
@@ -1168,6 +1227,11 @@ class LeadController extends Controller
 
             $attributes = ['user_id', 'lead_pipeline_stage_id'];
 
+            if (empty($lead->lead_owner_id)) {
+                $payload['lead_owner_id'] = auth()->guard('user')->id();
+                $attributes[] = 'lead_owner_id';
+            }
+
             if (empty($lead->next_followup_date)) {
                 $payload['next_followup_date'] = $this->followupScheduleService->calculateNext(
                     $lead,
@@ -1252,6 +1316,23 @@ class LeadController extends Controller
      */
     public function update(LeadForm $request, int $id): RedirectResponse|JsonResponse
     {
+        $existingLead = $this->leadRepository->findOrFail($id);
+
+        if (
+            ! $this->sourceAccessService->canAccessLead($existingLead)
+            || $this->isPipelineOnlyLeadForCurrentUser($existingLead)
+        ) {
+            if (request()->ajax()) {
+                return response()->json([
+                    'message' => trans('admin::app.leads.source-access-denied'),
+                ], 403);
+            }
+
+            session()->flash('error', trans('admin::app.leads.source-access-denied'));
+
+            return redirect()->back();
+        }
+
         Event::dispatch('lead.update.before', $id);
 
         $data = $this->stripLockedLeadFields($request->all());
@@ -1323,6 +1404,7 @@ class LeadController extends Controller
             || bouncer()->hasPermission('sdr_leads.edit')
             || bouncer()->hasPermission('lge_leads.create')
             || bouncer()->hasPermission('lge_leads.edit')
+            || bouncer()->hasPermission('lead_clouser_leads.edit')
             || $this->isSdrUser();
 
         abort_unless($canCreate, 403);
@@ -1354,6 +1436,16 @@ class LeadController extends Controller
     public function updateAttributes(int $id)
     {
         $data = request()->all();
+        $lead = $this->leadRepository->findOrFail($id);
+
+        if (
+            ! $this->sourceAccessService->canAccessLead($lead)
+            || $this->isPipelineOnlyLeadForCurrentUser($lead)
+        ) {
+            return response()->json([
+                'message' => trans('admin::app.leads.source-access-denied'),
+            ], 403);
+        }
 
         $lockedCodes = $this->lockedLeadAttributeCodes();
         $attemptedLocked = array_values(array_intersect(array_keys($data), $lockedCodes));
@@ -1365,8 +1457,6 @@ class LeadController extends Controller
         }
 
         if (array_key_exists('services', $data) || array_key_exists('service_offered', $data)) {
-            $lead = $this->leadRepository->findOrFail($id);
-
             Event::dispatch('lead.update.before', $id);
 
             $this->syncLeadServices($lead, $data['services'] ?? $data['service_offered'] ?? []);
@@ -1443,6 +1533,12 @@ class LeadController extends Controller
                 ->where('id', request()->input('lead_pipeline_stage_id'))
                 ->firstOrFail();
 
+            if (! $this->canCurrentUserEditStage($lead)) {
+                return response()->json([
+                    'message' => 'You can view this lead, but stage changes are locked after meeting assignment.',
+                ], 403);
+            }
+
             $isLgeHandoffStage = $this->requiresLgeSdrHandoff($lead, $stage);
 
             if (
@@ -1479,7 +1575,7 @@ class LeadController extends Controller
 
             if (
                 $stage->code === 'meeting'
-                && $this->isLgeUser()
+                && $this->isCallingRoleUser()
                 && request()->filled('assigned_user_id')
             ) {
                 $this->validate(request(), [
@@ -1620,13 +1716,53 @@ class LeadController extends Controller
             && $targetStage->sort_order > $meetingStage->sort_order;
     }
 
+    protected function canCurrentUserEditStage($lead): bool
+    {
+        $user = auth()->guard('user')->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->role?->permission_type === 'all') {
+            return true;
+        }
+
+        if ((int) $lead->user_id === (int) $user->id) {
+            return true;
+        }
+
+        if ((int) ($lead->lead_owner_id ?? 0) !== (int) $user->id) {
+            return false;
+        }
+
+        if (! $this->isCallingRoleUser()) {
+            return false;
+        }
+
+        $currentStage = $lead->stage;
+        $meetingStage = $lead->pipeline?->stages
+            ->firstWhere('code', 'meeting');
+
+        if (! $currentStage || ! $meetingStage) {
+            return true;
+        }
+
+        return (int) $currentStage->sort_order < (int) $meetingStage->sort_order;
+    }
+
     protected function meetingOwnerOptions(): array
     {
         return DB::table('users')
             ->join('roles', 'users.role_id', '=', 'roles.id')
             ->where(function ($query) {
                 $query->where('roles.permission_type', 'all')
-                    ->orWhereRaw('LOWER(roles.name) = ?', ['lead']);
+                    ->orWhereIn(DB::raw('LOWER(roles.name)'), [
+                        'lead',
+                        'lead clouser',
+                        'lead closer',
+                        'lead closure',
+                    ]);
             })
             ->where('users.status', 1)
             ->orderBy('users.name')
@@ -1649,7 +1785,12 @@ class LeadController extends Controller
             ->where('users.status', 1)
             ->where(function ($query) {
                 $query->where('roles.permission_type', 'all')
-                    ->orWhereRaw('LOWER(roles.name) = ?', ['lead']);
+                    ->orWhereIn(DB::raw('LOWER(roles.name)'), [
+                        'lead',
+                        'lead clouser',
+                        'lead closer',
+                        'lead closure',
+                    ]);
             })
             ->exists();
     }
@@ -1861,7 +2002,10 @@ class LeadController extends Controller
 
         try {
             foreach ($leads as $lead) {
-                if (! $this->sourceAccessService->canAccessLead($lead)) {
+                if (
+                    ! $this->sourceAccessService->canAccessLead($lead)
+                    || $this->isPipelineOnlyLeadForCurrentUser($lead)
+                ) {
                     continue;
                 }
 
@@ -2528,11 +2672,14 @@ class LeadController extends Controller
             'pricing_type'             => $this->resolveAttributeOptionId('pricing_type', $row['pricing_type']),
             'source_sub_type'          => $this->nullableImportValue($row['source_sub_type'] ?? null),
             'source_link'              => $this->nullableImportValue($row['source_link'] ?? null),
-            'user_id'                  => lead_variant() === 'lge'
+            'user_id'                  => in_array(lead_variant(), ['lge', 'sdr'], true)
                 ? auth()->guard('user')->id()
                 : (filled($row['sales_owner_email'] ?? null)
                     ? $this->resolveUserId($row['sales_owner_email'])
                     : null),
+            'lead_owner_id'            => in_array(lead_variant(), ['lge', 'sdr'], true)
+                ? auth()->guard('user')->id()
+                : null,
             'lead_pipeline_id'         => $pipeline->id,
             'lead_pipeline_stage_id'   => $stage->id,
             'status'                   => 1,

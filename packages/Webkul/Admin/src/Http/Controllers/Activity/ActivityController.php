@@ -178,7 +178,7 @@ class ActivityController extends Controller
     {
         $this->ensureCurrentUserParticipant();
 
-        if ($this->isLgeStageMeetingRequest()) {
+        if ($this->isCallingRoleStageMeetingRequest()) {
             $this->validate(request(), [
                 'assigned_user_id' => [
                     'required',
@@ -784,7 +784,7 @@ class ActivityController extends Controller
             return;
         }
 
-        if (request('stage_meeting') && app(\Webkul\Lead\Services\SourceAccessService::class)->isLgeUser()) {
+        if ($this->isCallingRoleStageMeetingRequest()) {
             return;
         }
 
@@ -797,15 +797,20 @@ class ActivityController extends Controller
         request()->merge(['participants' => $participants]);
     }
 
-    protected function isLgeStageMeetingRequest(): bool
+    protected function isCallingRoleStageMeetingRequest(): bool
     {
+        $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
+
         return request('stage_meeting')
-            && app(\Webkul\Lead\Services\SourceAccessService::class)->isLgeUser();
+            && (
+                $sourceAccessService->isSdrUser()
+                || $sourceAccessService->isLgeUser()
+            );
     }
 
     protected function activityOwnerIdForCreate(): int
     {
-        if ($this->isLgeStageMeetingRequest()) {
+        if ($this->isCallingRoleStageMeetingRequest()) {
             return (int) request('assigned_user_id');
         }
 
@@ -820,7 +825,12 @@ class ActivityController extends Controller
             ->where('users.status', 1)
             ->where(function ($query) {
                 $query->where('roles.permission_type', 'all')
-                    ->orWhereRaw('LOWER(roles.name) = ?', ['lead']);
+                    ->orWhereIn(DB::raw('LOWER(roles.name)'), [
+                        'lead',
+                        'lead clouser',
+                        'lead closer',
+                        'lead closure',
+                    ]);
             })
             ->exists();
     }

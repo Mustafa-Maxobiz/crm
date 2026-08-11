@@ -84,7 +84,10 @@ class LeadDataGrid extends DataGrid
                 'leads.lead_source_id',
                 'leads.lead_type_id',
                 'leads.lead_pipeline_stage_id',
+                'leads.lead_owner_id',
                 'lead_pipeline_stages.name as stage',
+                'lead_pipeline_stages.code as stage_code',
+                'lead_pipeline_stages.sort_order as stage_sort_order',
                 'lead_tags.tag_id as tag_id',
                 'users.id as user_id',
                 'users.name as user_name',
@@ -610,22 +613,26 @@ class LeadDataGrid extends DataGrid
      */
     public function prepareMassActions(): void
     {
-        $this->addMassAction([
-            'icon'   => 'icon-delete',
-            'title'  => trans('admin::app.leads.index.datagrid.mass-delete'),
-            'method' => 'POST',
-            'url'    => lead_route('mass_delete'),
-        ]);
+        if (bouncer()->hasPermission(lead_permission('delete'))) {
+            $this->addMassAction([
+                'icon'   => 'icon-delete',
+                'title'  => trans('admin::app.leads.index.datagrid.mass-delete'),
+                'method' => 'POST',
+                'url'    => lead_route('mass_delete'),
+            ]);
+        }
 
-        $this->addMassAction([
-            'title'   => trans('admin::app.leads.index.datagrid.mass-update'),
-            'url'     => lead_route('mass_update'),
-            'method'  => 'POST',
-            'options' => $this->getAccessiblePipelineStages()->map(fn ($stage) => [
-                'label' => $stage->name,
-                'value' => $stage->id,
-            ])->values()->all(),
-        ]);
+        if (bouncer()->hasPermission(lead_permission('edit'))) {
+            $this->addMassAction([
+                'title'   => trans('admin::app.leads.index.datagrid.mass-update'),
+                'url'     => lead_route('mass_update'),
+                'method'  => 'POST',
+                'options' => $this->getAccessiblePipelineStages()->map(fn ($stage) => [
+                    'label' => $stage->name,
+                    'value' => $stage->id,
+                ])->values()->all(),
+            ]);
+        }
     }
 
     /**

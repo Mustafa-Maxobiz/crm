@@ -61,6 +61,7 @@
                 </template>
                 
                 <button
+                    v-if="available.massActions.some(action => action.icon === 'icon-delete')"
                     type="button"
                     class="primary-button border-red-500 !bg-red-500"
                     @click="performMassAction(available.massActions.find(action => action.icon === 'icon-delete'))"

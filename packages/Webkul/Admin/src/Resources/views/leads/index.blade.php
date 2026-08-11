@@ -4,6 +4,8 @@
             @lang('admin::app.layouts.leads-sdr')
         @elseif (($leadVariant ?? 'main') === 'lge')
             @lang('admin::app.layouts.leads-lge')
+        @elseif (($leadVariant ?? 'main') === 'lead_clouser')
+            @lang('admin::app.layouts.leads-lead-clouser')
         @else
             @lang('admin::app.leads.index.title')
         @endif
@@ -24,6 +26,8 @@
                     @lang('admin::app.layouts.leads-sdr')
                 @elseif (($leadVariant ?? 'main') === 'lge')
                     @lang('admin::app.layouts.leads-lge')
+                @elseif (($leadVariant ?? 'main') === 'lead_clouser')
+                    @lang('admin::app.layouts.leads-lead-clouser')
                 @else
                     @lang('admin::app.leads.index.title')
                 @endif
@@ -332,6 +336,7 @@
             };
         </script>
 
+        @if (bouncer()->hasPermission(lead_permission('import')))
         <script type="module">
             const leadImportStartUrl = @json(lead_route('import.start'));
             const leadImportProcessUrl = @json(lead_route('import.process'));
@@ -784,5 +789,6 @@
                 }
             });
         </script>
+        @endif
     @endPushOnce
 </x-admin::layouts>

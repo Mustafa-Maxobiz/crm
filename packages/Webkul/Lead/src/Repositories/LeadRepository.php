@@ -27,6 +27,7 @@ class LeadRepository extends Repository
         'lead_value',
         'status',
         'user_id',
+        'lead_owner_id',
         'user.name',
         'person_id',
         'person.name',
@@ -87,6 +88,8 @@ class LeadRepository extends Repository
         ])->scopeQuery(function ($query) use ($pipelineId, $pipelineStageId, $term, $createdAtRange) {
             $query = $query->select(
                 'leads.id as id',
+                'leads.user_id as user_id',
+                'leads.lead_owner_id as lead_owner_id',
                 'leads.created_at as created_at',
                 'title',
                 'lead_value',
@@ -94,6 +97,8 @@ class LeadRepository extends Repository
                 'leads.person_id as person_id',
                 'lead_pipelines.id as lead_pipeline_id',
                 'lead_pipeline_stages.name as status',
+                'lead_pipeline_stages.code as stage_code',
+                'lead_pipeline_stages.sort_order as stage_sort_order',
                 'lead_pipeline_stages.id as lead_pipeline_stage_id'
             )
                 ->addSelect(DB::raw('DATEDIFF('.DB::getTablePrefix().'leads.created_at + INTERVAL lead_pipelines.rotten_days DAY, now()) as rotten_days'))
@@ -324,6 +329,10 @@ class LeadRepository extends Repository
         // Convert empty lead_sub_source_id to null
         if (isset($data['lead_sub_source_id']) && empty($data['lead_sub_source_id'])) {
             $data['lead_sub_source_id'] = null;
+        }
+
+        if (empty($data['lead_owner_id']) && ! empty($data['user_id'])) {
+            $data['lead_owner_id'] = $data['user_id'];
         }
 
         $lead = parent::create(array_merge([

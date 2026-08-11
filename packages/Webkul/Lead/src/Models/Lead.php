@@ -45,6 +45,7 @@ class Lead extends Model implements LeadContract
         'lead_disqualified_at',
         'closed_at',
         'user_id',
+        'lead_owner_id',
         'person_id',
         'organization_id',
         'team_id',
@@ -86,6 +87,14 @@ class Lead extends Model implements LeadContract
     public function user(): BelongsTo
     {
         return $this->belongsTo(UserProxy::modelClass());
+    }
+
+    /**
+     * Get the original lead owner that should retain visibility after handoff.
+     */
+    public function leadOwner(): BelongsTo
+    {
+        return $this->belongsTo(UserProxy::modelClass(), 'lead_owner_id');
     }
 
     /**

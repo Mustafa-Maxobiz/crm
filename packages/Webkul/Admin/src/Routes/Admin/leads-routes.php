@@ -93,6 +93,45 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
     });
 
     /**
+     * Lead Clouser leads — assigned leads for closure users.
+     */
+    Route::prefix('lead-clouser')->group(function () {
+        Route::get('', 'leadClouser')->name('admin.leads.lead_clouser');
+
+        Route::get('view/{id}', 'view')->name('admin.leads.lead_clouser.view');
+
+        Route::get('edit/{id}', 'edit')->name('admin.leads.lead_clouser.edit');
+
+        Route::get('edit/{id}/form-data', 'formData')->name('admin.leads.lead_clouser.form_data');
+
+        Route::put('edit/{id}', 'update')->name('admin.leads.lead_clouser.update');
+
+        Route::put('attributes/edit/{id}', 'updateAttributes')->name('admin.leads.lead_clouser.attributes.update');
+
+        Route::post('services-offered', 'storeServiceOfferedOption')->name('admin.leads.lead_clouser.services_offered.store');
+
+        Route::put('stage/edit/{id}', 'updateStage')->name('admin.leads.lead_clouser.stage.update');
+
+        Route::get('get/{pipeline_id?}', 'get')->name('admin.leads.lead_clouser.get');
+
+        Route::post('mass-update', 'massUpdate')->name('admin.leads.lead_clouser.mass_update');
+
+        Route::get('kanban/look-up', [LeadController::class, 'kanbanLookup'])->name('admin.leads.lead_clouser.kanban.look_up');
+
+        Route::controller(ActivityController::class)->prefix('{id}/activities')->group(function () {
+            Route::get('', 'index')->name('admin.leads.lead_clouser.activities.index');
+        });
+
+        Route::controller(TagController::class)->prefix('{id}/tags')->group(function () {
+            Route::post('', 'attach')->name('admin.leads.lead_clouser.tags.attach');
+
+            Route::patch('', 'replace')->name('admin.leads.lead_clouser.tags.replace');
+
+            Route::delete('', 'detach')->name('admin.leads.lead_clouser.tags.detach');
+        });
+    });
+
+    /**
      * SDR leads — parallel list/detail/action routes (separate ACL).
      */
     Route::prefix('sdr')->group(function () {

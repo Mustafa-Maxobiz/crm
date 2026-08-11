@@ -30,7 +30,7 @@ class Action
             'title'  => $this->title,
             'method' => $this->method,
             'url'    => $this->url,
-            'target' => $this->target,
+            'target' => $this->target ?? '',
         ];
     }
 }

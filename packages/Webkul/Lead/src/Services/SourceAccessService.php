@@ -225,12 +225,32 @@ class SourceAccessService
         return strtolower(trim((string) $user?->role?->name)) === 'lge';
     }
 
+    public function isLeadCloserUser(?UserContract $user = null): bool
+    {
+        $user = $this->resolveUser($user);
+
+        return $this->isLeadCloserRoleName($user?->role?->name);
+    }
+
+    public function isLeadCloserRoleName(?string $roleName): bool
+    {
+        return in_array(strtolower(trim((string) $roleName)), [
+            'lead',
+            'lead clouser',
+            'lead closer',
+            'lead closure',
+        ], true);
+    }
+
     /**
      * Calling dashboard role names.
      */
     public function isSdrStyleRoleName(?string $roleName): bool
     {
-        return in_array(strtolower(trim((string) $roleName)), ['sdr', 'lge'], true);
+        $roleName = strtolower(trim((string) $roleName));
+
+        return in_array($roleName, ['sdr', 'lge'], true)
+            || $this->isLeadCloserRoleName($roleName);
     }
 
     /**
@@ -405,15 +425,23 @@ class SourceAccessService
             return false;
         }
 
+        if ($this->isLeadCloserUser($user)) {
+            return (int) $lead->user_id === (int) $user->id;
+        }
+
         if ($this->isSdrUser($user)) {
-            if ((int) $lead->user_id === (int) $user->id) {
+            if (
+                (int) $lead->user_id === (int) $user->id
+                || (int) ($lead->lead_owner_id ?? 0) === (int) $user->id
+            ) {
                 return true;
             }
 
             return $this->leadIsInSharedStage($lead, $user);
         }
 
-        return (int) $lead->user_id === (int) $user->id;
+        return (int) $lead->user_id === (int) $user->id
+            || (int) ($lead->lead_owner_id ?? 0) === (int) $user->id;
     }
 
     /**
@@ -427,12 +455,18 @@ class SourceAccessService
             return $query;
         }
 
+        if (lead_variant() === 'lead_clouser' || $this->isLeadCloserUser()) {
+            return $query->where("{$table}.user_id", auth()->guard('user')->id());
+        }
+
         if ($this->isSdrUser()) {
             $userId = auth()->guard('user')->id();
             $sharedStageIds = $this->getSharedStageIds();
 
             return $query->where(function ($ownerQuery) use ($userId, $sharedStageIds, $table) {
-                $ownerQuery->where("{$table}.user_id", $userId);
+                $ownerQuery
+                    ->where("{$table}.user_id", $userId)
+                    ->orWhere("{$table}.lead_owner_id", $userId);
 
                 if (! empty($sharedStageIds)) {
                     $ownerQuery->orWhereIn("{$table}.lead_pipeline_stage_id", $sharedStageIds);
@@ -440,7 +474,13 @@ class SourceAccessService
             });
         }
 
-        return $query->where("{$table}.user_id", auth()->guard('user')->id());
+        $userId = auth()->guard('user')->id();
+
+        return $query->where(function ($ownerQuery) use ($table, $userId) {
+            $ownerQuery
+                ->where("{$table}.user_id", $userId)
+                ->orWhere("{$table}.lead_owner_id", $userId);
+        });
     }
 
     /**
@@ -452,12 +492,18 @@ class SourceAccessService
             return $query;
         }
 
+        if (lead_variant() === 'lead_clouser' || $this->isLeadCloserUser()) {
+            return $query->where('leads.user_id', auth()->guard('user')->id());
+        }
+
         if ($this->isSdrUser()) {
             $userId = auth()->guard('user')->id();
             $sharedStageIds = $this->getSharedStageIds();
 
             return $query->where(function ($ownerQuery) use ($userId, $sharedStageIds) {
-                $ownerQuery->where('leads.user_id', $userId);
+                $ownerQuery
+                    ->where('leads.user_id', $userId)
+                    ->orWhere('leads.lead_owner_id', $userId);
 
                 if (! empty($sharedStageIds)) {
                     $ownerQuery->orWhereIn('leads.lead_pipeline_stage_id', $sharedStageIds);
@@ -465,7 +511,13 @@ class SourceAccessService
             });
         }
 
-        return $query->where('leads.user_id', auth()->guard('user')->id());
+        $userId = auth()->guard('user')->id();
+
+        return $query->where(function ($ownerQuery) use ($userId) {
+            $ownerQuery
+                ->where('leads.user_id', $userId)
+                ->orWhere('leads.lead_owner_id', $userId);
+        });
     }
 
     /**

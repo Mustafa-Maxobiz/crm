@@ -2,9 +2,15 @@
 
 @php
     $isLgeLeadVariant = ($leadVariant ?? 'main') === 'lge';
+    $isCallingRoleLeadVariant = in_array($leadVariant ?? 'main', ['sdr', 'lge'], true);
+    $currentUserId = auth()->guard('user')->id();
+    $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
+    $accessibleStages = $isCallingRoleLeadVariant
+        ? $pipeline->stages->values()
+        : $sourceAccessService->filterAccessibleStages($pipeline->stages)->values();
 
     $defaultMeetingParticipants = [
-        'users' => ! $isLgeLeadVariant && auth()->guard('user')->user()
+        'users' => ! $isCallingRoleLeadVariant && auth()->guard('user')->user()
             ? [[
                 'id'   => auth()->guard('user')->id(),
                 'name' => auth()->guard('user')->user()->name,
@@ -141,11 +147,14 @@
                             <template #item="{ element, index }">
                                 {!! view_render_event('admin.leads.index.kanban.content.stage.body.card.before') !!}
 
-                                <a
-                                    class="lead-item flex cursor-pointer flex-col gap-5 rounded-md border border-gray-100 bg-gray-50 p-2 dark:border-gray-400 dark:bg-gray-400"
-                                    :href="'{{ lead_route('view', 'replaceId') }}'.replace('replaceId', element.id)"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                <component
+                                    :is="isStageEditingLocked(element) ? 'div' : 'a'"
+                                    class="lead-item flex flex-col gap-5 rounded-md border border-gray-100 bg-gray-50 p-2 dark:border-gray-400 dark:bg-gray-400"
+                                    :class="isStageEditingLocked(element) ? 'cursor-not-allowed opacity-60 grayscale' : 'cursor-pointer'"
+                                    :href="isStageEditingLocked(element) ? null : '{{ lead_route('view', 'replaceId') }}'.replace('replaceId', element.id)"
+                                    :target="isStageEditingLocked(element) ? null : '_blank'"
+                                    :rel="isStageEditingLocked(element) ? null : 'noopener noreferrer'"
+                                    :title="isStageEditingLocked(element) ? 'Assigned to closure owner. View and edits are locked.' : null"
                                 >
                                     {!! view_render_event('admin.leads.index.kanban.content.stage.body.card.header.before') !!}
 
@@ -248,7 +257,7 @@
                                             </template>
                                         </div>
                                     </div>
-                                </a>
+                                </component>
 
                                 {!! view_render_event('admin.leads.index.kanban.content.stage.body.card.after') !!}
                             </template>
@@ -414,7 +423,7 @@
                                     <x-admin::form.control-group.error control-name="comment" />
                                 </x-admin::form.control-group>
 
-                                @if ($isLgeLeadVariant)
+                                @if ($isCallingRoleLeadVariant)
                                     <x-admin::form.control-group>
                                         <x-admin::form.control-group.label class="required">
                                             Assigned Owner
@@ -446,7 +455,7 @@
                                         :participants="defaultMeetingParticipants"
                                         :show-all-users="true"
                                         :users-only="true"
-                                        :user-role-names="['administrator', 'lead']"
+                                        :user-role-names="['administrator', 'lead', 'lead clouser', 'lead closer']"
                                     ></v-activity-participants>
 
                                     <p
@@ -524,9 +533,11 @@
                     meetingErrors: {},
 
                     defaultMeetingParticipants: @json($defaultMeetingParticipants),
+                    currentUserId: @json($currentUserId),
                     isLgeLeadVariant: @json($isLgeLeadVariant),
+                    isCallingRoleLeadVariant: @json($isCallingRoleLeadVariant),
 
-                    stages: @json(app(\Webkul\Lead\Services\SourceAccessService::class)->filterAccessibleStages($pipeline->stages)->values()->all()),
+                    stages: @json($accessibleStages->all()),
 
                     stageLeads: {},
 
@@ -810,6 +821,21 @@
                     }
 
                     if (
+                        event.added
+                        && event.added.element
+                        && this.isStageEditingLocked(event.added.element)
+                    ) {
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: 'You can view this lead, but stage changes are locked after meeting assignment.',
+                        });
+
+                        this.refreshKanban();
+
+                        return;
+                    }
+
+                    if (
                         (stage.code === "won" || stage.code === "lost")
                         && event.added
                         && event.added.element
@@ -871,6 +897,35 @@
                     return this.$axios.put(url, params);
                 },
 
+                isStageEditingLocked(lead) {
+                    if (! this.isCallingRoleLeadVariant) {
+                        return false;
+                    }
+
+                    if (Number(lead.user_id || 0) === Number(this.currentUserId)) {
+                        return false;
+                    }
+
+                    if (Number(lead.lead_owner_id || 0) !== Number(this.currentUserId)) {
+                        return false;
+                    }
+
+                    const meetingStage = this.stages.find(stage => stage.code === 'meeting');
+
+                    if (! meetingStage) {
+                        return false;
+                    }
+
+                    let stageSortOrder = lead.stage_sort_order;
+
+                    if (! stageSortOrder) {
+                        const currentStage = this.stages.find(stage => stage.id == lead.lead_pipeline_stage_id);
+                        stageSortOrder = currentStage?.sort_order;
+                    }
+
+                    return Number(stageSortOrder || 0) >= Number(meetingStage.sort_order || 0);
+                },
+
                 hasParticipants(participants = {}) {
                     return ['users', 'persons'].some(type => {
                         return (participants[type] || []).some(participantId => !! participantId);
@@ -899,7 +954,7 @@
                     }).then(() => {
                         return this.updateStage('{{ lead_route('stage.update', '__LEAD_ID__') }}'.replace('__LEAD_ID__', this.pendingStageLeadId), {
                             lead_pipeline_stage_id: this.pendingStageId,
-                            ...(this.isLgeLeadVariant ? {
+                            ...(this.isCallingRoleLeadVariant ? {
                                 assigned_user_id: params.assigned_user_id,
                             } : {}),
                         });
@@ -951,6 +1006,19 @@
                 },
 
                 handleFormSubmit(params) {
+                    if (this.isStageEditingLocked(this.finalized.lead || {})) {
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: 'You can view this lead, but stage changes are locked after meeting assignment.',
+                        });
+
+                        this.toggleStageUpdateModal();
+                        this.resetFinalized();
+                        this.refreshKanban();
+
+                        return;
+                    }
+
                     this.finalized.updating = true;
 
                     this.updateStage("{{ lead_route('stage.update', '__LEAD_ID__') }}".replace('__LEAD_ID__', this.finalized.lead.id), {

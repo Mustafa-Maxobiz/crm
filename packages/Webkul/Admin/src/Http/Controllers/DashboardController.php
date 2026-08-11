@@ -43,6 +43,10 @@ class DashboardController extends Controller
      */
     public function index()
     {
+        if (app(SourceAccessService::class)->isLeadCloserUser()) {
+            return redirect()->route('admin.dashboard.lead_clouser');
+        }
+
         return view('admin::dashboard.index')->with([
             'startDate' => $this->dashboardHelper->getStartDate(),
             'endDate'   => $this->dashboardHelper->getEndDate(),
@@ -57,6 +61,19 @@ class DashboardController extends Controller
         return view('admin::dashboard.sdr.index')->with([
             'stateTimezones' => $this->usStateTimezoneService->allStates(),
             'dashboardTitle' => 'SDR Dashboard',
+            'showUsFeatures' => true,
+            'dashboardVariant' => 'sdr',
+        ]);
+    }
+
+    /**
+     * Lead Clouser dashboard uses the SDR calling dashboard layout.
+     */
+    public function leadClouser(): View
+    {
+        return view('admin::dashboard.sdr.index')->with([
+            'stateTimezones' => $this->usStateTimezoneService->allStates(),
+            'dashboardTitle' => 'Lead Clouser Dashboard',
             'showUsFeatures' => true,
             'dashboardVariant' => 'sdr',
         ]);
@@ -326,7 +343,10 @@ class DashboardController extends Controller
      */
     public function usTimezones(): View
     {
-        if (! bouncer()->hasPermission('sdr_dashboard')) {
+        if (
+            ! bouncer()->hasPermission('sdr_dashboard')
+            && ! bouncer()->hasPermission('lead_clouser_dashboard')
+        ) {
             abort(401);
         }
 
@@ -342,6 +362,7 @@ class DashboardController extends Controller
     {
         if (
             bouncer()->hasPermission('sdr_dashboard')
+            || bouncer()->hasPermission('lead_clouser_dashboard')
             || bouncer()->hasPermission('lge_dashboard')
         ) {
             return;

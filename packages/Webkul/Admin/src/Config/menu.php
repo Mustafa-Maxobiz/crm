@@ -24,13 +24,24 @@ return [
     ],
 
     /**
+     * Lead Clouser Dashboard.
+     */
+    [
+        'key'        => 'lead_clouser_dashboard',
+        'name'       => 'admin::app.acl.dashboard-lead-clouser',
+        'route'      => 'admin.dashboard.lead_clouser',
+        'sort'       => 3,
+        'icon-class' => 'icon-dashboard',
+    ],
+
+    /**
      * LGE Dashboard.
      */
     [
         'key'        => 'lge_dashboard',
         'name'       => 'admin::app.acl.dashboard-lge',
         'route'      => 'admin.dashboard.lge',
-        'sort'       => 3,
+        'sort'       => 4,
         'icon-class' => 'icon-dashboard',
     ],
 
@@ -41,7 +52,18 @@ return [
         'key'        => 'leads',
         'name'       => 'admin::app.layouts.leads',
         'route'      => 'admin.leads.index',
-        'sort'       => 4,
+        'sort'       => 5,
+        'icon-class' => 'icon-leads',
+    ],
+
+    /**
+     * Lead Clouser Leads.
+     */
+    [
+        'key'        => 'lead_clouser_leads',
+        'name'       => 'admin::app.layouts.leads-lead-clouser',
+        'route'      => 'admin.leads.lead_clouser',
+        'sort'       => 6,
         'icon-class' => 'icon-leads',
     ],
 
@@ -52,7 +74,7 @@ return [
         'key'        => 'sdr_leads',
         'name'       => 'admin::app.layouts.leads-sdr',
         'route'      => 'admin.leads.sdr',
-        'sort'       => 5,
+        'sort'       => 7,
         'icon-class' => 'icon-leads',
     ],
 
@@ -63,7 +85,7 @@ return [
         'key'        => 'lge_leads',
         'name'       => 'admin::app.layouts.leads-lge',
         'route'      => 'admin.leads.lge',
-        'sort'       => 6,
+        'sort'       => 8,
         'icon-class' => 'icon-leads',
     ],
 
@@ -74,7 +96,7 @@ return [
         'key'        => 'meta_leads',
         'name'       => 'admin::app.layouts.meta-leads',
         'route'      => 'admin.meta_leads.index',
-        'sort'       => 7,
+        'sort'       => 9,
         'icon-class' => 'icon-leads',
     ],
 
@@ -85,7 +107,7 @@ return [
         'key'        => 'smrtphone',
         'name'       => 'admin::app.layouts.smrtphone',
         'route'      => 'admin.smrtphone.index',
-        'sort'       => 8,
+        'sort'       => 10,
         'icon-class' => 'icon-call',
     ],
 
@@ -96,7 +118,7 @@ return [
         'key'        => 'quotes',
         'name'       => 'admin::app.layouts.quotes',
         'route'      => 'admin.quotes.index',
-        'sort'       => 9,
+        'sort'       => 11,
         'icon-class' => 'icon-quote',
     ],
 
