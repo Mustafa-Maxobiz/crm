@@ -24,7 +24,7 @@
         $hasMeetingActivity = $lead->activities()->where('type', 'meeting')->exists();
 
         $defaultMeetingParticipants = [
-            'users' => auth()->guard('user')->user()
+            'users' => lead_variant() !== 'lge' && auth()->guard('user')->user()
                 ? [[
                     'id'   => auth()->guard('user')->id(),
                     'name' => auth()->guard('user')->user()->name,
@@ -270,6 +270,29 @@
                                     <x-admin::form.control-group.error control-name="comment" />
                                 </x-admin::form.control-group>
 
+                                @if (lead_variant() === 'lge')
+                                    <x-admin::form.control-group>
+                                        <x-admin::form.control-group.label class="required">
+                                            Assigned Owner
+                                        </x-admin::form.control-group.label>
+
+                                        <select
+                                            name="assigned_user_id"
+                                            class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-brandColor dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                                        >
+                                            <option value="">Select Admin / Lead User</option>
+
+                                            @foreach ($meetingOwnerOptions ?? [] as $user)
+                                                <option value="{{ $user['id'] }}">
+                                                    {{ $user['name'] }}@if (! empty($user['role_name'])) - {{ $user['role_name'] }}@endif @if (! empty($user['email']))({{ $user['email'] }})@endif
+                                                </option>
+                                            @endforeach
+                                        </select>
+
+                                        <x-admin::form.control-group.error control-name="assigned_user_id" />
+                                    </x-admin::form.control-group>
+                                @endif
+
                                 <x-admin::form.control-group>
                                     <x-admin::form.control-group.label class="required">
                                         Participants
@@ -279,6 +302,7 @@
                                         :participants="defaultMeetingParticipants"
                                         :show-all-users="true"
                                         :users-only="true"
+                                        :user-role-names="['administrator', 'lead']"
                                     ></v-activity-participants>
 
                                     <p
@@ -331,32 +355,32 @@
             >
                 <x-slot:header>
                     <h3 class="text-base font-semibold dark:text-white">
-                        Assign SDR Owner
+                        Assign Admin/Lead Owner
                     </h3>
                 </x-slot>
 
                 <x-slot:content>
                     <p class="mb-4 text-sm text-gray-600 dark:text-gray-300">
-                        Select the SDR who will own this lead after the meeting.
+                        Select the Admin or Lead user who will own this lead after the meeting.
                     </p>
 
                     <x-admin::form.control-group class="!mb-0">
                         <x-admin::form.control-group.label class="required">
-                            SDR User
+                            Admin / Lead User
                         </x-admin::form.control-group.label>
 
                         <select
                             v-model="pendingHandoffSdrUserId"
                             class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-brandColor dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                         >
-                            <option value="">Select SDR</option>
+                            <option value="">Select Admin / Lead User</option>
 
                             <option
-                                v-for="user in sdrOwnerOptions"
-                                :key="'detail-handoff-sdr-' + user.id"
+                                v-for="user in meetingOwnerOptions"
+                                :key="'detail-handoff-owner-' + user.id"
                                 :value="user.id"
                             >
-                                @{{ user.name }} <template v-if="user.email">(@{{ user.email }})</template>
+                                @{{ user.name }} <template v-if="user.role_name">- @{{ user.role_name }}</template> <template v-if="user.email">(@{{ user.email }})</template>
                             </option>
                         </select>
                     </x-admin::form.control-group>
@@ -395,7 +419,7 @@
 
                     isLgeLeadVariant: @json(lead_variant() === 'lge'),
 
-                    sdrOwnerOptions: @json($sdrOwnerOptions ?? []),
+                    meetingOwnerOptions: @json($meetingOwnerOptions ?? []),
 
                     pendingHandoffStage: null,
 
@@ -589,7 +613,10 @@
                             this.pendingMeetingStage = null;
 
                             if (stage) {
-                                this.update(stage);
+                                this.update(stage, {
+                                    lead_pipeline_stage_id: stage.id,
+                                    assigned_user_id: params.assigned_user_id,
+                                });
                             }
                         })
                         .catch((error) => {

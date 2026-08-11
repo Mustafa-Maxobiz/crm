@@ -5,8 +5,10 @@ namespace Webkul\Admin\Http\Controllers\Settings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Prettus\Repository\Criteria\RequestCriteria;
 use Webkul\Admin\DataGrids\Settings\UserDataGrid;
@@ -200,7 +202,39 @@ class UserController extends Controller
             ->pushCriteria(app(RequestCriteria::class));
 
         if (request()->boolean('active_only')) {
-            $repository = $repository->findWhere(['status' => 1]);
+            $query = $this->userRepository->getModel()
+                ->query()
+                ->where('status', 1);
+
+            if ($search = request()->input('search')) {
+                $searchTerm = Str::of($search)->after(':')->trim()->toString();
+
+                if ($searchTerm !== '') {
+                    $query->where('name', 'like', '%'.$searchTerm.'%');
+                }
+            }
+
+            if ($roleNames = request()->input('role_names')) {
+                $roleNames = collect(explode(',', $roleNames))
+                    ->map(fn ($roleName) => strtolower(trim($roleName)))
+                    ->filter()
+                    ->values()
+                    ->all();
+
+                if (! empty($roleNames)) {
+                    $query->whereHas('role', function ($query) use ($roleNames) {
+                        $query->where(function ($query) use ($roleNames) {
+                            if (in_array('administrator', $roleNames, true) || in_array('admin', $roleNames, true)) {
+                                $query->orWhere('permission_type', 'all');
+                            }
+
+                            $query->orWhereIn(DB::raw('LOWER(name)'), $roleNames);
+                        });
+                    });
+                }
+            }
+
+            $repository = $query->orderBy('name')->get();
 
             return UserResource::collection($repository);
         }

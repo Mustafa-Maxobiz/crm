@@ -131,7 +131,7 @@ class LeadController extends Controller
             'columns'         => $this->getKanbanColumns(),
             'leadVariant'     => $leadVariant,
             'leadsIndexRoute' => $leadsIndexRoute,
-            'sdrOwnerOptions' => $this->sdrOwnerOptions(),
+            'meetingOwnerOptions' => $this->meetingOwnerOptions(),
         ]);
     }
 
@@ -1036,7 +1036,7 @@ class LeadController extends Controller
 
         return view('admin::leads.view', [
             'lead'            => $lead,
-            'sdrOwnerOptions' => $this->sdrOwnerOptions(),
+            'meetingOwnerOptions' => $this->meetingOwnerOptions(),
         ]);
     }
 
@@ -1459,6 +1459,7 @@ class LeadController extends Controller
             }
 
             $handoffSdrUserId = null;
+            $assignedMeetingOwnerId = null;
 
             if ($isLgeHandoffStage) {
                 $this->validate(request(), [
@@ -1466,14 +1467,34 @@ class LeadController extends Controller
                         'required',
                         'integer',
                         function ($attribute, $value, $fail) {
-                            if (! $this->isActiveSdrUserId((int) $value)) {
-                                $fail('Please select a valid SDR user.');
+                            if (! $this->isActiveMeetingOwnerId((int) $value)) {
+                                $fail('Please select a valid Admin or Lead user.');
                             }
                         },
                     ],
                 ]);
 
                 $handoffSdrUserId = (int) request()->input('sdr_user_id');
+            }
+
+            if (
+                $stage->code === 'meeting'
+                && $this->isLgeUser()
+                && request()->filled('assigned_user_id')
+            ) {
+                $this->validate(request(), [
+                    'assigned_user_id' => [
+                        'required',
+                        'integer',
+                        function ($attribute, $value, $fail) {
+                            if (! $this->isActiveMeetingOwnerId((int) $value)) {
+                                $fail('Please select a valid Admin or Lead user.');
+                            }
+                        },
+                    ],
+                ]);
+
+                $assignedMeetingOwnerId = (int) request()->input('assigned_user_id');
             }
 
             Event::dispatch('lead.update.before', $id);
@@ -1497,6 +1518,11 @@ class LeadController extends Controller
 
             if ($handoffSdrUserId) {
                 $payload['user_id'] = $handoffSdrUserId;
+                $attributes[] = 'user_id';
+            }
+
+            if ($assignedMeetingOwnerId) {
+                $payload['user_id'] = $assignedMeetingOwnerId;
                 $attributes[] = 'user_id';
             }
 
@@ -1594,30 +1620,37 @@ class LeadController extends Controller
             && $targetStage->sort_order > $meetingStage->sort_order;
     }
 
-    protected function sdrOwnerOptions(): array
+    protected function meetingOwnerOptions(): array
     {
         return DB::table('users')
             ->join('roles', 'users.role_id', '=', 'roles.id')
-            ->whereRaw('LOWER(roles.name) = ?', ['sdr'])
+            ->where(function ($query) {
+                $query->where('roles.permission_type', 'all')
+                    ->orWhereRaw('LOWER(roles.name) = ?', ['lead']);
+            })
             ->where('users.status', 1)
             ->orderBy('users.name')
-            ->get(['users.id', 'users.name', 'users.email'])
+            ->get(['users.id', 'users.name', 'users.email', 'roles.name as role_name'])
             ->map(fn ($user) => [
-                'id'    => (int) $user->id,
-                'name'  => $user->name,
-                'email' => $user->email,
+                'id'        => (int) $user->id,
+                'name'      => $user->name,
+                'email'     => $user->email,
+                'role_name' => $user->role_name,
             ])
             ->values()
             ->all();
     }
 
-    protected function isActiveSdrUserId(int $userId): bool
+    protected function isActiveMeetingOwnerId(int $userId): bool
     {
         return DB::table('users')
             ->join('roles', 'users.role_id', '=', 'roles.id')
             ->where('users.id', $userId)
             ->where('users.status', 1)
-            ->whereRaw('LOWER(roles.name) = ?', ['sdr'])
+            ->where(function ($query) {
+                $query->where('roles.permission_type', 'all')
+                    ->orWhereRaw('LOWER(roles.name) = ?', ['lead']);
+            })
             ->exists();
     }
 
@@ -1769,10 +1802,7 @@ class LeadController extends Controller
                 'stage',
             ]);
 
-        /**
-         * Prefer plain `query` (mega-search / lookups). Fall back to RequestCriteria
-         * only when legacy `search` + `searchFields` params are used.
-         */
+
         if ($queryTerm === '' && request()->filled('search')) {
             $repository->pushCriteria(app(RequestCriteria::class));
         }
@@ -1793,9 +1823,6 @@ class LeadController extends Controller
         return LeadResource::collection($results);
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy(int $id): JsonResponse
     {
         $this->leadRepository->findOrFail($id);

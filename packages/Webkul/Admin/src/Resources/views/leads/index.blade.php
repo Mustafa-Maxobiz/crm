@@ -52,7 +52,10 @@
                         $importSources = app(\Webkul\Lead\Repositories\SourceRepository::class)->getRootDropdownOptions();
                     @endphp
 
-                    <x-admin::modal size="extra-large">
+                    <x-admin::modal
+                        size="extra-large"
+                        :is-active="request('action') === 'import'"
+                    >
                         <x-slot:toggle>
                             <button
                                 type="button"

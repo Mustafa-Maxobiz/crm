@@ -85,7 +85,8 @@
 
             <!-- Search Dropdown -->
             <div
-                class="absolute z-10 w-full rounded bg-white shadow-[0px_10px_20px_0px_#0000001F] dark:bg-gray-900"
+                class="w-full rounded bg-white shadow-[0px_10px_20px_0px_#0000001F] dark:bg-gray-900"
+                :class="showAllUsers ? 'relative mt-1 max-h-52 overflow-y-auto border border-gray-200 dark:border-gray-800' : 'absolute z-10'"
                 v-if="dropdownOpen"
             >
                 <ul class="flex flex-col gap-1 p-2">
@@ -125,7 +126,10 @@
                                 v-for="user in searchedParticipants[userType]"
                                 @click="add(userType, user)"
                             >
-                                @{{ user.name }}
+                                <div class="flex items-center justify-between gap-3">
+                                    <span>@{{ user.name }}</span>
+                                    <span class="text-xs text-gray-500" v-if="user.email">@{{ user.email }}</span>
+                                </div>
                             </li>
                         </ul>
 
@@ -160,6 +164,11 @@
                 usersOnly: {
                     type: Boolean,
                     default: false,
+                },
+
+                userRoleNames: {
+                    type: Array,
+                    default: () => [],
                 },
             },
 
@@ -214,6 +223,10 @@
                 };
 
                 document.addEventListener('click', this.handleOutsideClick);
+
+                if (this.showAllUsers) {
+                    this.$nextTick(() => this.openDefaultResults());
+                }
             },
 
             beforeUnmount() {
@@ -321,6 +334,9 @@
                                 ...(userType === 'users' && this.showAllUsers ? {
                                     active_only: 1,
                                 } : {}),
+                                ...(userType === 'users' && this.userRoleNames.length ? {
+                                    role_names: this.userRoleNames.join(','),
+                                } : {}),
                             }
                         })
                         .then (function(response) {
@@ -341,6 +357,13 @@
 
                 add(userType, participant) {
                     this.addedParticipants[userType].push(participant);
+
+                    if (this.showAllUsers) {
+                        this.searchTerm = '';
+                        this.openDefaultResults();
+
+                        return;
+                    }
 
                     this.closeDropdown();
                 },

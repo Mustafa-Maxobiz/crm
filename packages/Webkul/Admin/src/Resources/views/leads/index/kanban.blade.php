@@ -1,8 +1,10 @@
 {!! view_render_event('admin.leads.index.kanban.before') !!}
 
 @php
+    $isLgeLeadVariant = ($leadVariant ?? 'main') === 'lge';
+
     $defaultMeetingParticipants = [
-        'users' => auth()->guard('user')->user()
+        'users' => ! $isLgeLeadVariant && auth()->guard('user')->user()
             ? [[
                 'id'   => auth()->guard('user')->id(),
                 'name' => auth()->guard('user')->user()->name,
@@ -412,6 +414,29 @@
                                     <x-admin::form.control-group.error control-name="comment" />
                                 </x-admin::form.control-group>
 
+                                @if ($isLgeLeadVariant)
+                                    <x-admin::form.control-group>
+                                        <x-admin::form.control-group.label class="required">
+                                            Assigned Owner
+                                        </x-admin::form.control-group.label>
+
+                                        <select
+                                            name="assigned_user_id"
+                                            class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-brandColor dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                                        >
+                                            <option value="">Select Admin / Lead User</option>
+
+                                            @foreach ($meetingOwnerOptions ?? [] as $user)
+                                                <option value="{{ $user['id'] }}">
+                                                    {{ $user['name'] }}@if (! empty($user['role_name'])) - {{ $user['role_name'] }}@endif @if (! empty($user['email']))({{ $user['email'] }})@endif
+                                                </option>
+                                            @endforeach
+                                        </select>
+
+                                        <x-admin::form.control-group.error control-name="assigned_user_id" />
+                                    </x-admin::form.control-group>
+                                @endif
+
                                 <x-admin::form.control-group>
                                     <x-admin::form.control-group.label class="required">
                                         Participants
@@ -421,6 +446,7 @@
                                         :participants="defaultMeetingParticipants"
                                         :show-all-users="true"
                                         :users-only="true"
+                                        :user-role-names="['administrator', 'lead']"
                                     ></v-activity-participants>
 
                                     <p
@@ -498,6 +524,7 @@
                     meetingErrors: {},
 
                     defaultMeetingParticipants: @json($defaultMeetingParticipants),
+                    isLgeLeadVariant: @json($isLgeLeadVariant),
 
                     stages: @json(app(\Webkul\Lead\Services\SourceAccessService::class)->filterAccessibleStages($pipeline->stages)->values()->all()),
 
@@ -872,6 +899,9 @@
                     }).then(() => {
                         return this.updateStage('{{ lead_route('stage.update', '__LEAD_ID__') }}'.replace('__LEAD_ID__', this.pendingStageLeadId), {
                             lead_pipeline_stage_id: this.pendingStageId,
+                            ...(this.isLgeLeadVariant ? {
+                                assigned_user_id: params.assigned_user_id,
+                            } : {}),
                         });
                     }).then(() => {
                         this.isMeetingSaving = false;

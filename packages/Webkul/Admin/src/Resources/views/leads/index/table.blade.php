@@ -91,6 +91,7 @@
     ];
 
     $isSdrUser = $sourceAccessService->isSdrUser();
+    $isLgeLeadVariant = ($leadVariant ?? 'main') === 'lge';
 
     $canAddServiceOffered = bouncer()->hasPermission('settings.lead.services_offered.create')
         || bouncer()->hasPermission(lead_permission('create'))
@@ -98,7 +99,7 @@
         || $isSdrUser;
 
     $defaultMeetingParticipants = [
-        'users' => auth()->guard('user')->user()
+        'users' => ! $isLgeLeadVariant && auth()->guard('user')->user()
             ? [[
                 'id'   => auth()->guard('user')->id(),
                 'name' => auth()->guard('user')->user()->name,
@@ -692,6 +693,29 @@
                                     <x-admin::form.control-group.error control-name="comment" />
                                 </x-admin::form.control-group>
 
+                                @if ($isLgeLeadVariant)
+                                    <x-admin::form.control-group>
+                                        <x-admin::form.control-group.label class="required">
+                                            Assigned Owner
+                                        </x-admin::form.control-group.label>
+
+                                        <select
+                                            name="assigned_user_id"
+                                            class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-brandColor dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                                        >
+                                            <option value="">Select Admin / Lead User</option>
+
+                                            @foreach ($meetingOwnerOptions ?? [] as $user)
+                                                <option value="{{ $user['id'] }}">
+                                                    {{ $user['name'] }}@if (! empty($user['role_name'])) - {{ $user['role_name'] }}@endif @if (! empty($user['email']))({{ $user['email'] }})@endif
+                                                </option>
+                                            @endforeach
+                                        </select>
+
+                                        <x-admin::form.control-group.error control-name="assigned_user_id" />
+                                    </x-admin::form.control-group>
+                                @endif
+
                                 <x-admin::form.control-group>
                                     <x-admin::form.control-group.label class="required">
                                         Participants
@@ -701,6 +725,7 @@
                                         :participants="defaultMeetingParticipants"
                                         :show-all-users="true"
                                         :users-only="true"
+                                        :user-role-names="['administrator', 'lead']"
                                     ></v-activity-participants>
 
                                     <p
@@ -796,39 +821,39 @@
                 </x-slot>
             </x-admin::modal>
 
-            <!-- LGE SDR Handoff Modal -->
+            <!-- LGE Meeting Owner Handoff Modal -->
             <x-admin::modal
                 ref="lgeSdrHandoffModal"
                 position="center"
             >
                 <x-slot:header>
                     <h3 class="text-base font-semibold dark:text-white">
-                        Assign SDR Owner
+                        Assign Admin/Lead Owner
                     </h3>
                 </x-slot>
 
                 <x-slot:content>
                     <p class="mb-4 text-sm text-gray-600 dark:text-gray-300">
-                        Select the SDR who will own this lead after the meeting.
+                        Select the Admin or Lead user who will own this lead after the meeting.
                     </p>
 
                     <x-admin::form.control-group class="!mb-0">
                         <x-admin::form.control-group.label class="required">
-                            SDR User
+                            Admin / Lead User
                         </x-admin::form.control-group.label>
 
                         <select
                             v-model="pendingHandoffSdrUserId"
                             class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-brandColor dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                         >
-                            <option value="">Select SDR</option>
+                            <option value="">Select Admin / Lead User</option>
 
                             <option
-                                v-for="user in sdrOwnerOptions"
-                                :key="'handoff-sdr-' + user.id"
+                                v-for="user in meetingOwnerOptions"
+                                :key="'handoff-owner-' + user.id"
                                 :value="user.id"
                             >
-                                @{{ user.name }} <template v-if="user.email">(@{{ user.email }})</template>
+                                @{{ user.name }} <template v-if="user.role_name">- @{{ user.role_name }}</template> <template v-if="user.email">(@{{ user.email }})</template>
                             </option>
                         </select>
                     </x-admin::form.control-group>
@@ -983,7 +1008,7 @@
                     meetingErrors: {},
                     defaultMeetingParticipants: @json($defaultMeetingParticipants),
                     isLgeLeadVariant: @json(($leadVariant ?? 'main') === 'lge'),
-                    sdrOwnerOptions: @json($sdrOwnerOptions ?? []),
+                    meetingOwnerOptions: @json($meetingOwnerOptions ?? []),
                     pendingHandoffLeadId: null,
                     pendingHandoffStageId: null,
                     pendingHandoffSdrUserId: '',
@@ -1687,7 +1712,9 @@
                         stage_meeting: 1,
                         lead_id: this.pendingStageLeadId,
                     }).then(() => {
-                        return this.updateStage(this.pendingStageLeadId, this.pendingStageId);
+                        return this.updateStage(this.pendingStageLeadId, this.pendingStageId, this.isLgeLeadVariant ? {
+                            assigned_user_id: params.assigned_user_id,
+                        } : {});
                     }).then(() => {
                         this.isMeetingSaving = false;
                         this.$refs.meetingActivityModal.close();

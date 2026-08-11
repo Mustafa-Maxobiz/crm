@@ -178,6 +178,20 @@ class ActivityController extends Controller
     {
         $this->ensureCurrentUserParticipant();
 
+        if ($this->isLgeStageMeetingRequest()) {
+            $this->validate(request(), [
+                'assigned_user_id' => [
+                    'required',
+                    'integer',
+                    function ($attribute, $value, $fail) {
+                        if (! $this->isActiveMeetingOwnerId((int) $value)) {
+                            $fail('Please select a valid Admin or Lead user.');
+                        }
+                    },
+                ],
+            ]);
+        }
+
         $this->validate(request(), [
             'type'          => 'required',
             'comment'       => ['required_if:type,note', 'required_if:stage_meeting,1'],
@@ -227,9 +241,10 @@ class ActivityController extends Controller
         $data = $this->normalizeActivityStatusData(request()->all());
 
         $data = $this->prepareMeetingActivityData($data);
+        $activityOwnerId = $this->activityOwnerIdForCreate();
 
         $activity = $this->activityRepository->create(array_merge($data, [
-            'user_id' => auth()->guard('user')->user()->id,
+            'user_id' => $activityOwnerId,
         ]));
 
         if (isset($data['lead_id'])) {
@@ -769,6 +784,10 @@ class ActivityController extends Controller
             return;
         }
 
+        if (request('stage_meeting') && app(\Webkul\Lead\Services\SourceAccessService::class)->isLgeUser()) {
+            return;
+        }
+
         $participants = (array) request('participants', []);
         $participants['users'] = array_values(array_unique(array_filter([
             ...(array) ($participants['users'] ?? []),
@@ -776,6 +795,34 @@ class ActivityController extends Controller
         ])));
 
         request()->merge(['participants' => $participants]);
+    }
+
+    protected function isLgeStageMeetingRequest(): bool
+    {
+        return request('stage_meeting')
+            && app(\Webkul\Lead\Services\SourceAccessService::class)->isLgeUser();
+    }
+
+    protected function activityOwnerIdForCreate(): int
+    {
+        if ($this->isLgeStageMeetingRequest()) {
+            return (int) request('assigned_user_id');
+        }
+
+        return (int) auth()->guard('user')->id();
+    }
+
+    protected function isActiveMeetingOwnerId(int $userId): bool
+    {
+        return DB::table('users')
+            ->join('roles', 'users.role_id', '=', 'roles.id')
+            ->where('users.id', $userId)
+            ->where('users.status', 1)
+            ->where(function ($query) {
+                $query->where('roles.permission_type', 'all')
+                    ->orWhereRaw('LOWER(roles.name) = ?', ['lead']);
+            })
+            ->exists();
     }
 
     protected function canModifyActivity($activity): bool
