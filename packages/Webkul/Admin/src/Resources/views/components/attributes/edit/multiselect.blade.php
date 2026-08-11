@@ -48,7 +48,10 @@
         type="text/x-template"
         id="v-attribute-multiselect-template"
     >
-        <div class="relative w-full">
+        <div
+            class="relative w-full"
+            :style="isOpen ? { zIndex: 10000 } : null"
+        >
             <div
                 class="flex min-h-[39px] w-full flex-wrap items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1.5 text-sm text-gray-800 transition-all hover:border-gray-400 focus-within:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400"
                 @click="focusSearch"
@@ -95,7 +98,8 @@
 
             <div
                 v-if="isOpen && (filteredOptions.length || (canAddNew && searchableNewLabel))"
-                class="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900"
+                class="absolute left-0 right-0 top-full mt-1 max-h-56 overflow-auto rounded-md border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900"
+                style="z-index: 10001;"
             >
                 <button
                     type="button"
