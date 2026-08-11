@@ -1501,23 +1501,6 @@ class LeadController extends Controller
             ], 422);
         }
 
-        $movingBeyondMeeting = $targetStage->sort_order > $meetingStage->sort_order;
-
-        if (! $movingBeyondMeeting) {
-            return null;
-        }
-
-        $hasCompletedMeeting = $lead->activities()
-            ->where('type', 'meeting')
-            ->where('is_done', 1)
-            ->exists();
-
-        if (! $hasCompletedMeeting) {
-            return response()->json([
-                'message' => trans('admin::app.leads.meeting-stage-requires-done-activity'),
-            ], 422);
-        }
-
         return null;
     }
 
