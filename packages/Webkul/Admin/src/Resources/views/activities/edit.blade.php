@@ -286,7 +286,7 @@
                                     id="meeting-schedule-info"
                                     class="mt-2 hidden rounded-md border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-700"
                                 >
-                                    Meeting Schedule changes this activity to a meeting. Schedule, comment, lead, participants, and meeting channel are required.
+                                    Meeting Schedule changes this activity to a meeting. Schedule, comment, lead, and meeting channel are required.
                                 </div>
 
                                 <button

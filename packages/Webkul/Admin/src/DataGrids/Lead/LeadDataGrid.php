@@ -172,6 +172,13 @@ class LeadDataGrid extends DataGrid
             ['Warm Lead', 'Cold Lead', $coldCallSourceId ?: 0]
         );
 
+        if (
+            in_array(lead_variant(), ['sdr', 'lge'], true)
+            && ! app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin()
+        ) {
+            $queryBuilder->where('leads.user_id', auth()->guard('user')->id());
+        }
+
         if (! app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin()) {
             app(\Webkul\Lead\Services\SourceAccessService::class)->applyLeadOwnerVisibilityTableScope($queryBuilder);
         }
@@ -640,8 +647,22 @@ class LeadDataGrid extends DataGrid
      */
     protected function getAccessiblePipelineStages()
     {
-        return app(\Webkul\Lead\Services\SourceAccessService::class)
+        $stages = app(\Webkul\Lead\Services\SourceAccessService::class)
             ->filterAccessibleStages($this->pipeline->stages);
+
+        if (! in_array(lead_variant(), ['sdr', 'lge'], true)) {
+            return $stages;
+        }
+
+        $meetingStage = $this->pipeline->stages->firstWhere('code', 'meeting');
+
+        if (! $meetingStage) {
+            return $stages;
+        }
+
+        return $stages
+            ->filter(fn ($stage) => (int) $stage->sort_order <= (int) $meetingStage->sort_order)
+            ->values();
     }
 
     /**

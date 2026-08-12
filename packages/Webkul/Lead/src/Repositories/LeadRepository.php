@@ -237,6 +237,18 @@ class LeadRepository extends Repository
     }
 
     /**
+     * Follow-up dates are only valid once a lead is in the Follow Up stage.
+     */
+    private function isFollowUpStageId($stageId): bool
+    {
+        if (empty($stageId)) {
+            return false;
+        }
+
+        return $this->stageRepository->find($stageId)?->code === 'follow-up';
+    }
+
+    /**
      * Create.
      *
      * @return \Webkul\Lead\Contracts\Lead
@@ -315,7 +327,8 @@ class LeadRepository extends Repository
             $data['title'] = $data['title'] ?? '';
         }
 
-        $shouldScheduleFollowup = $this->shouldScheduleFollowupFromPayload($data);
+        $shouldScheduleFollowup = $this->shouldScheduleFollowupFromPayload($data)
+            && $this->isFollowUpStageId($data['lead_pipeline_stage_id'] ?? null);
 
         if (! $shouldScheduleFollowup) {
             $data['next_followup_date'] = null;
@@ -445,6 +458,17 @@ class LeadRepository extends Repository
             } else {
                 $data['closed_at'] = null;
             }
+
+            if ($stage->code !== 'follow-up') {
+                $data['next_followup_date'] = null;
+
+                if (
+                    is_array($attributes)
+                    && ! in_array('next_followup_date', $attributes, true)
+                ) {
+                    $attributes[] = 'next_followup_date';
+                }
+            }
         }
 
         if (empty($data['expected_close_date'])) {
@@ -457,12 +481,17 @@ class LeadRepository extends Repository
 
         if (array_key_exists('next_followup_date', $data) && empty($data['next_followup_date'])) {
             $existingLead = $this->find($id);
+            $targetStageId = $data['lead_pipeline_stage_id'] ?? $existingLead?->lead_pipeline_stage_id;
 
-            $data['next_followup_date'] = $this->followupScheduleService->calculateNext(
-                $existingLead,
-                Carbon::now(),
-                (int) ($existingLead->followup_count ?? 0)
-            );
+            if ($this->isFollowUpStageId($targetStageId)) {
+                $data['next_followup_date'] = $this->followupScheduleService->calculateNext(
+                    $existingLead,
+                    Carbon::now(),
+                    (int) ($existingLead->followup_count ?? 0)
+                );
+            } else {
+                $data['next_followup_date'] = null;
+            }
         }
 
         // Convert empty lead_sub_source_id to null

@@ -16,6 +16,11 @@ require 'leads-routes.php';
 require 'meta-leads-routes.php';
 
 /**
+ * LinkedIn entries routes.
+ */
+require 'linkedin-entry-routes.php';
+
+/**
  * smrtPhone call log routes.
  */
 require 'smrtphone-routes.php';

@@ -17,7 +17,7 @@ return [
      */
     [
         'key'        => 'sdr_dashboard',
-        'name'       => 'admin::app.acl.dashboard-sdr',
+        'name'       => 'admin::app.layouts.dashboard',
         'route'      => 'admin.dashboard.sdr',
         'sort'       => 2,
         'icon-class' => 'icon-dashboard',
@@ -28,7 +28,7 @@ return [
      */
     [
         'key'        => 'lead_clouser_dashboard',
-        'name'       => 'admin::app.acl.dashboard-lead-clouser',
+        'name'       => 'admin::app.layouts.dashboard',
         'route'      => 'admin.dashboard.lead_clouser',
         'sort'       => 3,
         'icon-class' => 'icon-dashboard',
@@ -39,7 +39,7 @@ return [
      */
     [
         'key'        => 'lge_dashboard',
-        'name'       => 'admin::app.acl.dashboard-lge',
+        'name'       => 'admin::app.layouts.dashboard',
         'route'      => 'admin.dashboard.lge',
         'sort'       => 4,
         'icon-class' => 'icon-dashboard',
@@ -61,7 +61,7 @@ return [
      */
     [
         'key'        => 'lead_clouser_leads',
-        'name'       => 'admin::app.layouts.leads-lead-clouser',
+        'name'       => 'admin::app.layouts.leads',
         'route'      => 'admin.leads.lead_clouser',
         'sort'       => 6,
         'icon-class' => 'icon-leads',
@@ -72,7 +72,7 @@ return [
      */
     [
         'key'        => 'sdr_leads',
-        'name'       => 'admin::app.layouts.leads-sdr',
+        'name'       => 'admin::app.layouts.leads',
         'route'      => 'admin.leads.sdr',
         'sort'       => 7,
         'icon-class' => 'icon-leads',
@@ -83,7 +83,7 @@ return [
      */
     [
         'key'        => 'lge_leads',
-        'name'       => 'admin::app.layouts.leads-lge',
+        'name'       => 'admin::app.layouts.leads',
         'route'      => 'admin.leads.lge',
         'sort'       => 8,
         'icon-class' => 'icon-leads',
@@ -101,13 +101,24 @@ return [
     ],
 
     /**
+     * LinkedIn Entries.
+     */
+    [
+        'key'        => 'linkedin_entries',
+        'name'       => 'LinkedIn',
+        'route'      => 'admin.linkedin_entries.index',
+        'sort'       => 10,
+        'icon-class' => 'icon-leads',
+    ],
+
+    /**
      * smrtPhone Call Logs.
      */
     [
         'key'        => 'smrtphone',
         'name'       => 'admin::app.layouts.smrtphone',
         'route'      => 'admin.smrtphone.index',
-        'sort'       => 10,
+        'sort'       => 11,
         'icon-class' => 'icon-call',
     ],
 

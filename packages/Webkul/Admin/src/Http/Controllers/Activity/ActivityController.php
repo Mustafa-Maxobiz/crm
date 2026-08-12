@@ -203,15 +203,6 @@ class ActivityController extends Controller
             'schedule_to.after' => 'Schedule To must be later than Schedule From.',
         ]);
 
-        if (request('stage_meeting') && ! $this->hasActivityParticipants(request('participants', []))) {
-            return response()->json([
-                'message' => 'Please select at least one participant.',
-                'errors'  => [
-                    'participants' => ['Please select at least one participant.'],
-                ],
-            ], 422);
-        }
-
         if (request('type') === 'meeting') {
             /**
              * Check if meeting is overlapping with other meetings.
@@ -646,11 +637,6 @@ class ActivityController extends Controller
                 'schedule_to.after'     => 'Schedule To must be later than Schedule From.',
             ]);
 
-            if (! $this->hasActivityParticipants(request('participants', []))) {
-                throw ValidationException::withMessages([
-                    'participants' => ['Please select at least one participant.'],
-                ]);
-            }
         }
     }
 

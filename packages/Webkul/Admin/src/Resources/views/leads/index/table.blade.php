@@ -69,6 +69,16 @@
         ? $pipeline->stages->values()
         : $sourceAccessService->filterAccessibleStages($pipeline->stages);
 
+    if (in_array(lead_variant(), ['sdr', 'lge'], true)) {
+        $meetingStage = $pipeline->stages->firstWhere('code', 'meeting');
+
+        if ($meetingStage) {
+            $accessibleStages = $accessibleStages
+                ->filter(fn ($stage) => (int) $stage->sort_order <= (int) $meetingStage->sort_order)
+                ->values();
+        }
+    }
+
     $inlineOptions = [
         'stage' => [
             'field'   => 'lead_pipeline_stage_id',
@@ -710,9 +720,11 @@
                                             Assigned Owner
                                         </x-admin::form.control-group.label>
 
-                                        <select
+                                        <x-admin::form.control-group.control
+                                            type="select"
                                             name="assigned_user_id"
-                                            class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-brandColor dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                                            rules="required"
+                                            label="Assigned Owner"
                                         >
                                             <option value="">Select Admin / Lead User</option>
 
@@ -721,14 +733,14 @@
                                                     {{ $user['name'] }}@if (! empty($user['role_name'])) - {{ $user['role_name'] }}@endif @if (! empty($user['email']))({{ $user['email'] }})@endif
                                                 </option>
                                             @endforeach
-                                        </select>
+                                        </x-admin::form.control-group.control>
 
                                         <x-admin::form.control-group.error control-name="assigned_user_id" />
                                     </x-admin::form.control-group>
                                 @endif
 
                                 <x-admin::form.control-group>
-                                    <x-admin::form.control-group.label class="required">
+                                    <x-admin::form.control-group.label>
                                         Participants
                                     </x-admin::form.control-group.label>
 
@@ -1406,7 +1418,7 @@
                         const selectedOpt = config.items.find(o => o.value == value);
                         const stageCode = selectedOpt?.code || '';
 
-                        if (stageCode === 'follow-up') {
+                        if (this.shouldPromptFollowupStage(record, selectedOpt, config.items)) {
                             this.pendingStageLeadId = leadId;
                             this.pendingStageId = value;
                             this.followupMode = null;
@@ -1684,6 +1696,26 @@
                     });
                 },
 
+                shouldPromptFollowupStage(record, targetStage, stages) {
+                    if ((targetStage?.code || '').toLowerCase() !== 'follow-up') {
+                        return false;
+                    }
+
+                    return ! this.isCurrentRecordStage(record, 'follow-up', stages);
+                },
+
+                isCurrentRecordStage(record, stageCode, stages) {
+                    const normalizedStageCode = stageCode.toLowerCase();
+
+                    if ((record.stage_code || '').toLowerCase() === normalizedStageCode) {
+                        return true;
+                    }
+
+                    const currentStage = stages.find(stage => stage.value == record.lead_pipeline_stage_id);
+
+                    return (currentStage?.code || '').toLowerCase() === normalizedStageCode;
+                },
+
                 requiresLgeSdrHandoff(record, targetStage, stages) {
                     if (! this.isLgeLeadVariant || ! targetStage) {
                         return false;
@@ -1736,17 +1768,7 @@
                         return false;
                     }
 
-                    if (Number(record.lead_owner_id || 0) !== Number(this.currentUserId)) {
-                        return false;
-                    }
-
-                    const meetingStage = stages.find(stage => stage.code === 'meeting');
-
-                    if (! meetingStage) {
-                        return false;
-                    }
-
-                    return Number(record.stage_sort_order || 0) >= Number(meetingStage.sort_order || 0);
+                    return Number(record.lead_owner_id || 0) === Number(this.currentUserId);
                 },
 
                 hasParticipants(participants = {}) {
@@ -1757,14 +1779,6 @@
 
                 saveMeetingAndMove(params, { setErrors }) {
                     this.meetingErrors = {};
-
-                    if (! this.hasParticipants(params.participants || {})) {
-                        this.meetingErrors = {
-                            participants: 'Please select at least one participant.',
-                        };
-
-                        return;
-                    }
 
                     this.isMeetingSaving = true;
 

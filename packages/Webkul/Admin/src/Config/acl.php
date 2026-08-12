@@ -165,7 +165,7 @@ return [
     ], [
         'key'   => 'lge_leads.create',
         'name'  => 'admin::app.acl.create',
-        'route' => ['admin.leads.lge.create', 'admin.leads.lge.store', 'admin.leads.lge.services_offered.store'],
+        'route' => ['admin.leads.lge.create', 'admin.leads.lge.store', 'admin.leads.lge.create_by_ai', 'admin.leads.lge.source_link.check', 'admin.leads.lge.services_offered.store'],
         'sort'  => 1,
     ], [
         'key'   => 'lge_leads.view',
@@ -235,6 +235,33 @@ return [
         'name'  => 'admin::app.acl.delete',
         'route' => ['admin.meta_leads.delete', 'admin.meta_leads.mass_delete'],
         'sort'  => 3,
+    ], [
+        'key'   => 'linkedin_entries',
+        'name'  => 'LinkedIn Entries',
+        'route' => 'admin.linkedin_entries.index',
+        'sort'  => 7,
+    ], [
+        'key'   => 'linkedin_entries.create',
+        'name'  => 'admin::app.acl.create',
+        'route' => [
+            'admin.linkedin_entries.store',
+            'admin.linkedin_entries.import',
+            'admin.linkedin_entries.import_template',
+            'admin.linkedin_entries.import_start',
+            'admin.linkedin_entries.import_process',
+            'admin.linkedin_entries.import_retry',
+        ],
+        'sort'  => 1,
+    ], [
+        'key'   => 'linkedin_entries.edit',
+        'name'  => 'admin::app.acl.edit',
+        'route' => [
+            'admin.linkedin_entries.update_status',
+            'admin.linkedin_entries.accepted_import_template',
+            'admin.linkedin_entries.accepted_import_start',
+            'admin.linkedin_entries.accepted_import_process',
+        ],
+        'sort'  => 2,
     ], [
         'key'   => 'smrtphone',
         'name'  => 'admin::app.acl.smrtphone',

@@ -190,7 +190,7 @@ class LeadController extends Controller
             'schedule_followup',
             'next_followup_date',
             'description',
-            'source_link',
+            lead_variant() === 'lge' ? 'source_link*' : 'source_link',
             'source_sub_type',
             'tags',
         ];
@@ -306,6 +306,10 @@ class LeadController extends Controller
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
 
                 $this->syncColdLeadTagForImport($lead);
+
+                if (lead_variant() === 'lge') {
+                    $this->markLinkedInSourceLinkAsResponse($rowData['source_link'] ?? null);
+                }
 
                 Event::dispatch('lead.create.after', $lead);
 
@@ -469,6 +473,10 @@ class LeadController extends Controller
 
                 $this->syncColdLeadTagForImport($lead);
 
+                if (lead_variant() === 'lge') {
+                    $this->markLinkedInSourceLinkAsResponse($rowData['source_link'] ?? null);
+                }
+
                 Event::dispatch('lead.create.after', $lead);
 
                 $payload['created']++;
@@ -550,6 +558,10 @@ class LeadController extends Controller
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
 
                 $this->syncColdLeadTagForImport($lead);
+
+                if (lead_variant() === 'lge') {
+                    $this->markLinkedInSourceLinkAsResponse($rowData['source_link'] ?? null);
+                }
 
                 Event::dispatch('lead.create.after', $lead);
 
@@ -784,6 +796,20 @@ class LeadController extends Controller
         return view('admin::leads.create');
     }
 
+    public function checkLinkedInSourceLink(): JsonResponse
+    {
+        if (! bouncer()->hasPermission('lge_leads.create')) {
+            abort(401);
+        }
+
+        $sourceLink = request()->query('source_link');
+
+        return response()->json([
+            'exists'  => $this->linkedInSourceLinkExists($sourceLink),
+            'message' => 'This LinkedIn profile URL is not present in LinkedIn Entries.',
+        ]);
+    }
+
     /**
      * Store a newly created resource in storage.
      */
@@ -807,6 +833,24 @@ class LeadController extends Controller
         $isMainCreate = lead_variant() === 'main';
         $isLgeCreate = lead_variant() === 'lge';
         $isCallingRoleCreate = in_array(lead_variant(), ['lge', 'sdr'], true);
+
+        if ($isLgeCreate && ! $this->linkedInSourceLinkExists($data['source_link'] ?? null)) {
+            $message = 'This LinkedIn profile URL is not present in LinkedIn Entries.';
+
+            if (request()->ajax()) {
+                return response()->json([
+                    'message' => $message,
+                    'errors'  => [
+                        'source_link' => [$message],
+                    ],
+                ], 422);
+            }
+
+            return redirect()
+                ->back()
+                ->withInput()
+                ->withErrors(['source_link' => $message]);
+        }
 
         // Main create: default Sales Owner to creator (editable to forward); always start in New stage.
         if ($isMainCreate || $isCallingRoleCreate) {
@@ -879,6 +923,10 @@ class LeadController extends Controller
         $this->syncLeadServices($lead, $data['services'] ?? []);
 
         $this->syncSourceTagForLead($lead);
+
+        if ($isLgeCreate) {
+            $this->markLinkedInSourceLinkAsResponse($data['source_link'] ?? null);
+        }
 
         if (request()->ajax()) {
             return response()->json([
@@ -1023,13 +1071,26 @@ class LeadController extends Controller
         $data['tags'] = $lead->tags->pluck('name')->filter()->values()->all();
         $data['person'] = $this->leadPersonFormPayload($lead->person);
 
-        $data['stages'] = $lead->pipeline
+        $stages = $lead->pipeline
             ? $this->sourceAccessService->filterAccessibleStages($lead->pipeline->stages)
+            : collect();
+
+        if ($lead->pipeline && in_array(lead_variant(), ['sdr', 'lge'], true)) {
+            $meetingStage = $lead->pipeline->stages->firstWhere('code', 'meeting');
+
+            if ($meetingStage) {
+                $stages = $stages
+                    ->filter(fn ($stage) => (int) $stage->sort_order <= (int) $meetingStage->sort_order)
+                    ->values();
+            }
+        }
+
+        $data['stages'] = $stages
                 ->map(fn ($stage) => [
                     'id'   => $stage->id,
                     'name' => $stage->name,
                 ])->values()->all()
-            : [];
+        ;
 
         return response()->json([
             'data' => $data,
@@ -1068,6 +1129,86 @@ class LeadController extends Controller
     protected function isSdrUser(): bool
     {
         return $this->sourceAccessService->isSdrUser();
+    }
+
+    protected function linkedInSourceLinkExists(mixed $sourceLink): bool
+    {
+        $sourceLink = trim((string) $sourceLink);
+
+        if ($sourceLink === '') {
+            return true;
+        }
+
+        $url = $this->normalizeLinkedInSourceLink($sourceLink);
+
+        if (! filter_var($url, FILTER_VALIDATE_URL)) {
+            return false;
+        }
+
+        $normalizedUrl = $this->normalizeLinkedInSourceLinkForCompare($url);
+
+        return DB::table('linkedin_entry')
+            ->whereRaw(
+                "TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(url), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', '')) = ?",
+                [$normalizedUrl]
+            )
+            ->exists();
+    }
+
+    protected function markLinkedInSourceLinkAsResponse(mixed $sourceLink): void
+    {
+        $sourceLink = trim((string) $sourceLink);
+
+        if ($sourceLink === '') {
+            return;
+        }
+
+        $url = $this->normalizeLinkedInSourceLink($sourceLink);
+
+        if (! filter_var($url, FILTER_VALIDATE_URL)) {
+            return;
+        }
+
+        DB::table('linkedin_entry')
+            ->whereRaw(
+                "TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(url), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', '')) = ?",
+                [$this->normalizeLinkedInSourceLinkForCompare($url)]
+            )
+            ->update([
+                'status'     => 'response',
+                'updated_at' => now(),
+            ]);
+    }
+
+    protected function normalizeLinkedInSourceLink(string $url): string
+    {
+        $url = trim($url);
+
+        if (! preg_match('/^https?:\/\//i', $url)) {
+            $url = 'https://'.$url;
+        }
+
+        $parts = parse_url($url);
+
+        if (! $parts || empty($parts['host'])) {
+            return $url;
+        }
+
+        $host = preg_replace('/^www\./i', '', strtolower($parts['host']));
+        $path = strtolower($parts['path'] ?? '');
+        $path = preg_replace('#/+#', '/', $path);
+        $path = rtrim($path, '/');
+
+        return 'https://'.$host.$path;
+    }
+
+    protected function normalizeLinkedInSourceLinkForCompare(string $url): string
+    {
+        $normalized = strtolower(trim($url));
+        $normalized = preg_replace('/^https?:\/\//', '', $normalized);
+        $normalized = preg_replace('/^www\./', '', $normalized);
+
+        return rtrim($normalized, '/');
     }
 
     protected function isLgeUser(): bool
@@ -1539,6 +1680,12 @@ class LeadController extends Controller
                 ], 403);
             }
 
+            if ($this->isCallingRoleUser() && $this->stageIsBeyondMeeting($lead, $stage)) {
+                return response()->json([
+                    'message' => 'You can move SDR/LGE leads up to Meeting only.',
+                ], 403);
+            }
+
             $isLgeHandoffStage = $this->requiresLgeSdrHandoff($lead, $stage);
 
             if (
@@ -1697,6 +1844,19 @@ class LeadController extends Controller
         return null;
     }
 
+    protected function stageIsBeyondMeeting($lead, $targetStage): bool
+    {
+        $meetingStage = $lead->pipeline->stages()
+            ->where('code', 'meeting')
+            ->first();
+
+        if (! $meetingStage) {
+            return false;
+        }
+
+        return (int) $targetStage->sort_order > (int) $meetingStage->sort_order;
+    }
+
     protected function requiresLgeSdrHandoff($lead, $targetStage): bool
     {
         if (! $this->isLgeUser()) {
@@ -1732,23 +1892,11 @@ class LeadController extends Controller
             return true;
         }
 
-        if ((int) ($lead->lead_owner_id ?? 0) !== (int) $user->id) {
+        if ((int) ($lead->lead_owner_id ?? 0) === (int) $user->id) {
             return false;
         }
 
-        if (! $this->isCallingRoleUser()) {
-            return false;
-        }
-
-        $currentStage = $lead->stage;
-        $meetingStage = $lead->pipeline?->stages
-            ->firstWhere('code', 'meeting');
-
-        if (! $currentStage || ! $meetingStage) {
-            return true;
-        }
-
-        return (int) $currentStage->sort_order < (int) $meetingStage->sort_order;
+        return false;
     }
 
     protected function meetingOwnerOptions(): array
@@ -2476,12 +2624,18 @@ class LeadController extends Controller
 
     protected function requiredImportColumns(): array
     {
-        return [
+        $columns = [
             'companies',
             'lead_value',
             'type',
             'pricing_type',
         ];
+
+        if (lead_variant() === 'lge') {
+            $columns[] = 'source_link';
+        }
+
+        return $columns;
     }
 
     protected function importColumnAliases(): array
@@ -2557,11 +2711,28 @@ class LeadController extends Controller
         $data = [];
 
         foreach ($headers as $column => $index) {
-            $value = $row[$index] ?? null;
+            $value = $this->mapLeadImportCell($column, $index, $row);
             $data[$column] = is_string($value) ? trim($value) : $value;
         }
 
         return $data;
+    }
+
+    protected function mapLeadImportCell(string $column, int $index, array $row): mixed
+    {
+        $value = $row[$index] ?? null;
+
+        if (in_array($column, ['source_link'], true)
+            && is_string($value)
+            && in_array(strtolower($value), ['http', 'https'], true)
+            && isset($row[$index + 1])
+            && is_string($row[$index + 1])
+            && str_starts_with($row[$index + 1], '//')
+        ) {
+            return $value.':'.$row[$index + 1];
+        }
+
+        return $value;
     }
 
     protected function validateImportRow(array $row): array
@@ -2571,6 +2742,12 @@ class LeadController extends Controller
         foreach ($this->requiredImportColumns() as $column) {
             if (! filled($row[$column] ?? null)) {
                 $errors[] = $column.' is required.';
+            }
+        }
+
+        if (lead_variant() === 'lge' && filled($row['source_link'] ?? null)) {
+            if (! $this->linkedInSourceLinkExists($row['source_link'])) {
+                $errors[] = 'source_link "'.$row['source_link'].'" is not present in LinkedIn Entries.';
             }
         }
 

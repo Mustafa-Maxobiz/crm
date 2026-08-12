@@ -112,9 +112,21 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
 
         Route::put('stage/edit/{id}', 'updateStage')->name('admin.leads.lead_clouser.stage.update');
 
+        Route::post('disqualify/{id}', 'disqualify')->name('admin.leads.lead_clouser.disqualify');
+
+        Route::post('restore/{id}', 'restoreDisqualified')->name('admin.leads.lead_clouser.restore_disqualified');
+
         Route::get('get/{pipeline_id?}', 'get')->name('admin.leads.lead_clouser.get');
 
         Route::post('mass-update', 'massUpdate')->name('admin.leads.lead_clouser.mass_update');
+
+        Route::delete('product/{lead_id}', 'removeProduct')->name('admin.leads.lead_clouser.product.remove');
+
+        Route::put('product/{lead_id}', 'addProduct')->name('admin.leads.lead_clouser.product.add');
+
+        Route::post('followup/complete/{id}', 'followupComplete')->name('admin.leads.lead_clouser.followup.complete');
+
+        Route::post('duplicate/{id}', 'duplicateToCompanies')->name('admin.leads.lead_clouser.duplicate_to_companies');
 
         Route::get('kanban/look-up', [LeadController::class, 'kanbanLookup'])->name('admin.leads.lead_clouser.kanban.look_up');
 
@@ -128,6 +140,16 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
             Route::patch('', 'replace')->name('admin.leads.lead_clouser.tags.replace');
 
             Route::delete('', 'detach')->name('admin.leads.lead_clouser.tags.detach');
+        });
+
+        Route::controller(EmailController::class)->prefix('{id}/emails')->group(function () {
+            Route::post('', 'store')->name('admin.leads.lead_clouser.emails.store');
+
+            Route::delete('', 'detach')->name('admin.leads.lead_clouser.emails.detach');
+        });
+
+        Route::controller(QuoteController::class)->prefix('{id}/quotes')->group(function () {
+            Route::delete('{quote_id?}', 'delete')->name('admin.leads.lead_clouser.quotes.delete');
         });
     });
 
@@ -231,6 +253,8 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
         Route::post('create', 'store')->name('admin.leads.lge.store');
 
         Route::post('create-by-ai', 'createByAI')->name('admin.leads.lge.create_by_ai');
+
+        Route::get('source-link/check', 'checkLinkedInSourceLink')->name('admin.leads.lge.source_link.check');
 
         Route::get('import/template', 'importTemplate')->name('admin.leads.lge.import.template');
 

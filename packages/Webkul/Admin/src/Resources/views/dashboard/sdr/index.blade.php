@@ -1,4 +1,11 @@
 <x-admin::layouts>
+    @php
+        $dashboardVariant = $dashboardVariant ?? 'sdr';
+        $showUsFeatures = $showUsFeatures ?? true;
+        $showMeetings = $dashboardVariant !== 'lge';
+        $dashboardRoleLabel = $dashboardVariant === 'lge' ? 'LGE' : 'SDR';
+    @endphp
+
     <x-slot:title>
         {{ $dashboardTitle ?? 'SDR Dashboard' }}
     </x-slot>
@@ -20,48 +27,57 @@
     <div class="sdr-dashboard-split mt-4 grid grid-cols-2 gap-4 max-xl:grid-cols-1">
         <div class="sdr-dashboard-left-scroll min-w-0">
             <v-sdr-lead-sections
-                sections-url="{{ route('admin.dashboard.lead_sections', ['variant' => $dashboardVariant ?? 'sdr']) }}"
-                :show-us-features='@json($showUsFeatures ?? true)'
+                sections-url="{{ route('admin.dashboard.lead_sections', ['variant' => $dashboardVariant]) }}"
+                :show-us-features='@json($showUsFeatures)'
+                :show-meetings='@json($showMeetings)'
             >
                 <div class="light-shimmer-bg dark:shimmer h-[620px] rounded-lg"></div>
             </v-sdr-lead-sections>
         </div>
 
         <div class="sdr-dashboard-right-static grid min-w-0 content-start gap-4">
-            <v-sdr-today-summary
-                sections-url="{{ route('admin.dashboard.lead_sections', ['variant' => $dashboardVariant ?? 'sdr']) }}"
-            >
-                <div class="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-                    <div class="mb-3 grid gap-1">
-                        <div class="light-shimmer-bg dark:shimmer h-5 w-40 rounded-md"></div>
-                        <div class="light-shimmer-bg dark:shimmer h-4 w-56 rounded-md"></div>
-                    </div>
+            @if ($showMeetings)
+                <v-sdr-today-summary
+                    sections-url="{{ route('admin.dashboard.lead_sections', ['variant' => $dashboardVariant]) }}"
+                >
+                    <div class="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+                        <div class="mb-3 grid gap-1">
+                            <div class="light-shimmer-bg dark:shimmer h-5 w-40 rounded-md"></div>
+                            <div class="light-shimmer-bg dark:shimmer h-4 w-56 rounded-md"></div>
+                        </div>
 
-                    <div class="grid grid-cols-3 gap-2.5 max-sm:grid-cols-1">
-                        <div class="light-shimmer-bg dark:shimmer h-[84px] rounded-md"></div>
-                        <div class="light-shimmer-bg dark:shimmer h-[84px] rounded-md"></div>
-                        <div class="light-shimmer-bg dark:shimmer h-[84px] rounded-md"></div>
+                        <div class="grid grid-cols-3 gap-2.5 max-sm:grid-cols-1">
+                            <div class="light-shimmer-bg dark:shimmer h-[84px] rounded-md"></div>
+                            <div class="light-shimmer-bg dark:shimmer h-[84px] rounded-md"></div>
+                            <div class="light-shimmer-bg dark:shimmer h-[84px] rounded-md"></div>
+                        </div>
                     </div>
-                </div>
-            </v-sdr-today-summary>
+                </v-sdr-today-summary>
+            @endif
 
             <v-sdr-call-summary
-                summary-url="{{ route('admin.dashboard.call_summary') }}"
+                summary-url="{{ route('admin.dashboard.call_summary', ['variant' => $dashboardVariant]) }}"
+                :show-meetings='@json($showMeetings)'
+                role-label="{{ $dashboardRoleLabel }}"
+                dashboard-variant="{{ $dashboardVariant }}"
             >
                 <div class="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
                     <div class="mb-4 flex items-center justify-between gap-4">
                         <div class="grid gap-1">
                             <p class="text-lg font-semibold text-gray-800 dark:text-white">
-                                Call Summary
+                                {{ $dashboardVariant === 'lge' ? 'LinkedIn Summary' : 'Call Summary' }}
                             </p>
 
                             <p class="text-sm text-gray-500 dark:text-gray-400">
-                                Daily, weekly, and monthly {{ ($showUsFeatures ?? true) ? 'SDR' : 'LGE' }} call performance.
+                                {{ $dashboardVariant === 'lge' ? 'Daily, weekly, and monthly LinkedIn funnel.' : 'Daily, weekly, and monthly '.$dashboardRoleLabel.' call performance.' }}
                             </p>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
+                    <div
+                        class="grid gap-3 max-sm:grid-cols-1"
+                        :class="showMeetings ? 'grid-cols-2' : 'grid-cols-3 max-lg:grid-cols-2'"
+                    >
                         <div class="light-shimmer-bg dark:shimmer h-[104px] rounded-md"></div>
                         <div class="light-shimmer-bg dark:shimmer h-[104px] rounded-md"></div>
                         <div class="light-shimmer-bg dark:shimmer h-[104px] rounded-md"></div>
@@ -153,11 +169,11 @@
                 <div class="flex items-center justify-between gap-3 border-b border-gray-200 p-3 dark:border-gray-800 max-lg:flex-wrap">
                     <div class="grid gap-1">
                         <p class="text-lg font-semibold text-gray-800 dark:text-white">
-                            Call Summary
+                            @{{ isLgeDashboard ? 'LinkedIn Summary' : 'Call Summary' }}
                         </p>
 
                         <p class="text-sm text-gray-500 dark:text-gray-400">
-                            @{{ periodLabel }} SDR call performance.
+                            @{{ isLgeDashboard ? `${periodLabel} LinkedIn lead generation funnel.` : `${periodLabel} ${roleLabel} call performance.` }}
                         </p>
                     </div>
 
@@ -199,8 +215,101 @@
                     </div>
                 </div>
 
-                <div class="grid flex-1 grid-cols-2 gap-2.5 p-3 max-sm:grid-cols-1">
+                <div
+                    v-if="isLgeDashboard"
+                    class="grid flex-1 grid-cols-3 gap-2.5 p-3 max-lg:grid-cols-2 max-sm:grid-cols-1"
+                >
                     <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Requests Sent
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-gray-800 dark:text-white">
+                            @{{ summary.linkedin.requests }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            @{{ summary.period.start }} - @{{ summary.period.end }}
+                        </p>
+                    </div>
+
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Accepted
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-gray-800 dark:text-white">
+                            @{{ summary.linkedin.accepted }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            @{{ summary.linkedin.acceptance_rate }}% of requests
+                        </p>
+                    </div>
+
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Responses / Leads
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-gray-800 dark:text-white">
+                            @{{ summary.linkedin.responses }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            @{{ summary.linkedin.response_rate }}% of requests
+                        </p>
+                    </div>
+
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Meetings
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-gray-800 dark:text-white">
+                            @{{ summary.meetings.booked }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            @{{ summary.meetings.percent }}% of responses
+                        </p>
+                    </div>
+
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Won / Lost
+                        </p>
+
+                        <div class="mt-2 flex items-end gap-3">
+                            <p class="text-2xl font-semibold text-green-600">
+                                @{{ summary.outcomes.won }}
+                            </p>
+
+                            <p class="pb-1 text-sm font-semibold text-gray-400">
+                                /
+                            </p>
+
+                            <p class="text-2xl font-semibold text-red-600">
+                                @{{ summary.outcomes.lost }}
+                            </p>
+                        </div>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            @{{ summary.outcomes.won_percent }}% won · @{{ summary.outcomes.lost_percent }}% lost
+                        </p>
+                    </div>
+
+                </div>
+
+                <div
+                    v-else
+                    class="grid flex-1 gap-2.5 p-3 max-sm:grid-cols-1"
+                    :class="showMeetings ? 'grid-cols-2' : 'grid-cols-3 max-lg:grid-cols-2'"
+                >
+                    <div
+                        v-if="showMeetings"
+                        class="rounded-md border border-gray-200 p-3 dark:border-gray-800"
+                    >
                         <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
                             Total Calls
                         </p>
@@ -313,6 +422,7 @@
                                     class="flex shrink-0 flex-nowrap items-center gap-1.5"
                                 >
                                     <button
+                                        v-if="showMeetings"
                                         type="button"
                                         class="sdr-summary-badge meeting"
                                         :class="{'active': isCalendarFilterActive('meeting')}"
@@ -324,13 +434,14 @@
                                     <button
                                         type="button"
                                         class="sdr-summary-badge followup"
-                                        :class="{'active': isCalendarFilterActive('followup')}"
+                                        :class="{'active': ! showMeetings || isCalendarFilterActive('followup')}"
                                         @click="setCalendarFilter('followup')"
                                     >
                                         Follow-ups @{{ summary.followups }}
                                     </button>
 
                                     <button
+                                        v-if="showMeetings"
                                         type="button"
                                         class="sdr-summary-badge total"
                                         :class="{'active': isCalendarFilterActive('all')}"
@@ -489,6 +600,10 @@
                         type: Boolean,
                         default: true,
                     },
+                    showMeetings: {
+                        type: Boolean,
+                        default: true,
+                    },
                 },
 
                 data() {
@@ -518,7 +633,7 @@
                                         title: "Today's Calendar",
                                         description: this.showUsFeatures
                                             ? 'Meetings and follow-ups due today.<br>Items with a green border are high priority during 11:00 AM – 4:00 PM in the prospect US timezone.'
-                                            : 'Meetings and follow-ups due today.',
+                                            : this.showMeetings ? 'Meetings and follow-ups due today.' : 'Follow-ups due today.',
                                         items: this.filteredTodayCalendar,
                                         pageSize: 10,
                                         tall: true,
@@ -529,15 +644,19 @@
                     },
 
                     filteredTodayCalendar() {
+                        const items = this.showMeetings
+                            ? this.todayCalendar
+                            : this.todayCalendar.filter((item) => item.type !== 'Meeting');
+
                         if (this.calendarFilter === 'meeting') {
-                            return this.todayCalendar.filter((item) => item.type === 'Meeting');
+                            return items.filter((item) => item.type === 'Meeting');
                         }
 
                         if (this.calendarFilter === 'followup') {
-                            return this.todayCalendar.filter((item) => item.type === 'Follow-up');
+                            return items.filter((item) => item.type === 'Follow-up');
                         }
 
-                        return this.todayCalendar;
+                        return items;
                     },
                 },
 
@@ -650,9 +769,9 @@
 
                                 this.todayCalendar = response.data.today_calendar || [];
                                 this.summary = {
-                                    meetings: summary.meetings || 0,
+                                    meetings: this.showMeetings ? (summary.meetings || 0) : 0,
                                     followups: summary.followups || 0,
-                                    total: summary.total || 0,
+                                    total: this.showMeetings ? (summary.total || 0) : (summary.followups || 0),
                                 };
                                 this.pages = {
                                     'today-calendar': 1,
@@ -736,6 +855,18 @@
                         type: String,
                         required: true,
                     },
+                    showMeetings: {
+                        type: Boolean,
+                        default: true,
+                    },
+                    roleLabel: {
+                        type: String,
+                        default: 'SDR',
+                    },
+                    dashboardVariant: {
+                        type: String,
+                        default: 'sdr',
+                    },
                 },
 
                 data() {
@@ -770,12 +901,24 @@
                             },
                             meetings: {
                                 booked: 0,
+                                percent: 0,
+                            },
+                            linkedin: {
+                                requests: 0,
+                                accepted: 0,
+                                responses: 0,
+                                acceptance_rate: 0,
+                                response_rate: 0,
                             },
                         },
                     };
                 },
 
                 computed: {
+                    isLgeDashboard() {
+                        return this.dashboardVariant === 'lge';
+                    },
+
                     periodLabel() {
                         return this.periodOptions.find((option) => option.value === this.period)?.label || 'Day';
                     },

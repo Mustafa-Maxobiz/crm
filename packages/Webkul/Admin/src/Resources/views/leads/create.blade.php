@@ -36,7 +36,10 @@
     @endphp
 
     <!-- Create Lead Form -->
-    <x-admin::form :action="lead_route('store')">
+    <x-admin::form
+        :action="lead_route('store')"
+        id="lead-create-form"
+    >
         <div class="flex flex-col gap-4">
             <div class="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
                 <div class="flex flex-col gap-2">
@@ -55,6 +58,7 @@
                         {!! view_render_event('admin.leads.create.form_buttons.before') !!}
 
                         <button
+                            id="lead-create-submit-button"
                             type="submit"
                             class="primary-button"
                         >
@@ -394,6 +398,12 @@
                         selectedSubSource: '',
                         scheduleFollowup: false,
                         sourceKey: 0,
+                        isLgeCreate: @json(lead_variant() === 'lge'),
+                        linkedInSourceLinkCheckUrl: @json(lead_variant() === 'lge' ? route('admin.leads.lge.source_link.check') : null),
+                        linkedInSourceLinkTimer: null,
+                        linkedInSourceLinkRequestId: 0,
+                        linkedInSourceLinkValid: true,
+                        linkedInSourceLinkChecking: false,
                     };
                 },
                 
@@ -404,6 +414,43 @@
                             this.handleSourceChange(e);
                         }
                     });
+
+                    if (this.isLgeCreate) {
+                        document.addEventListener('input', (event) => {
+                            if (event.target.name === 'source_link') {
+                                this.handleLinkedInSourceLinkInput(event.target);
+                            }
+                        });
+
+                        document.getElementById('lead-create-form')?.addEventListener('submit', (event) => {
+                            const sourceLinkInput = document.querySelector('[name="source_link"]');
+
+                            if (! sourceLinkInput) {
+                                return;
+                            }
+
+                            if (! this.linkedInSourceLinkValid || this.linkedInSourceLinkChecking) {
+                                event.preventDefault();
+                                event.stopPropagation();
+
+                                this.showLinkedInSourceLinkMessage(
+                                    this.linkedInSourceLinkChecking
+                                        ? 'Please wait while we verify this LinkedIn profile URL.'
+                                        : 'This LinkedIn profile URL is not present in LinkedIn Entries.'
+                                );
+
+                                this.updateLinkedInSourceLinkSubmitState(true);
+                            }
+                        });
+
+                        this.$nextTick(() => {
+                            const sourceLinkInput = document.querySelector('[name="source_link"]');
+
+                            if (sourceLinkInput?.value?.trim()) {
+                                this.handleLinkedInSourceLinkInput(sourceLinkInput);
+                            }
+                        });
+                    }
                 },
 
                 methods: {
@@ -456,6 +503,94 @@
                             this.showSubSourceDropdown = false;
                             this.selectedSubSource = '';
                         }
+                    },
+
+                    handleLinkedInSourceLinkInput(input) {
+                        clearTimeout(this.linkedInSourceLinkTimer);
+
+                        const value = input.value.trim();
+
+                        if (! value) {
+                            this.linkedInSourceLinkChecking = false;
+                            this.linkedInSourceLinkValid = true;
+                            this.showLinkedInSourceLinkMessage('');
+                            this.updateLinkedInSourceLinkSubmitState(false);
+
+                            return;
+                        }
+
+                        this.linkedInSourceLinkChecking = true;
+                        this.linkedInSourceLinkValid = false;
+                        this.showLinkedInSourceLinkMessage('Checking LinkedIn profile URL...', false);
+                        this.updateLinkedInSourceLinkSubmitState(true);
+
+                        const requestId = ++this.linkedInSourceLinkRequestId;
+
+                        this.linkedInSourceLinkTimer = setTimeout(() => {
+                            this.$axios.get(this.linkedInSourceLinkCheckUrl, {
+                                params: {
+                                    source_link: value,
+                                },
+                            }).then((response) => {
+                                if (requestId !== this.linkedInSourceLinkRequestId) {
+                                    return;
+                                }
+
+                                const exists = Boolean(response.data?.exists);
+
+                                this.linkedInSourceLinkChecking = false;
+                                this.linkedInSourceLinkValid = exists;
+                                this.showLinkedInSourceLinkMessage(
+                                    exists ? '' : 'This LinkedIn profile URL is not present in LinkedIn Entries.'
+                                );
+                                this.updateLinkedInSourceLinkSubmitState(! exists);
+                            }).catch(() => {
+                                if (requestId !== this.linkedInSourceLinkRequestId) {
+                                    return;
+                                }
+
+                                this.linkedInSourceLinkChecking = false;
+                                this.linkedInSourceLinkValid = false;
+                                this.showLinkedInSourceLinkMessage('Unable to verify this LinkedIn profile URL. Please try again.');
+                                this.updateLinkedInSourceLinkSubmitState(true);
+                            });
+                        }, 600);
+                    },
+
+                    showLinkedInSourceLinkMessage(message, isError = true) {
+                        const input = document.querySelector('[name="source_link"]');
+
+                        if (! input) {
+                            return;
+                        }
+
+                        let messageElement = document.getElementById('lge-source-link-linkedin-error');
+
+                        if (! messageElement) {
+                            messageElement = document.createElement('p');
+                            messageElement.id = 'lge-source-link-linkedin-error';
+                            messageElement.className = 'mt-1 text-xs italic';
+                            input.insertAdjacentElement('afterend', messageElement);
+                        }
+
+                        messageElement.textContent = message || '';
+                        messageElement.classList.toggle('text-red-600', isError);
+                        messageElement.classList.toggle('dark:text-red-400', isError);
+                        messageElement.classList.toggle('text-gray-500', ! isError);
+                        messageElement.classList.toggle('dark:text-gray-400', ! isError);
+                        messageElement.classList.toggle('hidden', ! message);
+                    },
+
+                    updateLinkedInSourceLinkSubmitState(disabled) {
+                        const button = document.getElementById('lead-create-submit-button');
+
+                        if (! button) {
+                            return;
+                        }
+
+                        button.disabled = disabled;
+                        button.classList.toggle('opacity-60', disabled);
+                        button.classList.toggle('cursor-not-allowed', disabled);
                     },
                 },
             });

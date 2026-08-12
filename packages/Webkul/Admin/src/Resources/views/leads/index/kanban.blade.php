@@ -107,6 +107,7 @@
                             :list="stage.leads.data"
                             item-key="id"
                             group="leads"
+                            :move="canMoveLead"
                             @scroll="handleScroll(stage, $event)"
                             @change="handleUpdate(stage, $event)"
                         >
@@ -149,12 +150,17 @@
 
                                 <component
                                     :is="isStageEditingLocked(element) ? 'div' : 'a'"
-                                    class="lead-item flex flex-col gap-5 rounded-md border border-gray-100 bg-gray-50 p-2 dark:border-gray-400 dark:bg-gray-400"
-                                    :class="isStageEditingLocked(element) ? 'cursor-not-allowed opacity-60 grayscale' : 'cursor-pointer'"
+                                    class="lead-item flex flex-col gap-5 rounded-md border p-2 transition-all"
+                                    :class="[
+                                        isHandoffLead(element)
+                                            ? 'border-amber-300 border-l-4 border-l-amber-500 bg-amber-50 dark:border-amber-500 dark:border-l-amber-400 dark:bg-amber-950/30'
+                                            : 'border-gray-100 bg-gray-50 dark:border-gray-400 dark:bg-gray-400',
+                                        isStageEditingLocked(element) ? 'cursor-not-allowed' : 'cursor-pointer hover:border-gray-300'
+                                    ]"
                                     :href="isStageEditingLocked(element) ? null : '{{ lead_route('view', 'replaceId') }}'.replace('replaceId', element.id)"
                                     :target="isStageEditingLocked(element) ? null : '_blank'"
                                     :rel="isStageEditingLocked(element) ? null : 'noopener noreferrer'"
-                                    :title="isStageEditingLocked(element) ? 'Assigned to closure owner. View and edits are locked.' : null"
+                                    :title="isHandoffLead(element) ? 'Sales owner changed. This lead remains visible for tracking.' : null"
                                 >
                                     {!! view_render_event('admin.leads.index.kanban.content.stage.body.card.header.before') !!}
 
@@ -188,6 +194,13 @@
                                                 <div class="absolute -right-1 top-2 h-3 w-3 rotate-45 bg-black"></div>
                                             </div>
                                         </div>
+
+                                        <span
+                                            class="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-800"
+                                            v-if="isHandoffLead(element)"
+                                        >
+                                            Assigned
+                                        </span>
                                     </div>
 
                                     {!! view_render_event('admin.leads.index.kanban.content.stage.body.card.header.after') !!}
@@ -355,6 +368,62 @@
                 </form>
             </x-admin::form>
 
+            <!-- Follow-up Schedule Modal -->
+            <x-admin::modal
+                ref="followupStageModal"
+                position="center"
+                @toggle="handleFollowupModalToggle"
+            >
+                <x-slot:header>
+                    <h3 class="text-base font-semibold dark:text-white">
+                        Schedule Follow-up
+                    </h3>
+                </x-slot>
+
+                <x-slot:content>
+                    <p class="mb-4 text-sm text-gray-600 dark:text-gray-300">
+                        Choose how to set the next follow-up for this lead.
+                    </p>
+
+                    <div
+                        class="mb-4"
+                        v-if="followupMode === 'custom'"
+                    >
+                        <label class="mb-1.5 block text-sm font-medium text-gray-800 dark:text-white">
+                            Next Follow-up Date <span class="text-red-500">*</span>
+                        </label>
+
+                        <input
+                            type="datetime-local"
+                            v-model="customFollowupDate"
+                            class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-brandColor dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                        >
+                    </div>
+                </x-slot>
+
+                <x-slot:footer>
+                    <div class="flex flex-wrap items-center justify-end gap-2">
+                        <button
+                            type="button"
+                            class="transparent-button"
+                            :disabled="isFollowupSaving"
+                            @click="applyFollowupStage('auto')"
+                        >
+                            Use Auto
+                        </button>
+
+                        <button
+                            type="button"
+                            class="secondary-button"
+                            :disabled="isFollowupSaving"
+                            @click="followupMode === 'custom' ? applyFollowupStage('custom') : (followupMode = 'custom')"
+                        >
+                            @{{ followupMode === 'custom' ? 'Save Custom' : 'Custom' }}
+                        </button>
+                    </div>
+                </x-slot>
+            </x-admin::modal>
+
             <!-- Meeting Activity Modal -->
             <x-admin::form
                 v-slot="{ meta, errors, handleSubmit }"
@@ -429,9 +498,11 @@
                                             Assigned Owner
                                         </x-admin::form.control-group.label>
 
-                                        <select
+                                        <x-admin::form.control-group.control
+                                            type="select"
                                             name="assigned_user_id"
-                                            class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-brandColor dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                                            rules="required"
+                                            label="Assigned Owner"
                                         >
                                             <option value="">Select Admin / Lead User</option>
 
@@ -440,14 +511,14 @@
                                                     {{ $user['name'] }}@if (! empty($user['role_name'])) - {{ $user['role_name'] }}@endif @if (! empty($user['email']))({{ $user['email'] }})@endif
                                                 </option>
                                             @endforeach
-                                        </select>
+                                        </x-admin::form.control-group.control>
 
                                         <x-admin::form.control-group.error control-name="assigned_user_id" />
                                     </x-admin::form.control-group>
                                 @endif
 
                                 <x-admin::form.control-group>
-                                    <x-admin::form.control-group.label class="required">
+                                    <x-admin::form.control-group.label>
                                         Participants
                                     </x-admin::form.control-group.label>
 
@@ -527,6 +598,16 @@
                     pendingStageLeadId: null,
 
                     pendingStageId: null,
+
+                    pendingFollowupLead: null,
+
+                    pendingFollowupStage: null,
+
+                    followupMode: null,
+
+                    customFollowupDate: '',
+
+                    isFollowupSaving: false,
 
                     isMeetingSaving: false,
 
@@ -836,6 +917,21 @@
                     }
 
                     if (
+                        event.added
+                        && event.added.element
+                        && ! this.canUseStage(stage)
+                    ) {
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: 'You can move SDR/LGE leads up to Meeting only.',
+                        });
+
+                        this.refreshKanban();
+
+                        return;
+                    }
+
+                    if (
                         (stage.code === "won" || stage.code === "lost")
                         && event.added
                         && event.added.element
@@ -870,6 +966,20 @@
                         return;
                     }
 
+                    if (
+                        event.added
+                        && event.added.element
+                        && this.shouldPromptFollowupStage(event.added.element, stage)
+                    ) {
+                        this.pendingFollowupLead = event.added.element;
+                        this.pendingFollowupStage = stage;
+                        this.followupMode = null;
+                        this.customFollowupDate = '';
+                        this.$refs.followupStageModal.open();
+
+                        return;
+                    }
+
                     stage.lead_value = parseFloat(stage.lead_value) + parseFloat(event.added.element.lead_value);
 
                     this.stageLeads[stage.sort_order].leads.meta.total = this.stageLeads[stage.sort_order].leads.meta.total + 1;
@@ -897,6 +1007,79 @@
                     return this.$axios.put(url, params);
                 },
 
+                shouldPromptFollowupStage(lead, stage) {
+                    if ((stage?.code || '').toLowerCase() !== 'follow-up') {
+                        return false;
+                    }
+
+                    return ! this.isCurrentLeadStage(lead, 'follow-up');
+                },
+
+                isCurrentLeadStage(lead, stageCode) {
+                    const normalizedStageCode = stageCode.toLowerCase();
+
+                    if ((lead.stage_code || lead.stage?.code || '').toLowerCase() === normalizedStageCode) {
+                        return true;
+                    }
+
+                    const stageId = lead.lead_pipeline_stage_id || lead.stage?.id;
+                    const currentStage = this.stages.find(stage => stage.id == stageId);
+
+                    return (currentStage?.code || '').toLowerCase() === normalizedStageCode;
+                },
+
+                isNewStageLead(lead) {
+                    return this.isCurrentLeadStage(lead, 'new');
+                },
+
+                applyFollowupStage(mode) {
+                    if (! this.pendingFollowupLead || ! this.pendingFollowupStage) {
+                        return;
+                    }
+
+                    if (mode === 'custom' && ! this.customFollowupDate) {
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: 'Please select a next follow-up date.',
+                        });
+
+                        return;
+                    }
+
+                    const payload = {
+                        lead_pipeline_stage_id: this.pendingFollowupStage.id,
+                        followup_mode: mode,
+                    };
+
+                    if (mode === 'custom') {
+                        payload.next_followup_date = this.customFollowupDate.replace('T', ' ') + ':00';
+                    }
+
+                    this.isFollowupSaving = true;
+
+                    this.updateStage('{{ lead_route('stage.update', '__LEAD_ID__') }}'.replace('__LEAD_ID__', this.pendingFollowupLead.id), payload)
+                        .then(response => {
+                            this.$emitter.emit('add-flash', { type: 'success', message: response.data.message });
+                            this.$refs.followupStageModal.close();
+                            this.pendingFollowupLead = null;
+                            this.pendingFollowupStage = null;
+                            this.followupMode = null;
+                            this.customFollowupDate = '';
+                            this.refreshKanban();
+                        })
+                        .catch(error => {
+                            this.$emitter.emit('add-flash', {
+                                type: 'error',
+                                message: error.response?.data?.message || error.response?.data?.errors?.next_followup_date?.[0] || 'Update failed.',
+                            });
+
+                            this.refreshKanban();
+                        })
+                        .finally(() => {
+                            this.isFollowupSaving = false;
+                        });
+                },
+
                 isStageEditingLocked(lead) {
                     if (! this.isCallingRoleLeadVariant) {
                         return false;
@@ -906,24 +1089,50 @@
                         return false;
                     }
 
-                    if (Number(lead.lead_owner_id || 0) !== Number(this.currentUserId)) {
-                        return false;
+                    return Number(lead.lead_owner_id || 0) === Number(this.currentUserId);
+                },
+
+                findStageForList(list) {
+                    if (! list) {
+                        return null;
                     }
 
-                    const meetingStage = this.stages.find(stage => stage.code === 'meeting');
+                    return this.stages.find(stage => {
+                        return this.stageLeads[stage.sort_order]?.leads?.data === list;
+                    });
+                },
+
+                canUseStage(stage) {
+                    if (! this.isCallingRoleLeadVariant || ! stage) {
+                        return true;
+                    }
+
+                    const meetingStage = this.stages.find(item => item.code === 'meeting');
 
                     if (! meetingStage) {
+                        return true;
+                    }
+
+                    return Number(stage.sort_order || 0) <= Number(meetingStage.sort_order || 0);
+                },
+
+                canMoveLead(event) {
+                    const lead = event.draggedContext?.element;
+
+                    if (! lead || this.isStageEditingLocked(lead)) {
                         return false;
                     }
 
-                    let stageSortOrder = lead.stage_sort_order;
+                    return this.canUseStage(this.findStageForList(event.relatedContext?.list));
+                },
 
-                    if (! stageSortOrder) {
-                        const currentStage = this.stages.find(stage => stage.id == lead.lead_pipeline_stage_id);
-                        stageSortOrder = currentStage?.sort_order;
+                isHandoffLead(lead) {
+                    if (! this.isCallingRoleLeadVariant) {
+                        return false;
                     }
 
-                    return Number(stageSortOrder || 0) >= Number(meetingStage.sort_order || 0);
+                    return Number(lead.lead_owner_id || 0) === Number(this.currentUserId)
+                        && Number(lead.user_id || 0) !== Number(this.currentUserId);
                 },
 
                 hasParticipants(participants = {}) {
@@ -934,14 +1143,6 @@
 
                 saveMeetingAndMove(params, { setErrors }) {
                     this.meetingErrors = {};
-
-                    if (! this.hasParticipants(params.participants || {})) {
-                        this.meetingErrors = {
-                            participants: 'Please select at least one participant.',
-                        };
-
-                        return;
-                    }
 
                     this.isMeetingSaving = true;
 
@@ -992,6 +1193,20 @@
                         this.pendingStageLeadId = null;
                         this.pendingStageId = null;
                         this.meetingErrors = {};
+                        this.refreshKanban();
+                    }
+                },
+
+                handleFollowupModalToggle(state) {
+                    if (state.isActive || this.isFollowupSaving) {
+                        return;
+                    }
+
+                    if (this.pendingFollowupLead || this.pendingFollowupStage) {
+                        this.pendingFollowupLead = null;
+                        this.pendingFollowupStage = null;
+                        this.followupMode = null;
+                        this.customFollowupDate = '';
                         this.refreshKanban();
                     }
                 },
