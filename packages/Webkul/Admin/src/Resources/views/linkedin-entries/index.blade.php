@@ -513,9 +513,51 @@
                             Filter
                         </button>
 
-                        <p class="shrink-0 text-sm text-gray-500 dark:text-gray-400">
-                            {{ $entries->firstItem() ?? 0 }} - {{ $entries->lastItem() ?? 0 }} of {{ $entries->total() }}
-                        </p>
+                        <div class="flex shrink-0 items-center gap-2">
+                            <p class="whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                {{ $entries->firstItem() ?? 0 }} - {{ $entries->lastItem() ?? 0 }} of {{ $entries->total() }}
+                            </p>
+
+                            <div class="flex items-center gap-1">
+                                @if ($entries->onFirstPage())
+                                    <span
+                                        class="inline-flex cursor-not-allowed appearance-none items-center justify-center rounded-md border border-gray-200 p-1.5 text-gray-300 dark:border-gray-800 dark:text-gray-600"
+                                        aria-disabled="true"
+                                        aria-label="Previous page"
+                                    >
+                                        <span class="icon-left-arrow rtl:icon-right-arrow text-2xl"></span>
+                                    </span>
+                                @else
+                                    <a
+                                        href="{{ $entries->previousPageUrl() }}"
+                                        class="inline-flex appearance-none items-center justify-center rounded-md border border-transparent p-1.5 text-center text-gray-600 transition-all hover:bg-gray-200 active:border-gray-300 dark:text-gray-300 dark:hover:bg-gray-800"
+                                        aria-label="Previous page"
+                                        rel="prev"
+                                    >
+                                        <span class="icon-left-arrow rtl:icon-right-arrow text-2xl"></span>
+                                    </a>
+                                @endif
+
+                                @if ($entries->hasMorePages())
+                                    <a
+                                        href="{{ $entries->nextPageUrl() }}"
+                                        class="inline-flex appearance-none items-center justify-center rounded-md border border-transparent p-1.5 text-center text-gray-600 transition-all hover:bg-gray-200 active:border-gray-300 dark:text-gray-300 dark:hover:bg-gray-800"
+                                        aria-label="Next page"
+                                        rel="next"
+                                    >
+                                        <span class="icon-right-arrow rtl:icon-left-arrow text-2xl"></span>
+                                    </a>
+                                @else
+                                    <span
+                                        class="inline-flex cursor-not-allowed appearance-none items-center justify-center rounded-md border border-gray-200 p-1.5 text-gray-300 dark:border-gray-800 dark:text-gray-600"
+                                        aria-disabled="true"
+                                        aria-label="Next page"
+                                    >
+                                        <span class="icon-right-arrow rtl:icon-left-arrow text-2xl"></span>
+                                    </span>
+                                @endif
+                            </div>
+                        </div>
                     </div>
 
                     <div
@@ -708,8 +750,54 @@
                 </table>
             </div>
 
-            <div class="border-t border-gray-200 p-4 dark:border-gray-800">
-                {{ $entries->links() }}
+            <div class="flex items-center justify-between gap-3 border-t border-gray-200 p-4 dark:border-gray-800 max-sm:flex-wrap">
+                <p class="text-sm text-gray-600 dark:text-gray-300">
+                    {{ $entries->firstItem() ?? 0 }} - {{ $entries->lastItem() ?? 0 }} of {{ $entries->total() }}
+                </p>
+
+                <div class="flex items-center gap-1">
+                    @if ($entries->onFirstPage())
+                        <span
+                            class="inline-flex cursor-not-allowed appearance-none items-center justify-center rounded-md border border-gray-200 p-1.5 text-gray-300 dark:border-gray-800 dark:text-gray-600"
+                            aria-disabled="true"
+                            aria-label="Previous page"
+                        >
+                            <span class="icon-left-arrow rtl:icon-right-arrow text-2xl"></span>
+                        </span>
+                    @else
+                        <a
+                            href="{{ $entries->previousPageUrl() }}"
+                            class="inline-flex appearance-none items-center justify-center rounded-md border border-transparent p-1.5 text-center text-gray-600 transition-all hover:bg-gray-200 active:border-gray-300 dark:text-gray-300 dark:hover:bg-gray-800"
+                            aria-label="Previous page"
+                            rel="prev"
+                        >
+                            <span class="icon-left-arrow rtl:icon-right-arrow text-2xl"></span>
+                        </a>
+                    @endif
+
+                    <span class="px-2 text-sm text-gray-600 dark:text-gray-300">
+                        Page {{ $entries->currentPage() }} of {{ max($entries->lastPage(), 1) }}
+                    </span>
+
+                    @if ($entries->hasMorePages())
+                        <a
+                            href="{{ $entries->nextPageUrl() }}"
+                            class="inline-flex appearance-none items-center justify-center rounded-md border border-transparent p-1.5 text-center text-gray-600 transition-all hover:bg-gray-200 active:border-gray-300 dark:text-gray-300 dark:hover:bg-gray-800"
+                            aria-label="Next page"
+                            rel="next"
+                        >
+                            <span class="icon-right-arrow rtl:icon-left-arrow text-2xl"></span>
+                        </a>
+                    @else
+                        <span
+                            class="inline-flex cursor-not-allowed appearance-none items-center justify-center rounded-md border border-gray-200 p-1.5 text-gray-300 dark:border-gray-800 dark:text-gray-600"
+                            aria-disabled="true"
+                            aria-label="Next page"
+                        >
+                            <span class="icon-right-arrow rtl:icon-left-arrow text-2xl"></span>
+                        </span>
+                    @endif
+                </div>
             </div>
         </div>
     </div>
