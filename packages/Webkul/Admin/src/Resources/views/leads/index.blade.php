@@ -93,6 +93,9 @@
                                     <p class="mt-1">
                                         Required columns are marked with * in the template. Blank optional columns are imported as null. Blank schedule_followup uses auto schedule.
                                         Select a <strong>Lead Source</strong> below — it will be applied to every imported lead. All bulk-imported leads get the <strong>Cold Lead</strong> tag.
+                                        @if (app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin())
+                                            Choose one or more <strong>SDR users</strong> to own these leads (multiple users share them equally) and an <strong>Industry</strong> for the whole file.
+                                        @endif
                                     </p>
 
                                     <p class="mt-2 text-xs font-semibold text-red-600 dark:text-red-400">
@@ -134,6 +137,83 @@
 
                                     <x-admin::form.control-group.error control-name="lead_source_id" />
                                 </x-admin::form.control-group>
+
+                                @if (app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin())
+                                    @php
+                                        $importSdrUsers = \Illuminate\Support\Facades\DB::table('users')
+                                            ->leftJoin('roles', 'users.role_id', '=', 'roles.id')
+                                            ->where('users.status', 1)
+                                            ->whereRaw('LOWER(TRIM(roles.name)) = ?', ['sdr'])
+                                            ->orderBy('users.name')
+                                            ->get(['users.id', 'users.name', 'users.email']);
+
+                                        $importIndustries = \Illuminate\Support\Facades\DB::table('attribute_options')
+                                            ->join('attributes', 'attributes.id', '=', 'attribute_options.attribute_id')
+                                            ->where('attributes.entity_type', 'leads')
+                                            ->where('attributes.code', 'industry')
+                                            ->orderBy('attribute_options.sort_order')
+                                            ->orderBy('attribute_options.name')
+                                            ->get([
+                                                'attribute_options.id',
+                                                'attribute_options.name',
+                                            ]);
+                                    @endphp
+
+                                    <x-admin::form.control-group>
+                                        <x-admin::form.control-group.label class="required">
+                                            Assign to SDR Users
+                                        </x-admin::form.control-group.label>
+
+                                        <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                                            Select one or more SDR users. If you select more than one, leads are divided equally between them.
+                                        </p>
+
+                                        <div class="max-h-44 overflow-auto rounded-md border border-gray-200 p-2 dark:border-gray-800">
+                                            @forelse ($importSdrUsers as $sdrUser)
+                                                <label class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-gray-800 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-950">
+                                                    <input
+                                                        type="checkbox"
+                                                        name="assignee_user_ids[]"
+                                                        value="{{ $sdrUser->id }}"
+                                                        class="rounded border-gray-300 text-brandColor focus:ring-brandColor"
+                                                    />
+                                                    <span>
+                                                        {{ $sdrUser->name }}
+                                                        @if ($sdrUser->email)
+                                                            <span class="text-xs text-gray-500">({{ $sdrUser->email }})</span>
+                                                        @endif
+                                                    </span>
+                                                </label>
+                                            @empty
+                                                <p class="px-2 py-2 text-sm text-gray-500 dark:text-gray-400">
+                                                    No active SDR users found.
+                                                </p>
+                                            @endforelse
+                                        </div>
+                                    </x-admin::form.control-group>
+
+                                    <x-admin::form.control-group>
+                                        <x-admin::form.control-group.label class="required">
+                                            Industry
+                                        </x-admin::form.control-group.label>
+
+                                        <select
+                                            id="lead-import-industry"
+                                            name="industry_id"
+                                            required
+                                            class="custom-select w-full rounded border border-gray-200 px-2.5 py-2 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+                                        >
+                                            <option value="">
+                                                Select Industry
+                                            </option>
+                                            @foreach ($importIndustries as $industry)
+                                                <option value="{{ $industry->id }}">
+                                                    {{ $industry->name }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </x-admin::form.control-group>
+                                @endif
 
                                 <x-admin::form.control-group>
                                     <x-admin::form.control-group.label class="required">
@@ -358,6 +438,9 @@
             ];
 
             let importLeadSourceId = null;
+            let importAssigneeUserIds = [];
+            let importIndustryId = null;
+            const isAdminLeadImport = @json(app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin());
             let failedImportRows = [];
 
             const importElements = () => ({
@@ -640,6 +723,23 @@
                     return;
                 }
 
+                const selectedAssignees = Array.from(document.querySelectorAll('input[name="assignee_user_ids[]"]:checked'))
+                    .map((input) => Number(input.value))
+                    .filter((id) => id > 0);
+                const industrySelect = document.getElementById('lead-import-industry');
+
+                if (isAdminLeadImport && ! selectedAssignees.length) {
+                    flash('error', 'Please select at least one SDR user to assign these leads.');
+
+                    return;
+                }
+
+                if (isAdminLeadImport && ! industrySelect?.value) {
+                    flash('error', 'Please select an industry for this import.');
+
+                    return;
+                }
+
                 if (elements.file.files[0].size > leadImportMaxFileSize) {
                     flash('error', 'This file is larger than the current 2 MB PHP upload limit. Please use a split CSV file or increase upload_max_filesize.');
 
@@ -647,6 +747,8 @@
                 }
 
                 importLeadSourceId = Number(sourceSelect.value);
+                importAssigneeUserIds = selectedAssignees;
+                importIndustryId = industrySelect?.value ? Number(industrySelect.value) : null;
                 renderFailedRows([], importLeadSourceId);
 
                 elements.submit.disabled = true;
@@ -747,6 +849,8 @@
                 try {
                     const response = await window.axios.post(leadImportRetryUrl, {
                         lead_source_id: sourceId,
+                        assignee_user_ids: importAssigneeUserIds,
+                        industry_id: importIndustryId,
                         rows,
                     }, {
                         headers: {

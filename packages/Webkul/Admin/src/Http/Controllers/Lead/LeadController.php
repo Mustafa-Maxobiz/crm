@@ -243,6 +243,12 @@ class LeadController extends Controller
             'lead_source_id' => ['required', 'integer', 'exists:lead_sources,id'],
         ]);
 
+        $assignment = $this->validatedBulkImportAssignment();
+
+        if ($assignment instanceof JsonResponse || $assignment instanceof RedirectResponse) {
+            return $assignment;
+        }
+
         $sourceId = (int) $data['lead_source_id'];
 
         if (! $this->sourceAccessService->canUseLeadSourceSelection($sourceId)) {
@@ -281,6 +287,7 @@ class LeadController extends Controller
 
         $created = 0;
         $errors = [];
+        $assignIndex = 0;
 
         foreach ($rows as $index => $row) {
             $rowNumber = $index + 2;
@@ -290,7 +297,7 @@ class LeadController extends Controller
             }
 
             $rowData = $this->mapImportRow($headers, $row);
-            $rowErrors = $this->validateImportRow($rowData);
+            $rowErrors = $this->validateImportRow($rowData, ! empty($assignment['assignee_user_ids']));
 
             if (! empty($rowErrors)) {
                 $errors[] = 'Row '.$rowNumber.': '.implode(' ', $rowErrors);
@@ -301,7 +308,12 @@ class LeadController extends Controller
             try {
                 Event::dispatch('lead.create.before');
 
-                $lead = $this->leadRepository->create($this->prepareImportedLeadData($rowData, $sourceId));
+                $lead = $this->leadRepository->create($this->prepareImportedLeadData(
+                    $rowData,
+                    $sourceId,
+                    $this->assigneeForImportIndex($assignment['assignee_user_ids'], $assignIndex),
+                    $assignment['industry_id']
+                ));
 
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
 
@@ -317,6 +329,8 @@ class LeadController extends Controller
             } catch (Throwable $exception) {
                 $errors[] = 'Row '.$rowNumber.': '.$exception->getMessage();
             }
+
+            $assignIndex++;
         }
 
         return $this->importResponse($created, $errors, $created || empty($errors) ? 200 : 422);
@@ -325,12 +339,18 @@ class LeadController extends Controller
     /**
      * Start an AJAX lead import and persist normalized rows for chunked processing.
      */
-    public function importStart(): JsonResponse
+    public function importStart(): JsonResponse|RedirectResponse
     {
         $data = request()->validate([
             'file'           => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:10240'],
             'lead_source_id' => ['required', 'integer', 'exists:lead_sources,id'],
         ]);
+
+        $assignment = $this->validatedBulkImportAssignment();
+
+        if ($assignment instanceof JsonResponse || $assignment instanceof RedirectResponse) {
+            return $assignment;
+        }
 
         $sourceId = (int) $data['lead_source_id'];
 
@@ -395,11 +415,13 @@ class LeadController extends Controller
         }
 
         file_put_contents($this->pendingImportPath($token), json_encode([
-            'lead_source_id' => $sourceId,
-            'rows'           => $importRows,
-            'created'        => 0,
-            'errors'         => [],
-            'failed'         => [],
+            'lead_source_id'     => $sourceId,
+            'assignee_user_ids'  => $assignment['assignee_user_ids'],
+            'industry_id'        => $assignment['industry_id'],
+            'rows'               => $importRows,
+            'created'            => 0,
+            'errors'             => [],
+            'failed'             => [],
         ], JSON_THROW_ON_ERROR));
 
         return response()->json([
@@ -429,6 +451,8 @@ class LeadController extends Controller
 
         $payload = json_decode(file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
         $sourceId = (int) ($payload['lead_source_id'] ?? 0);
+        $assigneeUserIds = $this->normalizeImportAssigneeIds($payload['assignee_user_ids'] ?? []);
+        $industryId = $this->normalizeImportIndustryId($payload['industry_id'] ?? null);
 
         if (! $sourceId || ! $this->sourceAccessService->canUseLeadSourceSelection($sourceId)) {
             @unlink($path);
@@ -448,9 +472,9 @@ class LeadController extends Controller
             $payload['failed'] = [];
         }
 
-        foreach ($chunk as $row) {
+        foreach ($chunk as $chunkIndex => $row) {
             $rowData = $row['data'] ?? [];
-            $rowErrors = $this->validateImportRow($rowData);
+            $rowErrors = $this->validateImportRow($rowData, ! empty($assigneeUserIds));
 
             if (! empty($rowErrors)) {
                 $errorMessage = implode(' ', $rowErrors);
@@ -467,7 +491,12 @@ class LeadController extends Controller
             try {
                 Event::dispatch('lead.create.before');
 
-                $lead = $this->leadRepository->create($this->prepareImportedLeadData($rowData, $sourceId));
+                $lead = $this->leadRepository->create($this->prepareImportedLeadData(
+                    $rowData,
+                    $sourceId,
+                    $this->assigneeForImportIndex($assigneeUserIds, $offset + $chunkIndex),
+                    $industryId
+                ));
 
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
 
@@ -515,7 +544,7 @@ class LeadController extends Controller
     /**
      * Retry importing corrected failed rows.
      */
-    public function importRetry(): JsonResponse
+    public function importRetry(): JsonResponse|RedirectResponse
     {
         $data = request()->validate([
             'lead_source_id'    => ['required', 'integer', 'exists:lead_sources,id'],
@@ -523,6 +552,12 @@ class LeadController extends Controller
             'rows.*.row_number' => ['required', 'integer', 'min:1'],
             'rows.*.data'       => ['required', 'array'],
         ]);
+
+        $assignment = $this->validatedBulkImportAssignment();
+
+        if ($assignment instanceof JsonResponse || $assignment instanceof RedirectResponse) {
+            return $assignment;
+        }
 
         $sourceId = (int) $data['lead_source_id'];
 
@@ -535,10 +570,10 @@ class LeadController extends Controller
         $created = 0;
         $failedRows = [];
 
-        foreach ($data['rows'] as $row) {
+        foreach ($data['rows'] as $retryIndex => $row) {
             $rowNumber = (int) $row['row_number'];
             $rowData = $this->normalizeRetriedImportRow($row['data'] ?? []);
-            $rowErrors = $this->validateImportRow($rowData);
+            $rowErrors = $this->validateImportRow($rowData, ! empty($assignment['assignee_user_ids']));
 
             if (! empty($rowErrors)) {
                 $failedRows[] = [
@@ -553,7 +588,12 @@ class LeadController extends Controller
             try {
                 Event::dispatch('lead.create.before');
 
-                $lead = $this->leadRepository->create($this->prepareImportedLeadData($rowData, $sourceId));
+                $lead = $this->leadRepository->create($this->prepareImportedLeadData(
+                    $rowData,
+                    $sourceId,
+                    $this->assigneeForImportIndex($assignment['assignee_user_ids'], $retryIndex),
+                    $assignment['industry_id']
+                ));
 
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
 
@@ -2752,7 +2792,7 @@ class LeadController extends Controller
         return $value;
     }
 
-    protected function validateImportRow(array $row): array
+    protected function validateImportRow(array $row, bool $skipSalesOwnerEmail = false): array
     {
         $errors = [];
 
@@ -2787,7 +2827,8 @@ class LeadController extends Controller
         }
 
         if (
-            lead_variant() !== 'lge'
+            ! $skipSalesOwnerEmail
+            && lead_variant() !== 'lge'
             && filled($row['sales_owner_email'] ?? null)
             && ! $this->resolveUserId($row['sales_owner_email'])
         ) {
@@ -2801,8 +2842,12 @@ class LeadController extends Controller
         return $errors;
     }
 
-    protected function prepareImportedLeadData(array $row, int $leadSourceId): array
-    {
+    protected function prepareImportedLeadData(
+        array $row,
+        int $leadSourceId,
+        ?int $assigneeUserId = null,
+        ?int $industryId = null
+    ): array {
         $pipeline = filled($row['pipeline'] ?? null)
             ? $this->pipelineRepository->find($this->resolveImportId('lead_pipelines', $row['pipeline']))
             : $this->pipelineRepository->getDefaultPipeline();
@@ -2855,7 +2900,14 @@ class LeadController extends Controller
             ];
         }
 
-        return [
+        $ownerId = $assigneeUserId
+            ?? (in_array(lead_variant(), ['lge', 'sdr'], true)
+                ? auth()->guard('user')->id()
+                : (filled($row['sales_owner_email'] ?? null)
+                    ? $this->resolveUserId($row['sales_owner_email'])
+                    : null));
+
+        $lead = [
             'entity_type'              => 'leads',
             'organization_name'        => trim((string) ($row['companies'] ?? $row['title'] ?? $row['company'] ?? '')),
             'description'              => $this->nullableImportValue($row['description'] ?? null),
@@ -2866,14 +2918,11 @@ class LeadController extends Controller
             'pricing_type'             => $this->resolveAttributeOptionId('pricing_type', $row['pricing_type']),
             'source_sub_type'          => $this->nullableImportValue($row['source_sub_type'] ?? null),
             'source_link'              => $this->nullableImportValue($row['source_link'] ?? null),
-            'user_id'                  => in_array(lead_variant(), ['lge', 'sdr'], true)
-                ? auth()->guard('user')->id()
-                : (filled($row['sales_owner_email'] ?? null)
-                    ? $this->resolveUserId($row['sales_owner_email'])
+            'user_id'                  => $ownerId,
+            'lead_owner_id'            => $assigneeUserId
+                ?? (in_array(lead_variant(), ['lge', 'sdr'], true)
+                    ? auth()->guard('user')->id()
                     : null),
-            'lead_owner_id'            => in_array(lead_variant(), ['lge', 'sdr'], true)
-                ? auth()->guard('user')->id()
-                : null,
             'lead_pipeline_id'         => $pipeline->id,
             'lead_pipeline_stage_id'   => $stage->id,
             'status'                   => 1,
@@ -2892,6 +2941,110 @@ class LeadController extends Controller
                 'address'          => $personAddress,
             ],
         ];
+
+        if ($industryId) {
+            $lead['industry'] = $industryId;
+        }
+
+        return $lead;
+    }
+
+    /**
+     * @return array{assignee_user_ids: array<int, int>, industry_id: int|null}|JsonResponse|RedirectResponse
+     */
+    protected function validatedBulkImportAssignment(): array|JsonResponse|RedirectResponse
+    {
+        if (! $this->sourceAccessService->isAdmin()) {
+            return [
+                'assignee_user_ids' => [],
+                'industry_id'       => null,
+            ];
+        }
+
+        $assigneeUserIds = $this->normalizeImportAssigneeIds(request()->input('assignee_user_ids', []));
+        $industryId = $this->normalizeImportIndustryId(request()->input('industry_id'));
+        $allowedSdrIds = $this->sdrUserIdsForBulkImport();
+
+        if (empty($allowedSdrIds)) {
+            return $this->bulkImportAssignmentError('No active SDR users are available to assign these leads.');
+        }
+
+        if (empty($assigneeUserIds) || array_diff($assigneeUserIds, $allowedSdrIds)) {
+            return $this->bulkImportAssignmentError('Please select one or more SDR users to assign these leads.');
+        }
+
+        if (! $industryId || ! $this->industryOptionExists($industryId)) {
+            return $this->bulkImportAssignmentError('Please select a valid industry for this import.');
+        }
+
+        return [
+            'assignee_user_ids' => array_values($assigneeUserIds),
+            'industry_id'       => $industryId,
+        ];
+    }
+
+    protected function bulkImportAssignmentError(string $message): JsonResponse|RedirectResponse
+    {
+        if (request()->ajax() || request()->wantsJson()) {
+            return response()->json([
+                'message' => $message,
+            ], 422);
+        }
+
+        return $this->importResponse(0, [$message], 422);
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    protected function sdrUserIdsForBulkImport(): array
+    {
+        return DB::table('users')
+            ->leftJoin('roles', 'users.role_id', '=', 'roles.id')
+            ->where('users.status', 1)
+            ->whereRaw('LOWER(TRIM(roles.name)) = ?', ['sdr'])
+            ->pluck('users.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    protected function industryOptionExists(int $industryId): bool
+    {
+        return DB::table('attribute_options')
+            ->join('attributes', 'attributes.id', '=', 'attribute_options.attribute_id')
+            ->where('attributes.entity_type', 'leads')
+            ->where('attributes.code', 'industry')
+            ->where('attribute_options.id', $industryId)
+            ->exists();
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    protected function normalizeImportAssigneeIds($ids): array
+    {
+        return collect(is_array($ids) ? $ids : [$ids])
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    protected function normalizeImportIndustryId($id): ?int
+    {
+        $id = (int) $id;
+
+        return $id > 0 ? $id : null;
+    }
+
+    protected function assigneeForImportIndex(array $ids, int $index): ?int
+    {
+        if (empty($ids)) {
+            return null;
+        }
+
+        return $ids[$index % count($ids)];
     }
 
     /**
