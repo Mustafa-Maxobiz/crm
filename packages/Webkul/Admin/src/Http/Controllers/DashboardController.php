@@ -63,6 +63,7 @@ class DashboardController extends Controller
             'dashboardTitle' => 'SDR Dashboard',
             'showUsFeatures' => true,
             'dashboardVariant' => 'sdr',
+            'showMeetings' => false,
         ]);
     }
 
@@ -73,9 +74,10 @@ class DashboardController extends Controller
     {
         return view('admin::dashboard.sdr.index')->with([
             'stateTimezones' => $this->usStateTimezoneService->allStates(),
-            'dashboardTitle' => 'Lead Clouser Dashboard',
+            'dashboardTitle' => 'Lead Closer Dashboard',
             'showUsFeatures' => true,
-            'dashboardVariant' => 'sdr',
+            'dashboardVariant' => 'lead_clouser',
+            'showMeetings' => true,
         ]);
     }
 
@@ -153,11 +155,13 @@ class DashboardController extends Controller
             ->selectRaw("COUNT(DISTINCT CASE WHEN activities.type = 'call' THEN activities.id END) as total_calls")
             ->selectRaw("COUNT(DISTINCT CASE WHEN activities.type = 'call' AND (activities.call_status = 'done' OR (activities.call_status IS NULL AND activities.is_done = 1)) THEN activities.id END) as answered_calls")
             ->selectRaw("COUNT(DISTINCT CASE WHEN activities.type = 'meeting' THEN activities.id END) as booked_meetings")
+            ->selectRaw("COUNT(DISTINCT CASE WHEN activities.type = 'meeting' AND (activities.call_status = 'done' OR activities.is_done = 1) THEN activities.id END) as attended_meetings")
             ->first();
 
         $totalCalls = (int) ($activityStats->total_calls ?? 0);
         $answeredCalls = (int) ($activityStats->answered_calls ?? 0);
         $bookedMeetings = (int) ($activityStats->booked_meetings ?? 0);
+        $attendedMeetings = (int) ($activityStats->attended_meetings ?? 0);
 
         $leadQuery = DB::table('leads')
             ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
@@ -196,7 +200,10 @@ class DashboardController extends Controller
                 'lost_percent'=> $outcomeLeads ? round(($lostLeads / $outcomeLeads) * 100, 1) : 0,
             ],
             'meetings' => [
-                'booked' => $bookedMeetings,
+                'booked'       => $bookedMeetings,
+                'assigned'     => $bookedMeetings,
+                'attended'     => $attendedMeetings,
+                'attend_rate'  => $bookedMeetings ? round(($attendedMeetings / $bookedMeetings) * 100, 1) : 0,
             ],
         ]);
     }
@@ -300,8 +307,10 @@ class DashboardController extends Controller
         $todayEnd = Carbon::now()->endOfDay();
         $sourceAccessService = app(SourceAccessService::class);
         $variant = request()->query('variant', 'sdr');
-        $showUsFeatures = $variant === 'sdr';
-        $showMeetings = $variant !== 'lge';
+        $showUsFeatures = in_array($variant, ['sdr', 'lead_clouser'], true);
+        $showMeetings = request()->has('show_meetings')
+            ? request()->boolean('show_meetings')
+            : $variant === 'lead_clouser';
 
         $meetingsCount = 0;
         $todayMeetings = collect();

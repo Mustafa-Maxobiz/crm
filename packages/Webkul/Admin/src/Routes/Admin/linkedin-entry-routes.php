@@ -24,5 +24,7 @@ Route::prefix('linkedin-entries')->controller(LinkedInEntryController::class)->g
 
     Route::post('accepted-import/process', 'acceptedImportProcess')->name('admin.linkedin_entries.accepted_import_process');
 
+    Route::get('{id}/response-check', 'responseCheck')->name('admin.linkedin_entries.response_check');
+
     Route::patch('{id}/status', 'updateStatus')->name('admin.linkedin_entries.update_status');
 });

@@ -785,7 +785,46 @@ class LinkedInEntryController extends Controller
         ]);
     }
 
-    public function updateStatus(Request $request, int $id): RedirectResponse
+    public function responseCheck(int $id): JsonResponse
+    {
+        $this->authorizeAccess('linkedin_entries.edit');
+
+        $entry = $this->findAccessibleEntry($id);
+
+        $leadExists = $this->leadExistsForProfileUrl((string) $entry->url);
+        $canCreateLead = bouncer()->hasPermission('lge_leads.create');
+
+        $createUrl = null;
+
+        if (! $leadExists && $canCreateLead) {
+            $createUrl = route('admin.leads.lge.create', [
+                'source_link' => $entry->url,
+                'person_name' => $entry->name,
+                'title'       => $entry->name,
+                'redirect_to' => 'linkedin_entries',
+            ]);
+        }
+
+        return response()->json([
+            'lead_exists'     => $leadExists,
+            'can_create_lead' => $canCreateLead,
+            'entry'           => [
+                'id'   => $entry->id,
+                'name' => $entry->name,
+                'url'  => $entry->url,
+            ],
+            'create_url'      => $createUrl,
+            'message'         => $leadExists
+                ? 'Lead found for this profile URL. Status can be updated to Response.'
+                : (
+                    $canCreateLead
+                        ? 'No lead found for this profile URL. Create a lead to mark this entry as Response.'
+                        : 'No lead found for this profile URL, and you do not have permission to create LGE leads.'
+                ),
+        ]);
+    }
+
+    public function updateStatus(Request $request, int $id): RedirectResponse|JsonResponse
     {
         $this->authorizeAccess('linkedin_entries.edit');
 
@@ -793,6 +832,47 @@ class LinkedInEntryController extends Controller
             'status' => ['required', 'in:pending,accepted,response'],
         ]);
 
+        $entry = $this->findAccessibleEntry($id);
+
+        // Response is allowed only when a lead already exists for this profile URL.
+        // If no lead exists, status stays unchanged until a lead is created.
+        if ($data['status'] === 'response' && ! $this->leadExistsForProfileUrl((string) $entry->url)) {
+            $message = 'No lead found for this profile URL. Create a lead first to mark this entry as Response.';
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'message'     => $message,
+                    'lead_exists' => false,
+                    'create_url'  => bouncer()->hasPermission('lge_leads.create')
+                        ? route('admin.leads.lge.create', [
+                            'source_link' => $entry->url,
+                            'person_name' => $entry->name,
+                            'title'       => $entry->name,
+                            'redirect_to' => 'linkedin_entries',
+                        ])
+                        : null,
+                ], 422);
+            }
+
+            session()->flash('error', $message);
+
+            return redirect()->back();
+        }
+
+        DB::table('linkedin_entry')
+            ->where('id', $id)
+            ->update([
+                'status'     => $data['status'],
+                'updated_at' => now(),
+            ]);
+
+        session()->flash('success', 'LinkedIn entry status updated.');
+
+        return redirect()->back();
+    }
+
+    protected function findAccessibleEntry(int $id): object
+    {
         $entry = DB::table('linkedin_entry')->where('id', $id)->first();
 
         if (! $entry) {
@@ -806,16 +886,32 @@ class LinkedInEntryController extends Controller
             abort(403);
         }
 
-        DB::table('linkedin_entry')
-            ->where('id', $id)
-            ->update([
-                'status'     => $data['status'],
-                'updated_at' => now(),
-            ]);
+        return $entry;
+    }
 
-        session()->flash('success', 'LinkedIn entry status updated.');
+    protected function leadExistsForProfileUrl(string $url): bool
+    {
+        $url = trim($url);
 
-        return redirect()->back();
+        if ($url === '') {
+            return false;
+        }
+
+        $normalizedUrl = $this->normalizeProfileUrlForDuplicateCheck($this->normalizeUrl($url));
+
+        if ($normalizedUrl === '') {
+            return false;
+        }
+
+        return DB::table('leads')
+            ->whereNull('deleted_at')
+            ->whereNotNull('source_link')
+            ->where('source_link', '!=', '')
+            ->whereRaw(
+                "TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(source_link), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', '')) = ?",
+                [$normalizedUrl]
+            )
+            ->exists();
     }
 
     protected function authorizeAccess(?string $permission = 'linkedin_entries'): void

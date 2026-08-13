@@ -106,54 +106,60 @@
 
         {!! view_render_event('admin.layout.content.before') !!}
 
-        <!-- Page Header Blade Component -->
-        <x-admin::layouts.header />
+        @if (request()->boolean('embed'))
+            <div class="min-h-screen bg-gray-100 p-4 dark:bg-gray-950">
+                {{ $slot }}
+            </div>
+        @else
+            <!-- Page Header Blade Component -->
+            <x-admin::layouts.header />
 
-        <div
-            class="group/container sidebar-collapsed flex gap-4"
-            ref="appLayout"
-        >
-            <!-- Page Sidebar Blade Component -->
-            <x-admin::layouts.sidebar.desktop />
+            <div
+                class="group/container sidebar-collapsed flex gap-4"
+                ref="appLayout"
+            >
+                <!-- Page Sidebar Blade Component -->
+                <x-admin::layouts.sidebar.desktop />
 
-            <div class="flex min-h-[calc(100vh-62px)] max-w-full flex-1 flex-col bg-gray-100 pt-3 transition-all duration-300 dark:bg-gray-950">
-                <!-- Page Content Blade Component -->
-                <div class="px-4 pb-6 ltr:lg:pl-[85px] rtl:lg:pr-[85px]">
-                    {{ $slot }}
-                </div>
+                <div class="flex min-h-[calc(100vh-62px)] max-w-full flex-1 flex-col bg-gray-100 pt-3 transition-all duration-300 dark:bg-gray-950">
+                    <!-- Page Content Blade Component -->
+                    <div class="px-4 pb-6 ltr:lg:pl-[85px] rtl:lg:pr-[85px]">
+                        {{ $slot }}
+                    </div>
 
-                <!-- Powered By -->
-                <div class="mt-auto pt-6">
-                    <div class="border-t bg-white py-5 text-center text-sm font-normal dark:border-gray-800 dark:bg-gray-900 dark:text-white max-md:py-3">
-                        @php
-                            $footerLabel = core()->getConfigData('general.settings.footer.label');
+                    <!-- Powered By -->
+                    <div class="mt-auto pt-6">
+                        <div class="border-t bg-white py-5 text-center text-sm font-normal dark:border-gray-800 dark:bg-gray-900 dark:text-white max-md:py-3">
+                            @php
+                                $footerLabel = core()->getConfigData('general.settings.footer.label');
 
-                            $footerLabel = str_replace([
-                                'Kr'.'ayin',
-                                'Web'.'kul',
-                                'http://www.'.'krayincrm'.'.com',
-                                'https://'.'krayincrm'.'.com',
-                                'https://'.'webkul'.'.com',
-                            ], [
-                                'MaxoBiz',
-                                'MaxoBiz',
-                                'https://maxobiz.com',
-                                'https://maxobiz.com',
-                                'https://maxobiz.com',
-                            ], $footerLabel);
+                                $footerLabel = str_replace([
+                                    'Kr'.'ayin',
+                                    'Web'.'kul',
+                                    'http://www.'.'krayincrm'.'.com',
+                                    'https://'.'krayincrm'.'.com',
+                                    'https://'.'webkul'.'.com',
+                                ], [
+                                    'MaxoBiz',
+                                    'MaxoBiz',
+                                    'https://maxobiz.com',
+                                    'https://maxobiz.com',
+                                    'https://maxobiz.com',
+                                ], $footerLabel);
 
-                            $footerLabel = preg_replace(
-                                '/,\s*an open-source project'.' by\s*<span[^>]*>.*?<\/span>\./',
-                                '.',
-                                $footerLabel
-                            );
-                        @endphp
+                                $footerLabel = preg_replace(
+                                    '/,\s*an open-source project'.' by\s*<span[^>]*>.*?<\/span>\./',
+                                    '.',
+                                    $footerLabel
+                                );
+                            @endphp
 
-                        <p>{!! $footerLabel !!}</p>
+                            <p>{!! $footerLabel !!}</p>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
+        @endif
 
         {!! view_render_event('admin.layout.content.after') !!}
     </div>

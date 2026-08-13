@@ -939,6 +939,23 @@ class LeadController extends Controller
 
         session()->flash('success', trans('admin::app.leads.create-success'));
 
+        if (request()->input('redirect_to') === 'linkedin_entries') {
+            $linkedinEntriesUrl = route('admin.linkedin_entries.index');
+
+            // Break out of the LinkedIn Entries create-lead iframe/modal.
+            if (request()->boolean('embed')) {
+                return response(
+                    '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Lead created</title></head><body>'
+                    .'<script>window.top.location.href = '.json_encode($linkedinEntriesUrl).';</script>'
+                    .'<p>Lead created. Redirecting...</p></body></html>',
+                    200,
+                    ['Content-Type' => 'text/html; charset=UTF-8']
+                );
+            }
+
+            return redirect()->to($linkedinEntriesUrl);
+        }
+
         if (! empty($data['lead_pipeline_id'])) {
             $params['pipeline_id'] = $data['lead_pipeline_id'];
         }

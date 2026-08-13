@@ -701,6 +701,10 @@
                                         <form
                                             method="POST"
                                             action="{{ route('admin.linkedin_entries.update_status', $entry->id) }}"
+                                            data-linkedin-status-form
+                                            data-entry-id="{{ $entry->id }}"
+                                            data-current-status="{{ $entry->status }}"
+                                            data-response-check-url="{{ route('admin.linkedin_entries.response_check', $entry->id) }}"
                                         >
                                             @csrf
                                             @method('PATCH')
@@ -708,7 +712,7 @@
                                             <select
                                                 name="status"
                                                 class="custom-select min-h-[34px] w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-800 dark:bg-gray-900 dark:text-white"
-                                                onchange="this.form.submit()"
+                                                data-linkedin-status-select
                                             >
                                                 @foreach ($statuses as $value => $label)
                                                     <option
@@ -801,6 +805,120 @@
             </div>
         </div>
     </div>
+
+    @pushOnce('scripts')
+        <script>
+            window.addEventListener('load', function () {
+                let activeStatusForm = null;
+
+                const flash = (type, message) => {
+                    if (window.emitter?.emit) {
+                        window.emitter.emit('add-flash', { type, message });
+                    } else {
+                        window.alert(message);
+                    }
+                };
+
+                const resetStatusSelect = (form) => {
+                    if (! form) {
+                        return;
+                    }
+
+                    const select = form.querySelector('[data-linkedin-status-select]');
+                    const currentStatus = form.getAttribute('data-current-status') || '';
+
+                    if (select) {
+                        select.value = currentStatus;
+                    }
+                };
+
+                const openCreateLeadForm = (payload) => {
+                    const createUrl = payload.create_url;
+
+                    if (! createUrl) {
+                        flash('error', payload.message || 'Create lead URL is missing.');
+
+                        return;
+                    }
+
+                    // Open the real Create Lead form with this profile URL prefilled.
+                    window.location.href = createUrl;
+                };
+
+                document.addEventListener('change', async (event) => {
+                    const select = event.target?.closest?.('[data-linkedin-status-select]');
+
+                    if (! select) {
+                        return;
+                    }
+
+                    const form = select.closest('[data-linkedin-status-form]');
+
+                    if (! form) {
+                        return;
+                    }
+
+                    const nextStatus = select.value;
+                    const currentStatus = form.getAttribute('data-current-status') || '';
+
+                    if (nextStatus === currentStatus) {
+                        return;
+                    }
+
+                    if (nextStatus !== 'response') {
+                        form.submit();
+
+                        return;
+                    }
+
+                    // Keep status on previous value until lead exists / is created.
+                    resetStatusSelect(form);
+                    activeStatusForm = form;
+
+                    const checkUrl = form.getAttribute('data-response-check-url');
+
+                    if (! checkUrl) {
+                        flash('error', 'Response check URL is missing.');
+
+                        return;
+                    }
+
+                    try {
+                        const response = await window.axios.get(checkUrl, {
+                            headers: {
+                                Accept: 'application/json',
+                                'X-Requested-With': 'XMLHttpRequest',
+                            },
+                        });
+
+                        const payload = response.data || {};
+
+                        if (payload.lead_exists) {
+                            // Lead already present → update status to Response.
+                            select.value = 'response';
+                            form.submit();
+                            activeStatusForm = null;
+
+                            return;
+                        }
+
+                        if (! payload.can_create_lead || ! payload.create_url) {
+                            flash('error', payload.message || 'You cannot create a lead for this profile URL.');
+                            activeStatusForm = null;
+
+                            return;
+                        }
+
+                        openCreateLeadForm(payload);
+                    } catch (error) {
+                        resetStatusSelect(form);
+                        flash('error', error.response?.data?.message || 'Unable to check lead for this profile URL.');
+                        activeStatusForm = null;
+                    }
+                });
+            });
+        </script>
+    @endPushOnce
 
     @if (bouncer()->hasPermission('linkedin_entries.create') || bouncer()->hasPermission('linkedin_entries.edit'))
         @pushOnce('scripts')

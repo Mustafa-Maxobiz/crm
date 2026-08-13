@@ -257,6 +257,7 @@ return [
         'name'  => 'admin::app.acl.edit',
         'route' => [
             'admin.linkedin_entries.update_status',
+            'admin.linkedin_entries.response_check',
             'admin.linkedin_entries.accepted_import_template',
             'admin.linkedin_entries.accepted_import_start',
             'admin.linkedin_entries.accepted_import_process',

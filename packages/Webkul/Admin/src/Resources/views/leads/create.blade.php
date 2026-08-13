@@ -43,7 +43,9 @@
         <div class="flex flex-col gap-4">
             <div class="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
                 <div class="flex flex-col gap-2">
-                    <x-admin::breadcrumbs name="leads.create" />
+                    @unless (request()->boolean('embed'))
+                        <x-admin::breadcrumbs name="leads.create" />
+                    @endunless
 
                     <div class="text-xl font-bold dark:text-white">
                         @lang('admin::app.leads.create.title')
@@ -87,6 +89,22 @@
                     id="lead_pipeline_id"
                     name="lead_pipeline_id"
                     value="{{ request('pipeline_id') }}"
+                />
+            @endif
+
+            @if (request('redirect_to') === 'linkedin_entries')
+                <input
+                    type="hidden"
+                    name="redirect_to"
+                    value="linkedin_entries"
+                />
+            @endif
+
+            @if (request()->boolean('embed'))
+                <input
+                    type="hidden"
+                    name="embed"
+                    value="1"
                 />
             @endif
 
@@ -246,6 +264,9 @@
                                             'entity_type' => 'leads',
                                             'quick_add'   => 1
                                         ])"
+                                        :entity="[
+                                            'source_link' => old('source_link', request('source_link')),
+                                        ]"
                                     />
                                 </div>
 
@@ -397,6 +418,9 @@
                         availableSubSources: [],
                         selectedSubSource: '',
                         scheduleFollowup: false,
+                        person: {
+                            name: @json(old('person.name', request('person_name', ''))),
+                        },
                         sourceKey: 0,
                         isLgeCreate: @json(lead_variant() === 'lge'),
                         linkedInSourceLinkCheckUrl: @json(lead_variant() === 'lge' ? route('admin.leads.lge.source_link.check') : null),
@@ -448,6 +472,17 @@
 
                             if (sourceLinkInput?.value?.trim()) {
                                 this.handleLinkedInSourceLinkInput(sourceLinkInput);
+                            }
+
+                            const prefilledTitle = @json(old('title', request('title', '')));
+
+                            if (prefilledTitle) {
+                                const titleInput = document.querySelector('[name="title"]');
+
+                                if (titleInput && ! titleInput.value) {
+                                    titleInput.value = prefilledTitle;
+                                    titleInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                }
                             }
                         });
                     }
