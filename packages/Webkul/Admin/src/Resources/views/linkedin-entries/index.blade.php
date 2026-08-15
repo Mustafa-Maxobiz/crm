@@ -139,7 +139,7 @@
                                         class="secondary-button"
                                         @click="$refs.linkedinAcceptedImportModal.close()"
                                     >
-                                        Cancel
+                                        Close
                                     </button>
 
                                     <button
@@ -300,14 +300,6 @@
                                             >
                                                 Skip All
                                             </button>
-
-                                            <button
-                                                id="linkedin-entry-import-retry"
-                                                type="button"
-                                                class="primary-button !min-h-[34px] !px-3 text-xs"
-                                            >
-                                                Retry Corrected
-                                            </button>
                                         </div>
                                     </div>
 
@@ -340,7 +332,7 @@
                                     class="secondary-button"
                                     @click="$refs.linkedinEntryImportModal.close()"
                                 >
-                                    Cancel
+                                    Close
                                 </button>
 
                                 <button
@@ -350,6 +342,14 @@
                                     class="primary-button"
                                 >
                                     Upload Entries
+                                </button>
+
+                                <button
+                                    id="linkedin-entry-import-retry"
+                                    type="button"
+                                    class="primary-button hidden"
+                                >
+                                    Retry Correct
                                 </button>
                             </div>
                         </x-slot>
@@ -1028,6 +1028,31 @@
                     });
                 };
 
+                const setLinkedinImportFooterMode = (mode) => {
+                    const elements = linkedinImportElements();
+
+                    if (! elements.submit || ! elements.retry) {
+                        return;
+                    }
+
+                    if (mode === 'retry') {
+                        elements.submit.classList.add('hidden');
+                        elements.retry.classList.remove('hidden');
+
+                        return;
+                    }
+
+                    if (mode === 'done') {
+                        elements.submit.classList.add('hidden');
+                        elements.retry.classList.add('hidden');
+
+                        return;
+                    }
+
+                    elements.retry.classList.add('hidden');
+                    elements.submit.classList.remove('hidden');
+                };
+
                 const renderLinkedinFailedRows = (rows) => {
                     const elements = linkedinImportElements();
                     failedLinkedinImportRows = Array.isArray(rows) ? rows : [];
@@ -1063,6 +1088,8 @@
                             </tr>
                         `;
                     }).join('');
+
+                    setLinkedinImportFooterMode('retry');
                 };
 
                 const renderLinkedinImportOverview = (elements, result) => {
@@ -1174,8 +1201,10 @@
                         renderLinkedinFailedRows(result.failed_rows || []);
 
                         if (Number(result.failed || 0) > 0) {
+                            setLinkedinImportFooterMode('retry');
                             linkedinFlash('warning', `Retry finished with ${result.failed} row(s) still needing correction.`);
                         } else {
+                            setLinkedinImportFooterMode('done');
                             linkedinFlash('success', result.message || 'Corrected rows imported.');
                         }
                     } catch (error) {
@@ -1234,8 +1263,10 @@
 
                     if (failed > 0) {
                         linkedinFlash('warning', `Import finished with ${failed} failed row(s). Created ${result.created}, skipped ${result.skipped}.`);
+                        setLinkedinImportFooterMode('retry');
                     } else {
                         linkedinFlash('success', `Import finished. Created ${result.created}, skipped ${result.skipped}.`);
+                        setLinkedinImportFooterMode('done');
                     }
 
                     elements.submit.disabled = false;
@@ -1294,7 +1325,32 @@
 
                     elements.submit.disabled = false;
                     elements.submit.classList.remove('opacity-70', 'cursor-not-allowed');
+                    elements.submit.classList.add('hidden');
                 };
+
+                document.addEventListener('change', (event) => {
+                    if (event.target?.id === 'linkedin-accepted-import-file') {
+                        const elements = linkedinAcceptedImportElements();
+
+                        elements.submit?.classList.remove('hidden');
+                        elements.overview?.classList.add('hidden');
+                        elements.missing?.classList.add('hidden');
+                        elements.progress?.classList.add('hidden');
+
+                        return;
+                    }
+
+                    if (event.target?.id !== 'linkedin-entry-import-file') {
+                        return;
+                    }
+
+                    const elements = linkedinImportElements();
+
+                    renderLinkedinFailedRows([]);
+                    setLinkedinImportFooterMode('upload');
+                    elements.overview?.classList.add('hidden');
+                    elements.progress?.classList.add('hidden');
+                });
 
                 document.addEventListener('submit', async (event) => {
                     if (event.target?.id === 'linkedin-accepted-import-form') {
@@ -1450,6 +1506,11 @@
                         if (! Number.isNaN(index)) {
                             failedLinkedinImportRows.splice(index, 1);
                             renderLinkedinFailedRows(failedLinkedinImportRows);
+
+                            if (! failedLinkedinImportRows.length) {
+                                setLinkedinImportFooterMode('done');
+                            }
+
                             linkedinFlash('success', 'Row skipped from retry list.');
                         }
 
@@ -1461,6 +1522,7 @@
                         event.stopPropagation();
 
                         renderLinkedinFailedRows([]);
+                        setLinkedinImportFooterMode('done');
                         linkedinFlash('success', 'All failed rows skipped.');
 
                         return;

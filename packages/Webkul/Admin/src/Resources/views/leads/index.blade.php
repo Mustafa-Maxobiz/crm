@@ -57,6 +57,7 @@
                     @endphp
 
                     <x-admin::modal
+                        ref="leadImportModal"
                         size="extra-large"
                         :is-active="request('action') === 'import'"
                     >
@@ -272,14 +273,6 @@
                                             >
                                                 Remove All
                                             </button>
-
-                                            <button
-                                                id="lead-import-retry"
-                                                type="button"
-                                                class="primary-button !min-h-[34px] !px-3 text-xs"
-                                            >
-                                                Fix &amp; Re-import Failed
-                                            </button>
                                         </div>
                                     </div>
 
@@ -331,14 +324,32 @@
                         </x-slot>
 
                         <x-slot:footer>
-                            <button
-                                id="lead-import-submit"
-                                type="submit"
-                                form="lead-import-form"
-                                class="primary-button"
-                            >
-                                Upload Leads
-                            </button>
+                            <div class="flex w-full items-center justify-end gap-3">
+                                <button
+                                    type="button"
+                                    class="secondary-button"
+                                    @click="$refs.leadImportModal.close()"
+                                >
+                                    Close
+                                </button>
+
+                                <button
+                                    id="lead-import-submit"
+                                    type="submit"
+                                    form="lead-import-form"
+                                    class="primary-button"
+                                >
+                                    Upload Leads
+                                </button>
+
+                                <button
+                                    id="lead-import-retry"
+                                    type="button"
+                                    class="primary-button hidden"
+                                >
+                                    Retry Correct
+                                </button>
+                            </div>
                         </x-slot>
                     </x-admin::modal>
                 @endif
@@ -509,6 +520,7 @@
                 renderFailedRows(failedImportRows, importLeadSourceId);
 
                 if (! failedImportRows.length) {
+                    setLeadImportFooterMode('done');
                     flash('success', 'All failed rows removed from correction list.');
                 }
             };
@@ -523,6 +535,7 @@
                 }
 
                 renderFailedRows([], importLeadSourceId);
+                setLeadImportFooterMode('done');
                 flash('success', 'Failed rows removed from correction list.');
             };
 
@@ -567,6 +580,31 @@
                     topScroll.scrollLeft = tableScroll.scrollLeft;
                     syncing = false;
                 });
+            };
+
+            const setLeadImportFooterMode = (mode) => {
+                const elements = importElements();
+
+                if (! elements.submit || ! elements.retry) {
+                    return;
+                }
+
+                if (mode === 'retry') {
+                    elements.submit.classList.add('hidden');
+                    elements.retry.classList.remove('hidden');
+
+                    return;
+                }
+
+                if (mode === 'done') {
+                    elements.submit.classList.add('hidden');
+                    elements.retry.classList.add('hidden');
+
+                    return;
+                }
+
+                elements.retry.classList.add('hidden');
+                elements.submit.classList.remove('hidden');
             };
 
             const renderFailedRows = (rows, sourceId) => {
@@ -620,6 +658,8 @@
                 requestAnimationFrame(() => {
                     syncFailedTableScrollbars();
                 });
+
+                setLeadImportFooterMode('retry');
             };
 
             const collectFailedRowsFromTable = () => {
@@ -672,16 +712,17 @@
                     setProgress(
                         elements,
                         percent,
-                        `Imported ${result.processed} of ${total} rows. Created ${result.created}.`
+                        `Imported ${result.processed} of ${total} rows. Created ${result.created}. Skipped duplicates ${result.skipped || 0}.`
                     );
                 } while (! result.done);
 
                 const failedCount = result.failed_rows?.length || 0;
+                const skippedCount = Number(result.skipped || 0);
 
                 setProgress(
                     elements,
                     100,
-                    `${result.message} Processed ${result.processed} of ${total} rows. Created ${result.created}. Failed ${failedCount}.`,
+                    `${result.message} Processed ${result.processed} of ${total} rows. Created ${result.created}. Skipped duplicates ${skippedCount}. Failed ${failedCount}.`,
                     failedCount > 0
                 );
 
@@ -690,14 +731,29 @@
                     flash('warning', `${result.message} ${failedCount} row(s) failed. Fix them below and retry.`);
                     elements.submit.disabled = false;
                     elements.submit.classList.remove('opacity-70', 'cursor-not-allowed');
+                    setLeadImportFooterMode('retry');
 
                     return;
                 }
 
                 renderFailedRows([], null);
-                flash('success', result.message);
+                setLeadImportFooterMode('done');
+                flash(skippedCount > 0 ? 'warning' : 'success', result.message);
                 setTimeout(() => window.location.reload(), 900);
             };
+
+            document.addEventListener('change', (event) => {
+                if (event.target?.id !== 'lead-import-file') {
+                    return;
+                }
+
+                renderFailedRows([], importLeadSourceId);
+                setLeadImportFooterMode('upload');
+
+                const elements = importElements();
+
+                elements.progress?.classList.add('hidden');
+            });
 
             document.addEventListener('submit', async (event) => {
                 if (event.target?.id !== 'lead-import-form') {
@@ -862,6 +918,7 @@
 
                     const result = response.data;
                     const stillFailed = result.failed_rows || [];
+                    const skippedCount = Number(result.skipped || 0);
 
                     renderFailedRows(stillFailed, sourceId);
 
@@ -873,9 +930,11 @@
                             true
                         );
                         flash('warning', `${result.message || 'Retry finished.'} ${stillFailed.length} row(s) still need fixes.`);
+                        setLeadImportFooterMode('retry');
                     } else {
                         setProgress(elements, 100, result.message || 'All failed rows imported successfully.');
-                        flash('success', result.message || 'All failed rows imported successfully.');
+                        setLeadImportFooterMode('done');
+                        flash(skippedCount > 0 ? 'warning' : 'success', result.message || 'All failed rows imported successfully.');
                         setTimeout(() => window.location.reload(), 900);
                     }
                 } catch (error) {

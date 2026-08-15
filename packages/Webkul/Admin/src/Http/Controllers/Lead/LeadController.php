@@ -286,8 +286,10 @@ class LeadController extends Controller
         }
 
         $created = 0;
+        $skipped = 0;
         $errors = [];
         $assignIndex = 0;
+        $seenDuplicateKeys = [];
 
         foreach ($rows as $index => $row) {
             $rowNumber = $index + 2;
@@ -301,6 +303,14 @@ class LeadController extends Controller
 
             if (! empty($rowErrors)) {
                 $errors[] = 'Row '.$rowNumber.': '.implode(' ', $rowErrors);
+
+                continue;
+            }
+
+            $duplicateMessage = $this->importDuplicateSkipMessage($rowData, $seenDuplicateKeys);
+
+            if ($duplicateMessage) {
+                $skipped++;
 
                 continue;
             }
@@ -326,14 +336,13 @@ class LeadController extends Controller
                 Event::dispatch('lead.create.after', $lead);
 
                 $created++;
+                $assignIndex++;
             } catch (Throwable $exception) {
                 $errors[] = 'Row '.$rowNumber.': '.$exception->getMessage();
             }
-
-            $assignIndex++;
         }
 
-        return $this->importResponse($created, $errors, $created || empty($errors) ? 200 : 422);
+        return $this->importResponse($created, $errors, $created || empty($errors) ? 200 : 422, $skipped);
     }
 
     /**
@@ -415,13 +424,16 @@ class LeadController extends Controller
         }
 
         file_put_contents($this->pendingImportPath($token), json_encode([
-            'lead_source_id'     => $sourceId,
-            'assignee_user_ids'  => $assignment['assignee_user_ids'],
-            'industry_id'        => $assignment['industry_id'],
-            'rows'               => $importRows,
-            'created'            => 0,
-            'errors'             => [],
-            'failed'             => [],
+            'lead_source_id'       => $sourceId,
+            'assignee_user_ids'    => $assignment['assignee_user_ids'],
+            'industry_id'          => $assignment['industry_id'],
+            'rows'                 => $importRows,
+            'created'              => 0,
+            'skipped'              => 0,
+            'assign_index'         => 0,
+            'seen_duplicate_keys'  => [],
+            'errors'               => [],
+            'failed'               => [],
         ], JSON_THROW_ON_ERROR));
 
         return response()->json([
@@ -472,7 +484,21 @@ class LeadController extends Controller
             $payload['failed'] = [];
         }
 
-        foreach ($chunk as $chunkIndex => $row) {
+        if (! isset($payload['seen_duplicate_keys']) || ! is_array($payload['seen_duplicate_keys'])) {
+            $payload['seen_duplicate_keys'] = [];
+        }
+
+        if (! isset($payload['skipped'])) {
+            $payload['skipped'] = 0;
+        }
+
+        if (! isset($payload['assign_index'])) {
+            $payload['assign_index'] = 0;
+        }
+
+        $seenDuplicateKeys = $payload['seen_duplicate_keys'];
+
+        foreach ($chunk as $row) {
             $rowData = $row['data'] ?? [];
             $rowErrors = $this->validateImportRow($rowData, ! empty($assigneeUserIds));
 
@@ -488,13 +514,21 @@ class LeadController extends Controller
                 continue;
             }
 
+            $duplicateMessage = $this->importDuplicateSkipMessage($rowData, $seenDuplicateKeys);
+
+            if ($duplicateMessage) {
+                $payload['skipped']++;
+
+                continue;
+            }
+
             try {
                 Event::dispatch('lead.create.before');
 
                 $lead = $this->leadRepository->create($this->prepareImportedLeadData(
                     $rowData,
                     $sourceId,
-                    $this->assigneeForImportIndex($assigneeUserIds, $offset + $chunkIndex),
+                    $this->assigneeForImportIndex($assigneeUserIds, (int) $payload['assign_index']),
                     $industryId
                 ));
 
@@ -509,6 +543,7 @@ class LeadController extends Controller
                 Event::dispatch('lead.create.after', $lead);
 
                 $payload['created']++;
+                $payload['assign_index']++;
             } catch (Throwable $exception) {
                 $payload['errors'][] = 'Row '.$row['row_number'].': '.$exception->getMessage();
                 $payload['failed'][] = [
@@ -518,6 +553,8 @@ class LeadController extends Controller
                 ];
             }
         }
+
+        $payload['seen_duplicate_keys'] = array_values($seenDuplicateKeys);
 
         $processed = min($offset + count($chunk), $total);
         $done = $processed >= $total;
@@ -533,11 +570,13 @@ class LeadController extends Controller
             'processed'      => $processed,
             'total'          => $total,
             'created'        => $payload['created'],
+            'skipped'        => $payload['skipped'],
             'errors'         => $payload['errors'],
             'failed_rows'    => $done ? array_values($failedRows) : [],
             'lead_source_id' => $sourceId,
             'done'           => $done,
-            'message'        => $payload['created'].' lead'.($payload['created'] === 1 ? '' : 's').' imported.',
+            'message'        => $payload['created'].' lead'.($payload['created'] === 1 ? '' : 's').' imported.'
+                .($payload['skipped'] ? ' '.$payload['skipped'].' duplicate'.($payload['skipped'] === 1 ? '' : 's').' skipped.' : ''),
         ]);
     }
 
@@ -568,9 +607,12 @@ class LeadController extends Controller
         }
 
         $created = 0;
+        $skipped = 0;
         $failedRows = [];
+        $assignIndex = 0;
+        $seenDuplicateKeys = [];
 
-        foreach ($data['rows'] as $retryIndex => $row) {
+        foreach ($data['rows'] as $row) {
             $rowNumber = (int) $row['row_number'];
             $rowData = $this->normalizeRetriedImportRow($row['data'] ?? []);
             $rowErrors = $this->validateImportRow($rowData, ! empty($assignment['assignee_user_ids']));
@@ -585,13 +627,21 @@ class LeadController extends Controller
                 continue;
             }
 
+            $duplicateMessage = $this->importDuplicateSkipMessage($rowData, $seenDuplicateKeys);
+
+            if ($duplicateMessage) {
+                $skipped++;
+
+                continue;
+            }
+
             try {
                 Event::dispatch('lead.create.before');
 
                 $lead = $this->leadRepository->create($this->prepareImportedLeadData(
                     $rowData,
                     $sourceId,
-                    $this->assigneeForImportIndex($assignment['assignee_user_ids'], $retryIndex),
+                    $this->assigneeForImportIndex($assignment['assignee_user_ids'], $assignIndex),
                     $assignment['industry_id']
                 ));
 
@@ -606,6 +656,7 @@ class LeadController extends Controller
                 Event::dispatch('lead.create.after', $lead);
 
                 $created++;
+                $assignIndex++;
             } catch (Throwable $exception) {
                 $failedRows[] = [
                     'row_number' => $rowNumber,
@@ -617,9 +668,11 @@ class LeadController extends Controller
 
         return response()->json([
             'created'        => $created,
+            'skipped'        => $skipped,
             'failed_rows'    => $failedRows,
             'lead_source_id' => $sourceId,
-            'message'        => $created.' lead'.($created === 1 ? '' : 's').' imported from retry.',
+            'message'        => $created.' lead'.($created === 1 ? '' : 's').' imported from retry.'
+                .($skipped ? ' '.$skipped.' duplicate'.($skipped === 1 ? '' : 's').' skipped.' : ''),
         ], empty($failedRows) ? 200 : 422);
     }
 
@@ -3048,6 +3101,133 @@ class LeadController extends Controller
     }
 
     /**
+     * Skip when company + email + phone all match a prior row or an existing lead.
+     *
+     * @param  array<int, string>  $seenDuplicateKeys
+     */
+    protected function importDuplicateSkipMessage(array $rowData, array &$seenDuplicateKeys): ?string
+    {
+        $key = $this->importDuplicateKeyFromRow($rowData);
+
+        if (! $key) {
+            return null;
+        }
+
+        if (in_array($key, $seenDuplicateKeys, true)) {
+            return 'skipped duplicate lead (same company, email, and phone in this file).';
+        }
+
+        if ($this->leadExistsWithCompanyEmailPhone($rowData)) {
+            $seenDuplicateKeys[] = $key;
+
+            return 'skipped duplicate lead (same company, email, and phone already exist).';
+        }
+
+        $seenDuplicateKeys[] = $key;
+
+        return null;
+    }
+
+    protected function importDuplicateKeyFromRow(array $rowData): ?string
+    {
+        $company = $this->normalizeImportCompanyName(
+            $rowData['companies'] ?? $rowData['title'] ?? $rowData['company'] ?? null
+        );
+        $email = $this->normalizeImportEmail($rowData['email'] ?? null);
+        $phone = $this->normalizeImportPhone($rowData['phone'] ?? null);
+
+        if ($company === null || $email === null || $phone === null) {
+            return null;
+        }
+
+        return $company.'|'.$email.'|'.$phone;
+    }
+
+    protected function normalizeImportCompanyName($value): ?string
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        $normalized = strtolower(trim(preg_replace('/\s+/', ' ', (string) $value)));
+
+        return $normalized !== '' ? $normalized : null;
+    }
+
+    protected function normalizeImportEmail($value): ?string
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        $normalized = strtolower(trim((string) $value));
+
+        return $normalized !== '' ? $normalized : null;
+    }
+
+    protected function normalizeImportPhone($value): ?string
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        $digits = preg_replace('/\D+/', '', (string) $value);
+
+        if ($digits === null || $digits === '') {
+            return null;
+        }
+
+        return $digits;
+    }
+
+    protected function leadExistsWithCompanyEmailPhone(array $rowData): bool
+    {
+        $company = $this->normalizeImportCompanyName(
+            $rowData['companies'] ?? $rowData['title'] ?? $rowData['company'] ?? null
+        );
+        $email = $this->normalizeImportEmail($rowData['email'] ?? null);
+        $phone = $this->normalizeImportPhone($rowData['phone'] ?? null);
+
+        if ($company === null || $email === null || $phone === null) {
+            return false;
+        }
+
+        $organizationIds = DB::table('organizations')
+            ->whereRaw('LOWER(TRIM(name)) = ?', [$company])
+            ->pluck('id');
+
+        if ($organizationIds->isEmpty()) {
+            return false;
+        }
+
+        $candidates = DB::table('leads')
+            ->join('persons', 'leads.person_id', '=', 'persons.id')
+            ->whereNull('leads.deleted_at')
+            ->whereIn('leads.organization_id', $organizationIds->all())
+            ->whereNotNull('leads.person_id')
+            ->select('persons.emails', 'persons.contact_numbers')
+            ->get();
+
+        foreach ($candidates as $candidate) {
+            $emails = is_string($candidate->emails)
+                ? (json_decode($candidate->emails, true) ?: [])
+                : (array) $candidate->emails;
+            $phones = is_string($candidate->contact_numbers)
+                ? (json_decode($candidate->contact_numbers, true) ?: [])
+                : (array) $candidate->contact_numbers;
+
+            $candidateEmail = $this->normalizeImportEmail($emails[0]['value'] ?? null);
+            $candidatePhone = $this->normalizeImportPhone($phones[0]['value'] ?? null);
+
+            if ($candidateEmail === $email && $candidatePhone === $phone) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @deprecated Bulk import now uses the source selected in the import modal.
      */
     protected function resolveColdCallSourceId(): int
@@ -3180,14 +3360,19 @@ class LeadController extends Controller
         return Carbon::parse($value);
     }
 
-    protected function importResponse(int $created, array $errors = [], int $status = 200): RedirectResponse|JsonResponse
+    protected function importResponse(int $created, array $errors = [], int $status = 200, int $skipped = 0): RedirectResponse|JsonResponse
     {
         $message = $created.' lead'.($created === 1 ? '' : 's').' imported.';
+
+        if ($skipped > 0) {
+            $message .= ' '.$skipped.' duplicate'.($skipped === 1 ? '' : 's').' skipped.';
+        }
 
         if (request()->ajax() || request()->wantsJson()) {
             return response()->json([
                 'message' => $message,
                 'created' => $created,
+                'skipped' => $skipped,
                 'errors'  => $errors,
             ], $status);
         }
