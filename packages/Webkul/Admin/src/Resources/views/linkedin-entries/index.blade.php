@@ -15,9 +15,14 @@
                 </p>
             </div>
 
-            @if (bouncer()->hasPermission('linkedin_entries.create') || bouncer()->hasPermission('linkedin_entries.edit'))
+            @if (
+                bouncer()->hasPermission('linkedin_entries.create')
+                || bouncer()->hasPermission('linkedin_entries.bulk_create')
+                || bouncer()->hasPermission('linkedin_entries.edit')
+                || bouncer()->hasPermission('linkedin_entries.bulk_change_status')
+            )
                 <div class="flex items-center gap-3">
-                    @if (bouncer()->hasPermission('linkedin_entries.edit'))
+                    @if (bouncer()->hasPermission('linkedin_entries.bulk_change_status'))
                         <x-admin::modal ref="linkedinAcceptedImportModal">
                             <x-slot:toggle>
                                 <button
@@ -150,7 +155,7 @@
                         </x-admin::modal>
                     @endif
 
-                    @if (bouncer()->hasPermission('linkedin_entries.create'))
+                    @if (bouncer()->hasPermission('linkedin_entries.bulk_create'))
                         <x-admin::modal
                             ref="linkedinEntryImportModal"
                             :is-active="$errors->has('file') || $errors->has('import_user_id')"
@@ -349,7 +354,9 @@
                             </div>
                         </x-slot>
                         </x-admin::modal>
+                    @endif
 
+                    @if (bouncer()->hasPermission('linkedin_entries.create'))
                     <x-admin::modal
                         ref="linkedinEntryCreateModal"
                         :is-active="$errors->has('user_id') || $errors->has('name') || $errors->has('url')"
@@ -920,7 +927,10 @@
         </script>
     @endPushOnce
 
-    @if (bouncer()->hasPermission('linkedin_entries.create') || bouncer()->hasPermission('linkedin_entries.edit'))
+    @if (
+        bouncer()->hasPermission('linkedin_entries.bulk_create')
+        || bouncer()->hasPermission('linkedin_entries.bulk_change_status')
+    )
         @pushOnce('scripts')
             <script type="module">
                 const linkedinImportStartUrl = @json(route('admin.linkedin_entries.import_start'));
@@ -928,6 +938,8 @@
                 const linkedinImportRetryUrl = @json(route('admin.linkedin_entries.import_retry'));
                 const linkedinAcceptedImportStartUrl = @json(route('admin.linkedin_entries.accepted_import_start'));
                 const linkedinAcceptedImportProcessUrl = @json(route('admin.linkedin_entries.accepted_import_process'));
+                const canBulkCreateLinkedinEntries = @json(bouncer()->hasPermission('linkedin_entries.bulk_create'));
+                const canBulkChangeLinkedinStatus = @json(bouncer()->hasPermission('linkedin_entries.bulk_change_status'));
                 const linkedinImportMaxFileSize = 10 * 1024 * 1024;
                 let failedLinkedinImportRows = [];
 
@@ -1289,6 +1301,12 @@
                         event.preventDefault();
                         event.stopPropagation();
 
+                        if (! canBulkChangeLinkedinStatus) {
+                            linkedinFlash('error', 'You do not have permission to bulk change LinkedIn status.');
+
+                            return;
+                        }
+
                         const elements = linkedinAcceptedImportElements();
 
                         if (! elements.file?.files?.length) {
@@ -1353,6 +1371,12 @@
 
                     event.preventDefault();
                     event.stopPropagation();
+
+                    if (! canBulkCreateLinkedinEntries) {
+                        linkedinFlash('error', 'You do not have permission to bulk create LinkedIn entries.');
+
+                        return;
+                    }
 
                     const elements = linkedinImportElements();
 

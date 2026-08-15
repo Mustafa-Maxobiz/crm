@@ -245,24 +245,36 @@ return [
         'name'  => 'admin::app.acl.create',
         'route' => [
             'admin.linkedin_entries.store',
+        ],
+        'sort'  => 1,
+    ], [
+        'key'   => 'linkedin_entries.bulk_create',
+        'name'  => 'admin::app.acl.bulk-create',
+        'route' => [
             'admin.linkedin_entries.import',
             'admin.linkedin_entries.import_template',
             'admin.linkedin_entries.import_start',
             'admin.linkedin_entries.import_process',
             'admin.linkedin_entries.import_retry',
         ],
-        'sort'  => 1,
+        'sort'  => 2,
     ], [
         'key'   => 'linkedin_entries.edit',
         'name'  => 'admin::app.acl.edit',
         'route' => [
             'admin.linkedin_entries.update_status',
             'admin.linkedin_entries.response_check',
+        ],
+        'sort'  => 3,
+    ], [
+        'key'   => 'linkedin_entries.bulk_change_status',
+        'name'  => 'admin::app.acl.bulk-change-status',
+        'route' => [
             'admin.linkedin_entries.accepted_import_template',
             'admin.linkedin_entries.accepted_import_start',
             'admin.linkedin_entries.accepted_import_process',
         ],
-        'sort'  => 2,
+        'sort'  => 4,
     ], [
         'key'   => 'smrtphone',
         'name'  => 'admin::app.acl.smrtphone',
