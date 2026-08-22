@@ -237,6 +237,33 @@
 
                                 <div class="grid gap-1">
                                     <label class="text-sm font-medium text-gray-800 dark:text-white">
+                                        LinkedIn Working Profile *
+                                    </label>
+
+                                    <select
+                                        name="import_linkedin_profile_id"
+                                        class="custom-select min-h-[39px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-800 dark:bg-gray-900 dark:text-white"
+                                        required
+                                    >
+                                        <option value="">Select LinkedIn Profile</option>
+
+                                        @foreach ($availableProfiles as $profile)
+                                            <option
+                                                value="{{ $profile['value'] }}"
+                                                @selected((string) old('import_linkedin_profile_id') === (string) $profile['value'])
+                                            >
+                                                {{ $profile['label'] }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+
+                                    @error('import_linkedin_profile_id')
+                                        <p class="text-xs italic text-red-600">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <div class="grid gap-1">
+                                    <label class="text-sm font-medium text-gray-800 dark:text-white">
                                         Upload File *
                                     </label>
 
@@ -413,6 +440,33 @@
                                     @enderror
                                 </div>
                             @endif
+
+                            <div class="grid gap-1">
+                                <label class="text-sm font-medium text-gray-800 dark:text-white">
+                                    LinkedIn Working Profile *
+                                </label>
+
+                                <select
+                                    name="linkedin_profile_id"
+                                    class="custom-select min-h-[39px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-800 dark:bg-gray-900 dark:text-white"
+                                    required
+                                >
+                                    <option value="">Select LinkedIn Profile</option>
+
+                                    @foreach ($availableProfiles as $profile)
+                                        <option
+                                            value="{{ $profile['value'] }}"
+                                            @selected((string) old('linkedin_profile_id') === (string) $profile['value'])
+                                        >
+                                            {{ $profile['label'] }}
+                                        </option>
+                                    @endforeach
+                                </select>
+
+                                @error('linkedin_profile_id')
+                                    <p class="text-xs italic text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
 
                             <div class="grid gap-1">
                                 <label class="text-sm font-medium text-gray-800 dark:text-white">
@@ -620,6 +674,28 @@
 
                             <div class="grid gap-1">
                                 <label class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                                    LinkedIn Profile
+                                </label>
+
+                                <select
+                                    name="linkedin_profile_id"
+                                    class="custom-select min-h-[39px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-800 dark:bg-gray-900 dark:text-white"
+                                >
+                                    <option value="">All Profiles</option>
+
+                                    @foreach ($availableProfiles as $profile)
+                                        <option
+                                            value="{{ $profile['value'] }}"
+                                            @selected((string) $filters['linkedin_profile_id'] === (string) $profile['value'])
+                                        >
+                                            {{ $profile['label'] }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            <div class="grid gap-1">
+                                <label class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
                                     Created From
                                 </label>
 
@@ -665,12 +741,13 @@
             </div>
 
             <div class="overflow-x-auto">
-                <table class="w-full {{ $isAdmin ? 'min-w-[900px]' : 'min-w-[720px]' }} border-collapse text-left">
+                <table class="w-full {{ $isAdmin ? 'min-w-[1100px]' : 'min-w-[900px]' }} border-collapse text-left">
                     <thead>
                         <tr class="border-b border-gray-200 bg-gray-50 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
                             <th class="w-[90px] px-4 py-3 font-semibold">ID</th>
                             <th class="w-[220px] px-4 py-3 font-semibold">User Name</th>
                             <th class="px-4 py-3 font-semibold">Profile URL</th>
+                            <th class="w-[180px] px-4 py-3 font-semibold">Working Profile</th>
                             @if ($isAdmin)
                                 <th class="w-[180px] px-4 py-3 font-semibold">Entry Owner</th>
                             @endif
@@ -697,6 +774,10 @@
                                     >
                                         {{ $entry->url }}
                                     </a>
+                                </td>
+
+                                <td class="px-4 py-3 align-middle">
+                                    {{ $entry->working_profile_name ?: '--' }}
                                 </td>
 
                                 @if ($isAdmin)

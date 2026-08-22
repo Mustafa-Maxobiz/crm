@@ -3,6 +3,7 @@
 namespace Webkul\Admin\Http\Controllers\Activity;
 
 use Carbon\Carbon;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -22,6 +23,7 @@ use Webkul\Attribute\Repositories\AttributeRepository;
 use Webkul\Email\Repositories\EmailRepository;
 use Webkul\Lead\Repositories\LeadRepository;
 use Webkul\Lead\Services\FollowupScheduleService;
+use Webkul\Lead\Services\MeetingHandoffService;
 
 class ActivityController extends Controller
 {
@@ -37,6 +39,7 @@ class ActivityController extends Controller
         protected LeadRepository $leadRepository,
         protected EmailRepository $emailRepository,
         protected FollowupScheduleService $followupScheduleService,
+        protected MeetingHandoffService $meetingHandoffService,
     ) {}
 
     /**
@@ -184,11 +187,12 @@ class ActivityController extends Controller
                     'required',
                     'integer',
                     function ($attribute, $value, $fail) {
-                        if (! $this->isActiveMeetingOwnerId((int) $value)) {
+                        if (! $this->meetingHandoffService->isActiveMeetingOwnerId((int) $value)) {
                             $fail('Please select a valid Admin or Lead user.');
                         }
                     },
                 ],
+                'lead_pipeline_stage_id' => 'required|integer',
             ]);
         }
 
@@ -232,6 +236,39 @@ class ActivityController extends Controller
         $data = $this->normalizeActivityStatusData(request()->all());
 
         $data = $this->prepareMeetingActivityData($data);
+
+        if ($this->isCallingRoleStageMeetingRequest()) {
+            try {
+                $this->meetingHandoffService->completeHandoff(
+                    auth()->guard('user')->user(),
+                    (int) request('lead_id'),
+                    (int) request('lead_pipeline_stage_id'),
+                    (int) request('assigned_user_id'),
+                    $data,
+                );
+            } catch (AuthorizationException $exception) {
+                if (request()->ajax()) {
+                    return response()->json([
+                        'message' => $exception->getMessage(),
+                    ], 403);
+                }
+
+                session()->flash('error', $exception->getMessage());
+
+                return redirect()->back();
+            }
+
+            if (request()->ajax()) {
+                return response()->json([
+                    'message' => trans('admin::app.activities.create-success'),
+                ]);
+            }
+
+            session()->flash('success', trans('admin::app.activities.create-success'));
+
+            return redirect()->back();
+        }
+
         $activityOwnerId = $this->activityOwnerIdForCreate();
 
         $activity = $this->activityRepository->create(array_merge($data, [

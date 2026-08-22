@@ -735,6 +735,8 @@
 
                     this.isMeetingStoring = true;
 
+                    const pendingStage = this.pendingMeetingStage;
+
                     this.$axios
                         .post("{{ route('admin.activities.store') }}", {
                             ...params,
@@ -742,6 +744,9 @@
                             activity_status: 'scheduled',
                             stage_meeting: 1,
                             lead_id: this.lead.id,
+                            ...(this.isCallingRoleLeadVariant && pendingStage ? {
+                                lead_pipeline_stage_id: pendingStage.id,
+                            } : {}),
                         })
                         .then((response) => {
                             this.isMeetingStoring = false;
@@ -753,13 +758,17 @@
 
                             this.$refs.meetingActivityModal.close();
 
-                            const stage = this.pendingMeetingStage;
-
                             this.pendingMeetingStage = null;
 
-                            if (stage) {
-                                this.update(stage, {
-                                    lead_pipeline_stage_id: stage.id,
+                            if (this.isCallingRoleLeadVariant && pendingStage) {
+                                this.currentStage = pendingStage;
+
+                                return;
+                            }
+
+                            if (pendingStage) {
+                                this.update(pendingStage, {
+                                    lead_pipeline_stage_id: pendingStage.id,
                                     assigned_user_id: params.assigned_user_id,
                                 });
                             }

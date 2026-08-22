@@ -416,6 +416,13 @@ return [
         'route'      => 'admin.settings.tags.index',
         'sort'       => 1,
         'icon-class' => 'icon-settings-tag',
+    ], [
+        'key'        => 'settings.other_settings.linkedin_profiles',
+        'name'       => 'LinkedIn Profiles',
+        'info'       => 'Manage LinkedIn working profiles and user assignments',
+        'route'      => 'admin.settings.linkedin_profiles.index',
+        'sort'       => 2,
+        'icon-class' => 'icon-settings-user',
     ],
 
     /**

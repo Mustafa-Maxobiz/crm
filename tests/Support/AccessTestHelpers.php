@@ -58,6 +58,18 @@ class AccessTestHelpers
             collect($options['role_organization_ids'] ?? [])->map(fn (int $id) => self::organization($id))
         );
 
+        if (array_key_exists('role_pipeline_stage_ids', $options)) {
+            $role->setRelation(
+                'pipelineStages',
+                collect($options['role_pipeline_stage_ids'])->map(function (int $id) {
+                    $stage = new \Webkul\Lead\Models\Stage;
+                    $stage->forceFill(['id' => $id]);
+
+                    return $stage;
+                })
+            );
+        }
+
         $user->setRelation('role', $role);
 
         $user->setRelation(
@@ -80,8 +92,14 @@ class AccessTestHelpers
         $lead->forceFill([
             'id'                 => $options['id'] ?? 1,
             'title'              => $options['title'] ?? 'Test Lead',
+            'user_id'            => array_key_exists('user_id', $options)
+                ? $options['user_id']
+                : ($options['owner_user_id'] ?? 2),
+            'lead_owner_id'      => $options['lead_owner_id'] ?? null,
             'lead_source_id'     => $options['lead_source_id'] ?? null,
             'lead_sub_source_id' => $options['lead_sub_source_id'] ?? null,
+            'lead_pipeline_stage_id' => $options['lead_pipeline_stage_id'] ?? null,
+            'closed_at'          => $options['closed_at'] ?? null,
             'person_id'          => $options['person_id'] ?? (array_key_exists('organization_id', $options) ? 1 : null),
         ]);
 

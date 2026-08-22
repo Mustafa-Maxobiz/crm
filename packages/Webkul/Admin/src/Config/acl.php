@@ -818,6 +818,26 @@ return [
         'name'  => 'admin::app.acl.tags',
         'route' => 'admin.settings.tags.index',
         'sort'  => 1,
+    ], [
+        'key'   => 'settings.other_settings.linkedin_profiles',
+        'name'  => 'LinkedIn Profiles',
+        'route' => 'admin.settings.linkedin_profiles.index',
+        'sort'  => 2,
+    ], [
+        'key'   => 'settings.other_settings.linkedin_profiles.create',
+        'name'  => 'admin::app.acl.create',
+        'route' => ['admin.settings.linkedin_profiles.store'],
+        'sort'  => 1,
+    ], [
+        'key'   => 'settings.other_settings.linkedin_profiles.edit',
+        'name'  => 'admin::app.acl.edit',
+        'route' => ['admin.settings.linkedin_profiles.edit', 'admin.settings.linkedin_profiles.update'],
+        'sort'  => 2,
+    ], [
+        'key'   => 'settings.other_settings.linkedin_profiles.delete',
+        'name'  => 'admin::app.acl.delete',
+        'route' => 'admin.settings.linkedin_profiles.delete',
+        'sort'  => 3,
     ],     [
         'key'   => 'settings.other_settings.tags.create',
         'name'  => 'admin::app.acl.create',

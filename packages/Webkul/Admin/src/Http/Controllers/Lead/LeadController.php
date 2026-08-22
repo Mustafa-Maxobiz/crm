@@ -39,7 +39,10 @@ use Webkul\Lead\Repositories\StageRepository;
 use Webkul\Lead\Repositories\TypeRepository;
 use Webkul\Lead\Repositories\ServiceRepository;
 use Webkul\Lead\Services\FollowupScheduleService;
+use Webkul\Lead\Services\LinkedInProfileAccessService;
+use Webkul\Lead\Services\LinkedInUrlNormalizer;
 use Webkul\Lead\Services\MagicAIService;
+use Webkul\Lead\Services\MeetingHandoffService;
 use Webkul\Lead\Services\SourceAccessService;
 use Webkul\Tag\StaticTags;
 use Webkul\Tag\Repositories\TagRepository;
@@ -72,7 +75,9 @@ class LeadController extends Controller
         protected TeamRepository $teamRepository,
         protected TagRepository $tagRepository,
         protected SourceAccessService $sourceAccessService,
+        protected LinkedInProfileAccessService $linkedInProfileAccessService,
         protected FollowupScheduleService $followupScheduleService,
+        protected MeetingHandoffService $meetingHandoffService,
     ) {
         request()->request->add(['entity_type' => 'leads']);
     }
@@ -140,6 +145,9 @@ class LeadController extends Controller
             'leadVariant'     => $leadVariant,
             'leadsIndexRoute' => $leadsIndexRoute,
             'meetingOwnerOptions' => $this->meetingOwnerOptions(),
+            'linkedInProfileFilterOptions' => $leadVariant === 'lge'
+                ? $this->linkedInProfileAccessService->getFilterOptionsWithHistoricalLeads()
+                : [],
         ]);
     }
 
@@ -249,6 +257,18 @@ class LeadController extends Controller
             return $assignment;
         }
 
+        $batchLinkedInProfileId = $this->validatedLgeImportProfileId();
+
+        if ($batchLinkedInProfileId instanceof JsonResponse || $batchLinkedInProfileId instanceof RedirectResponse) {
+            return $batchLinkedInProfileId;
+        }
+
+        $importTagId = $this->validatedImportTagId();
+
+        if ($importTagId instanceof JsonResponse || $importTagId instanceof RedirectResponse) {
+            return $importTagId;
+        }
+
         $sourceId = (int) $data['lead_source_id'];
 
         if (! $this->sourceAccessService->canUseLeadSourceSelection($sourceId)) {
@@ -285,6 +305,26 @@ class LeadController extends Controller
             ], 422);
         }
 
+        $importableCount = 0;
+
+        foreach ($rows as $row) {
+            if (! $this->isEmptyImportRow($row)) {
+                $importableCount++;
+            }
+        }
+
+        if ($importableCount === 0) {
+            return $this->importResponse(0, [
+                'The import file has no importable rows.',
+            ], 422);
+        }
+
+        if ($importableCount > $this->maxBulkLeadImportRows()) {
+            return $this->importResponse(0, [
+                'Bulk upload is limited to '.$this->maxBulkLeadImportRows().' leads per file. This file has '.$importableCount.' rows. Please split the file and try again.',
+            ], 422);
+        }
+
         $created = 0;
         $skipped = 0;
         $errors = [];
@@ -299,7 +339,7 @@ class LeadController extends Controller
             }
 
             $rowData = $this->mapImportRow($headers, $row);
-            $rowErrors = $this->validateImportRow($rowData, ! empty($assignment['assignee_user_ids']));
+            $rowErrors = $this->validateImportRow($rowData, ! empty($assignment['assignee_user_ids']), $batchLinkedInProfileId);
 
             if (! empty($rowErrors)) {
                 $errors[] = 'Row '.$rowNumber.': '.implode(' ', $rowErrors);
@@ -322,14 +362,19 @@ class LeadController extends Controller
                     $rowData,
                     $sourceId,
                     $this->assigneeForImportIndex($assignment['assignee_user_ids'], $assignIndex),
-                    $assignment['industry_id']
+                    $assignment['industry_id'],
+                    $batchLinkedInProfileId,
                 ));
 
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
 
-                $this->syncColdLeadTagForImport($lead);
+                $this->syncImportTagForLead($lead, $importTagId);
 
                 if (lead_variant() === 'lge') {
+                    $this->backfillLinkedInEntryProfile(
+                        $rowData['source_link'] ?? null,
+                        (int) ($lead->linkedin_profile_id ?? 0),
+                    );
                     $this->markLinkedInSourceLinkAsResponse($rowData['source_link'] ?? null);
                 }
 
@@ -359,6 +404,18 @@ class LeadController extends Controller
 
         if ($assignment instanceof JsonResponse || $assignment instanceof RedirectResponse) {
             return $assignment;
+        }
+
+        $batchLinkedInProfileId = $this->validatedLgeImportProfileId();
+
+        if ($batchLinkedInProfileId instanceof JsonResponse || $batchLinkedInProfileId instanceof RedirectResponse) {
+            return $batchLinkedInProfileId;
+        }
+
+        $importTagId = $this->validatedImportTagId();
+
+        if ($importTagId instanceof JsonResponse || $importTagId instanceof RedirectResponse) {
+            return $importTagId;
         }
 
         $sourceId = (int) $data['lead_source_id'];
@@ -416,6 +473,12 @@ class LeadController extends Controller
             ], 422);
         }
 
+        if (count($importRows) > $this->maxBulkLeadImportRows()) {
+            return response()->json([
+                'message' => 'Bulk upload is limited to '.$this->maxBulkLeadImportRows().' leads per file. This file has '.count($importRows).' rows. Please split the file and try again.',
+            ], 422);
+        }
+
         $token = (string) Str::uuid();
         $directory = storage_path('app/imports/pending');
 
@@ -424,10 +487,12 @@ class LeadController extends Controller
         }
 
         file_put_contents($this->pendingImportPath($token), json_encode([
-            'lead_source_id'       => $sourceId,
-            'assignee_user_ids'    => $assignment['assignee_user_ids'],
-            'industry_id'          => $assignment['industry_id'],
-            'rows'                 => $importRows,
+            'lead_source_id'             => $sourceId,
+            'import_linkedin_profile_id' => $batchLinkedInProfileId,
+            'import_tag_id'              => $importTagId,
+            'assignee_user_ids'          => $assignment['assignee_user_ids'],
+            'industry_id'               => $assignment['industry_id'],
+            'rows'                      => $importRows,
             'created'              => 0,
             'skipped'              => 0,
             'assign_index'         => 0,
@@ -463,6 +528,10 @@ class LeadController extends Controller
 
         $payload = json_decode(file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
         $sourceId = (int) ($payload['lead_source_id'] ?? 0);
+        $batchLinkedInProfileId = isset($payload['import_linkedin_profile_id'])
+            ? (int) $payload['import_linkedin_profile_id']
+            : null;
+        $importTagId = (int) ($payload['import_tag_id'] ?? 0);
         $assigneeUserIds = $this->normalizeImportAssigneeIds($payload['assignee_user_ids'] ?? []);
         $industryId = $this->normalizeImportIndustryId($payload['industry_id'] ?? null);
 
@@ -471,6 +540,14 @@ class LeadController extends Controller
 
             return response()->json([
                 'message' => 'Import session is missing a valid lead source. Please upload the file again.',
+            ], 422);
+        }
+
+        if ($importTagId <= 0) {
+            @unlink($path);
+
+            return response()->json([
+                'message' => 'Import session is missing a valid tag. Please upload the file again.',
             ], 422);
         }
 
@@ -500,7 +577,7 @@ class LeadController extends Controller
 
         foreach ($chunk as $row) {
             $rowData = $row['data'] ?? [];
-            $rowErrors = $this->validateImportRow($rowData, ! empty($assigneeUserIds));
+            $rowErrors = $this->validateImportRow($rowData, ! empty($assigneeUserIds), $batchLinkedInProfileId);
 
             if (! empty($rowErrors)) {
                 $errorMessage = implode(' ', $rowErrors);
@@ -529,14 +606,19 @@ class LeadController extends Controller
                     $rowData,
                     $sourceId,
                     $this->assigneeForImportIndex($assigneeUserIds, (int) $payload['assign_index']),
-                    $industryId
+                    $industryId,
+                    $batchLinkedInProfileId,
                 ));
 
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
 
-                $this->syncColdLeadTagForImport($lead);
+                $this->syncImportTagForLead($lead, $importTagId);
 
                 if (lead_variant() === 'lge') {
+                    $this->backfillLinkedInEntryProfile(
+                        $rowData['source_link'] ?? null,
+                        (int) ($lead->linkedin_profile_id ?? 0),
+                    );
                     $this->markLinkedInSourceLinkAsResponse($rowData['source_link'] ?? null);
                 }
 
@@ -598,6 +680,18 @@ class LeadController extends Controller
             return $assignment;
         }
 
+        $batchLinkedInProfileId = $this->validatedLgeImportProfileId();
+
+        if ($batchLinkedInProfileId instanceof JsonResponse || $batchLinkedInProfileId instanceof RedirectResponse) {
+            return $batchLinkedInProfileId;
+        }
+
+        $importTagId = $this->validatedImportTagId();
+
+        if ($importTagId instanceof JsonResponse || $importTagId instanceof RedirectResponse) {
+            return $importTagId;
+        }
+
         $sourceId = (int) $data['lead_source_id'];
 
         if (! $this->sourceAccessService->canUseLeadSourceSelection($sourceId)) {
@@ -615,7 +709,7 @@ class LeadController extends Controller
         foreach ($data['rows'] as $row) {
             $rowNumber = (int) $row['row_number'];
             $rowData = $this->normalizeRetriedImportRow($row['data'] ?? []);
-            $rowErrors = $this->validateImportRow($rowData, ! empty($assignment['assignee_user_ids']));
+            $rowErrors = $this->validateImportRow($rowData, ! empty($assignment['assignee_user_ids']), $batchLinkedInProfileId);
 
             if (! empty($rowErrors)) {
                 $failedRows[] = [
@@ -642,14 +736,19 @@ class LeadController extends Controller
                     $rowData,
                     $sourceId,
                     $this->assigneeForImportIndex($assignment['assignee_user_ids'], $assignIndex),
-                    $assignment['industry_id']
+                    $assignment['industry_id'],
+                    $batchLinkedInProfileId,
                 ));
 
                 $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
 
-                $this->syncColdLeadTagForImport($lead);
+                $this->syncImportTagForLead($lead, $importTagId);
 
                 if (lead_variant() === 'lge') {
+                    $this->backfillLinkedInEntryProfile(
+                        $rowData['source_link'] ?? null,
+                        (int) ($lead->linkedin_profile_id ?? 0),
+                    );
                     $this->markLinkedInSourceLinkAsResponse($rowData['source_link'] ?? null);
                 }
 
@@ -743,7 +842,7 @@ class LeadController extends Controller
             $stages = $pipeline->stages;
         }
 
-        $stages = $this->sourceAccessService->filterAccessibleStages($stages);
+        $stages = $this->sourceAccessService->getVisibleStagesForLeadListing($stages, (int) $pipeline->id);
 
         // Get sort parameters (default: newest first)
         $sortBy = request()->query('sort_by', 'created_at');
@@ -886,7 +985,11 @@ class LeadController extends Controller
     {
         $this->shareLeadVariant();
 
-        return view('admin::leads.create');
+        return view('admin::leads.create', [
+            'linkedInProfiles' => lead_variant() === 'lge'
+                ? $this->linkedInProfileAccessService->getAssignedProfiles()
+                : collect(),
+        ]);
     }
 
     public function checkLinkedInSourceLink(): JsonResponse
@@ -896,10 +999,21 @@ class LeadController extends Controller
         }
 
         $sourceLink = request()->query('source_link');
+        $entry = $this->findLinkedInEntryBySourceLink($sourceLink);
+        $profileName = null;
+
+        if ($entry && $entry->linkedin_profile_id) {
+            $profileName = DB::table('linkedin_profiles')
+                ->where('id', $entry->linkedin_profile_id)
+                ->value('name');
+        }
 
         return response()->json([
-            'exists'  => $this->linkedInSourceLinkExists($sourceLink),
-            'message' => 'This LinkedIn profile URL is not present in LinkedIn Entries.',
+            'exists'                     => (bool) $entry,
+            'entry_id'                   => $entry->id ?? null,
+            'linkedin_profile_id'        => $entry->linkedin_profile_id ?? null,
+            'linkedin_profile_name'      => $profileName,
+            'requires_profile_selection' => ! $entry || ! $entry->linkedin_profile_id,
         ]);
     }
 
@@ -927,22 +1041,22 @@ class LeadController extends Controller
         $isLgeCreate = lead_variant() === 'lge';
         $isCallingRoleCreate = in_array(lead_variant(), ['lge', 'sdr'], true);
 
-        if ($isLgeCreate && ! $this->linkedInSourceLinkExists($data['source_link'] ?? null)) {
-            $message = 'This LinkedIn profile URL is not present in LinkedIn Entries.';
+        if ($isLgeCreate) {
+            try {
+                $this->applyLinkedInProfileToLeadData($data);
+            } catch (\Illuminate\Validation\ValidationException $exception) {
+                if (request()->ajax()) {
+                    return response()->json([
+                        'message' => collect($exception->errors())->flatten()->first(),
+                        'errors'  => $exception->errors(),
+                    ], 422);
+                }
 
-            if (request()->ajax()) {
-                return response()->json([
-                    'message' => $message,
-                    'errors'  => [
-                        'source_link' => [$message],
-                    ],
-                ], 422);
+                return redirect()
+                    ->back()
+                    ->withInput()
+                    ->withErrors($exception->errors());
             }
-
-            return redirect()
-                ->back()
-                ->withInput()
-                ->withErrors(['source_link' => $message]);
         }
 
         // Main create: default Sales Owner to creator (editable to forward); always start in New stage.
@@ -1018,6 +1132,7 @@ class LeadController extends Controller
         $this->syncSourceTagForLead($lead);
 
         if ($isLgeCreate) {
+            $this->backfillLinkedInEntryProfile($data['source_link'] ?? null, (int) ($data['linkedin_profile_id'] ?? 0));
             $this->markLinkedInSourceLinkAsResponse($data['source_link'] ?? null);
         }
 
@@ -1065,12 +1180,12 @@ class LeadController extends Controller
 
         $lead = $this->leadRepository->findOrFail($id);
 
-        if (! $this->sourceAccessService->canAccessLead($lead)) {
+        if (! $this->sourceAccessService->canViewLead($lead)) {
             return redirect()->route($this->leadsIndexRouteName());
         }
 
-        if ($this->isPipelineOnlyLeadForCurrentUser($lead)) {
-            return redirect()->route($this->leadsIndexRouteName());
+        if (! $this->sourceAccessService->canEditLead($lead)) {
+            return redirect()->route(lead_route_name('view'), $lead->id);
         }
 
         if ($this->isSdrUser()) {
@@ -1091,11 +1206,11 @@ class LeadController extends Controller
     {
         $lead = $this->leadRepository->findOrFail($id);
 
-        if (! $this->sourceAccessService->canAccessLead($lead)) {
+        if (! $this->sourceAccessService->canViewLead($lead)) {
             abort(403);
         }
 
-        if ($this->isPipelineOnlyLeadForCurrentUser($lead)) {
+        if (! $this->sourceAccessService->canEditLead($lead)) {
             abort(403);
         }
 
@@ -1216,11 +1331,7 @@ class LeadController extends Controller
 
         $lead = $this->leadRepository->findOrFail($id);
 
-        if (! $this->sourceAccessService->canAccessLead($lead)) {
-            return redirect()->route($this->leadsIndexRouteName());
-        }
-
-        if ($this->isPipelineOnlyLeadForCurrentUser($lead)) {
+        if (! $this->sourceAccessService->canViewLead($lead)) {
             return redirect()->route($this->leadsIndexRouteName());
         }
 
@@ -1233,6 +1344,7 @@ class LeadController extends Controller
         return view('admin::leads.view', [
             'lead'            => $lead,
             'meetingOwnerOptions' => $this->meetingOwnerOptions(),
+            'readOnlyForCurrentUser' => ! $this->sourceAccessService->canEditLead($lead),
         ]);
     }
 
@@ -1243,26 +1355,93 @@ class LeadController extends Controller
 
     protected function linkedInSourceLinkExists(mixed $sourceLink): bool
     {
+        return $this->findLinkedInEntryBySourceLink($sourceLink) !== null;
+    }
+
+    protected function findLinkedInEntryBySourceLink(mixed $sourceLink): ?object
+    {
         $sourceLink = trim((string) $sourceLink);
 
         if ($sourceLink === '') {
-            return true;
+            return null;
         }
 
         $url = $this->normalizeLinkedInSourceLink($sourceLink);
 
         if (! filter_var($url, FILTER_VALIDATE_URL)) {
-            return false;
+            return null;
         }
 
         $normalizedUrl = $this->normalizeLinkedInSourceLinkForCompare($url);
 
         return DB::table('linkedin_entry')
             ->whereRaw(
-                "TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(url), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', '')) = ?",
+                LinkedInUrlNormalizer::sqlCompareExpression('url').' = ?',
                 [$normalizedUrl]
             )
-            ->exists();
+            ->first(['id', 'user_id', 'linkedin_profile_id', 'url', 'status']);
+    }
+
+    /**
+     * Resolve and validate LinkedIn working profile for LGE lead create/update payloads.
+     *
+     * @throws \Illuminate\Validation\ValidationException
+     */
+    protected function applyLinkedInProfileToLeadData(array &$data, ?int $batchProfileId = null): void
+    {
+        $user = auth()->guard('user')->user();
+        $ownerUserId = (int) ($user?->id ?? 0);
+        $entry = $this->findLinkedInEntryBySourceLink($data['source_link'] ?? null);
+
+        if ($entry && $entry->linkedin_profile_id) {
+            $profileId = (int) $entry->linkedin_profile_id;
+            $this->linkedInProfileAccessService->assertCanUseProfile($profileId, $user, $ownerUserId);
+
+            if (! empty($data['linkedin_profile_id']) && (int) $data['linkedin_profile_id'] !== $profileId) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'linkedin_profile_id' => ['LinkedIn working profile must match the existing LinkedIn Entry.'],
+                ]);
+            }
+
+            $data['linkedin_profile_id'] = $profileId;
+
+            return;
+        }
+
+        $profileId = (int) ($data['linkedin_profile_id'] ?? $batchProfileId ?? 0);
+        $this->linkedInProfileAccessService->assertCanUseProfile($profileId, $user, $ownerUserId);
+        $data['linkedin_profile_id'] = $profileId;
+    }
+
+    protected function backfillLinkedInEntryProfile(mixed $sourceLink, int $profileId): void
+    {
+        if ($profileId <= 0) {
+            return;
+        }
+
+        $entry = $this->findLinkedInEntryBySourceLink($sourceLink);
+
+        if (! $entry || $entry->linkedin_profile_id) {
+            return;
+        }
+
+        DB::table('linkedin_entry')
+            ->where('id', $entry->id)
+            ->update([
+                'linkedin_profile_id' => $profileId,
+                'updated_at'          => now(),
+            ]);
+    }
+
+    protected function resolveImportedLinkedInProfileId(array $row, ?int $batchProfileId = null): int
+    {
+        $entry = $this->findLinkedInEntryBySourceLink($row['source_link'] ?? null);
+
+        if ($entry && $entry->linkedin_profile_id) {
+            return (int) $entry->linkedin_profile_id;
+        }
+
+        return (int) ($batchProfileId ?? 0);
     }
 
     protected function markLinkedInSourceLinkAsResponse(mixed $sourceLink): void
@@ -1281,7 +1460,7 @@ class LeadController extends Controller
 
         DB::table('linkedin_entry')
             ->whereRaw(
-                "TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(url), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', '')) = ?",
+                LinkedInUrlNormalizer::sqlCompareExpression('url').' = ?',
                 [$this->normalizeLinkedInSourceLinkForCompare($url)]
             )
             ->update([
@@ -1329,35 +1508,6 @@ class LeadController extends Controller
     protected function isCallingRoleUser(): bool
     {
         return $this->isSdrUser() || $this->isLgeUser();
-    }
-
-    protected function isPipelineOnlyLeadForCurrentUser($lead): bool
-    {
-        $user = auth()->guard('user')->user();
-
-        if (! $user || $user->role?->permission_type === 'all') {
-            return false;
-        }
-
-        if ((int) $lead->user_id === (int) $user->id) {
-            return false;
-        }
-
-        if ((int) ($lead->lead_owner_id ?? 0) !== (int) $user->id) {
-            return false;
-        }
-
-        if (! $this->isCallingRoleUser()) {
-            return false;
-        }
-
-        $lead->loadMissing(['pipeline.stages', 'stage']);
-
-        $meetingStage = $lead->pipeline?->stages?->firstWhere('code', 'meeting');
-
-        return $meetingStage
-            && $lead->stage
-            && (int) $lead->stage->sort_order >= (int) $meetingStage->sort_order;
     }
 
     /**
@@ -1413,6 +1563,7 @@ class LeadController extends Controller
             'lead_type_id',
             'lead_sub_source_id',
             'industry',
+            'linkedin_profile_id',
         ];
     }
 
@@ -1535,22 +1686,29 @@ class LeadController extends Controller
     }
 
     /**
-     * Bulk imports always get the Cold Lead tag, for any selected source.
+     * Apply the batch-selected tag to an imported lead.
      */
-    protected function syncColdLeadTagForImport($lead): void
+    protected function syncImportTagForLead($lead, int $tagId): void
     {
-        $coldLeadTag = $this->findSourceTag('Cold Lead');
-        $warmLeadTag = $this->findSourceTag('Warm Lead');
+        $tag = $this->tagRepository->find($tagId);
 
-        if (! $coldLeadTag) {
+        if (! $tag) {
             return;
         }
 
-        if ($warmLeadTag) {
+        $warmLeadTag = $this->findSourceTag('Warm Lead');
+        $coldLeadTag = $this->findSourceTag('Cold Lead');
+        $normalizedName = strtolower(trim((string) $tag->name));
+
+        if ($normalizedName === 'warm lead' && $coldLeadTag) {
+            $lead->tags()->detach($coldLeadTag->id);
+        }
+
+        if ($normalizedName === 'cold lead' && $warmLeadTag) {
             $lead->tags()->detach($warmLeadTag->id);
         }
 
-        $lead->tags()->syncWithoutDetaching([$coldLeadTag->id]);
+        $lead->tags()->syncWithoutDetaching([$tag->id]);
     }
 
     protected function findSourceTag(string $name)
@@ -1569,10 +1727,7 @@ class LeadController extends Controller
     {
         $existingLead = $this->leadRepository->findOrFail($id);
 
-        if (
-            ! $this->sourceAccessService->canAccessLead($existingLead)
-            || $this->isPipelineOnlyLeadForCurrentUser($existingLead)
-        ) {
+        if (! $this->sourceAccessService->canEditLead($existingLead)) {
             if (request()->ajax()) {
                 return response()->json([
                     'message' => trans('admin::app.leads.source-access-denied'),
@@ -1587,6 +1742,10 @@ class LeadController extends Controller
         Event::dispatch('lead.update.before', $id);
 
         $data = $this->stripLockedLeadFields($request->all());
+
+        if ($this->isSdrUser()) {
+            unset($data['person'], $data['organization_id'], $data['organization_name']);
+        }
 
         if (isset($data['lead_pipeline_stage_id'])) {
             $stage = $this->stageRepository->findOrFail($data['lead_pipeline_stage_id']);
@@ -1689,10 +1848,7 @@ class LeadController extends Controller
         $data = request()->all();
         $lead = $this->leadRepository->findOrFail($id);
 
-        if (
-            ! $this->sourceAccessService->canAccessLead($lead)
-            || $this->isPipelineOnlyLeadForCurrentUser($lead)
-        ) {
+        if (! $this->sourceAccessService->canEditLead($lead)) {
             return response()->json([
                 'message' => trans('admin::app.leads.source-access-denied'),
             ], 403);
@@ -1771,7 +1927,7 @@ class LeadController extends Controller
                 ->lockForUpdate()
                 ->findOrFail($id);
 
-            if (! $this->sourceAccessService->canAccessLead($lead)) {
+            if (! $this->sourceAccessService->canViewLead($lead)) {
                 return response()->json([
                     'message' => trans('admin::app.leads.source-access-denied'),
                 ], 403);
@@ -1784,7 +1940,7 @@ class LeadController extends Controller
                 ->where('id', request()->input('lead_pipeline_stage_id'))
                 ->firstOrFail();
 
-            if (! $this->canCurrentUserEditStage($lead)) {
+            if (! $this->meetingHandoffService->canCurrentUserEditStage($lead)) {
                 return response()->json([
                     'message' => 'You can view this lead, but stage changes are locked after meeting assignment.',
                 ], 403);
@@ -1877,6 +2033,11 @@ class LeadController extends Controller
             if ($assignedMeetingOwnerId) {
                 $payload['user_id'] = $assignedMeetingOwnerId;
                 $attributes[] = 'user_id';
+
+                if (empty($lead->lead_owner_id)) {
+                    $payload['lead_owner_id'] = auth()->guard('user')->id();
+                    $attributes[] = 'lead_owner_id';
+                }
             }
 
             $attributes = array_values(array_unique($attributes));
@@ -1988,25 +2149,7 @@ class LeadController extends Controller
 
     protected function canCurrentUserEditStage($lead): bool
     {
-        $user = auth()->guard('user')->user();
-
-        if (! $user) {
-            return false;
-        }
-
-        if ($user->role?->permission_type === 'all') {
-            return true;
-        }
-
-        if ((int) $lead->user_id === (int) $user->id) {
-            return true;
-        }
-
-        if ((int) ($lead->lead_owner_id ?? 0) === (int) $user->id) {
-            return false;
-        }
-
-        return false;
+        return $this->meetingHandoffService->canCurrentUserEditStage($lead);
     }
 
     protected function meetingOwnerOptions(): array
@@ -2037,20 +2180,7 @@ class LeadController extends Controller
 
     protected function isActiveMeetingOwnerId(int $userId): bool
     {
-        return DB::table('users')
-            ->join('roles', 'users.role_id', '=', 'roles.id')
-            ->where('users.id', $userId)
-            ->where('users.status', 1)
-            ->where(function ($query) {
-                $query->where('roles.permission_type', 'all')
-                    ->orWhereIn(DB::raw('LOWER(roles.name)'), [
-                        'lead',
-                        'lead clouser',
-                        'lead closer',
-                        'lead closure',
-                    ]);
-            })
-            ->exists();
+        return $this->meetingHandoffService->isActiveMeetingOwnerId($userId);
     }
 
     /**
@@ -2065,7 +2195,7 @@ class LeadController extends Controller
 
         $lead = $this->leadRepository->findOrFail($id);
 
-        if (! $this->sourceAccessService->canAccessLead($lead)) {
+        if (! $this->sourceAccessService->canEditLead($lead)) {
             return redirect()->route($this->leadsIndexRouteName());
         }
 
@@ -2224,7 +2354,13 @@ class LeadController extends Controller
 
     public function destroy(int $id): JsonResponse
     {
-        $this->leadRepository->findOrFail($id);
+        $lead = $this->leadRepository->findOrFail($id);
+
+        if (! $this->sourceAccessService->canEditLead($lead)) {
+            return response()->json([
+                'message' => trans('admin::app.leads.source-access-denied'),
+            ], 403);
+        }
 
         try {
             Event::dispatch('lead.delete.before', $id);
@@ -2260,10 +2396,7 @@ class LeadController extends Controller
 
         try {
             foreach ($leads as $lead) {
-                if (
-                    ! $this->sourceAccessService->canAccessLead($lead)
-                    || $this->isPipelineOnlyLeadForCurrentUser($lead)
-                ) {
+                if (! $this->sourceAccessService->canEditLead($lead)) {
                     continue;
                 }
 
@@ -2296,6 +2429,10 @@ class LeadController extends Controller
 
         try {
             foreach ($leads as $lead) {
+                if (! $this->sourceAccessService->canEditLead($lead)) {
+                    continue;
+                }
+
                 Event::dispatch('lead.delete.before', $lead->id);
 
                 $this->leadRepository->delete($lead->id);
@@ -2394,7 +2531,7 @@ class LeadController extends Controller
      */
     private function getKanbanColumns(): array
     {
-        return [
+        $columns = [
             [
                 'index'                 => 'id',
                 'label'                 => trans('admin::app.leads.index.kanban.columns.id'),
@@ -2523,6 +2660,24 @@ class LeadController extends Controller
                 ],
             ],
         ];
+
+        if (lead_variant() === 'lge') {
+            $columns[] = [
+                'index'                 => 'linkedin_profile_id',
+                'label'                 => 'LinkedIn Profile',
+                'type'                  => 'string',
+                'searchable'            => false,
+                'search_field'          => 'in',
+                'filterable'            => true,
+                'filterable_type'       => 'dropdown',
+                'filterable_options'    => $this->linkedInProfileAccessService->getFilterOptionsWithHistoricalLeads(),
+                'allow_multiple_values' => false,
+                'sortable'              => false,
+                'visibility'            => false,
+            ];
+        }
+
+        return $columns;
     }
 
     /**
@@ -2845,7 +3000,7 @@ class LeadController extends Controller
         return $value;
     }
 
-    protected function validateImportRow(array $row, bool $skipSalesOwnerEmail = false): array
+    protected function validateImportRow(array $row, bool $skipSalesOwnerEmail = false, ?int $batchLinkedInProfileId = null): array
     {
         $errors = [];
 
@@ -2856,8 +3011,20 @@ class LeadController extends Controller
         }
 
         if (lead_variant() === 'lge' && filled($row['source_link'] ?? null)) {
-            if (! $this->linkedInSourceLinkExists($row['source_link'])) {
-                $errors[] = 'source_link "'.$row['source_link'].'" is not present in LinkedIn Entries.';
+            $profileId = $this->resolveImportedLinkedInProfileId($row, $batchLinkedInProfileId);
+
+            if ($profileId <= 0) {
+                $errors[] = 'LinkedIn working profile is required for rows without a matching entry profile.';
+            } else {
+                try {
+                    $this->linkedInProfileAccessService->assertCanUseProfile(
+                        $profileId,
+                        auth()->guard('user')->user(),
+                        (int) auth()->guard('user')->id(),
+                    );
+                } catch (\Illuminate\Validation\ValidationException $exception) {
+                    $errors[] = collect($exception->errors())->flatten()->first();
+                }
             }
         }
 
@@ -2899,7 +3066,8 @@ class LeadController extends Controller
         array $row,
         int $leadSourceId,
         ?int $assigneeUserId = null,
-        ?int $industryId = null
+        ?int $industryId = null,
+        ?int $batchLinkedInProfileId = null,
     ): array {
         $pipeline = filled($row['pipeline'] ?? null)
             ? $this->pipelineRepository->find($this->resolveImportId('lead_pipelines', $row['pipeline']))
@@ -2999,7 +3167,105 @@ class LeadController extends Controller
             $lead['industry'] = $industryId;
         }
 
+        if (lead_variant() === 'lge' && filled($row['source_link'] ?? null)) {
+            $profileId = $this->resolveImportedLinkedInProfileId($row, $batchLinkedInProfileId);
+
+            if ($profileId <= 0) {
+                throw new \InvalidArgumentException('LinkedIn working profile is required for this import row.');
+            }
+
+            $this->linkedInProfileAccessService->assertCanUseProfile(
+                $profileId,
+                auth()->guard('user')->user(),
+                (int) auth()->guard('user')->id(),
+            );
+
+            $lead['linkedin_profile_id'] = $profileId;
+        }
+
         return $lead;
+    }
+
+    /**
+     * @return int|null|JsonResponse|RedirectResponse
+     */
+    protected function validatedImportTagId(): int|null|JsonResponse|RedirectResponse
+    {
+        $tagId = (int) request()->input('import_tag_id', 0);
+
+        if ($tagId <= 0) {
+            $message = 'Please select a tag for this import.';
+
+            if (request()->ajax() || request()->expectsJson()) {
+                return response()->json(['message' => $message], 422);
+            }
+
+            return redirect()->back()->withErrors(['import_tag_id' => $message]);
+        }
+
+        $tag = $this->tagRepository->find($tagId);
+
+        $allowedNames = collect(StaticTags::names())
+            ->map(fn ($name) => strtolower($name))
+            ->all();
+
+        if (
+            ! $tag
+            || ! in_array(strtolower(trim((string) $tag->name)), $allowedNames, true)
+        ) {
+            $message = 'The selected tag is invalid.';
+
+            if (request()->ajax() || request()->expectsJson()) {
+                return response()->json(['message' => $message], 422);
+            }
+
+            return redirect()->back()->withErrors(['import_tag_id' => $message]);
+        }
+
+        return $tagId;
+    }
+
+    /**
+     * @return int|null|JsonResponse|RedirectResponse
+     */
+    protected function validatedLgeImportProfileId(): int|null|JsonResponse|RedirectResponse
+    {
+        if (lead_variant() !== 'lge') {
+            return null;
+        }
+
+        $profileId = (int) request()->input('import_linkedin_profile_id', 0);
+
+        if ($profileId <= 0) {
+            $message = 'Please select a LinkedIn working profile for this import.';
+
+            if (request()->ajax() || request()->expectsJson()) {
+                return response()->json(['message' => $message], 422);
+            }
+
+            return redirect()->back()->withErrors(['import_linkedin_profile_id' => $message]);
+        }
+
+        try {
+            $this->linkedInProfileAccessService->assertCanUseProfile(
+                $profileId,
+                auth()->guard('user')->user(),
+                (int) auth()->guard('user')->id(),
+            );
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $message = collect($exception->errors())->flatten()->first();
+
+            if (request()->ajax() || request()->expectsJson()) {
+                return response()->json([
+                    'message' => $message,
+                    'errors'  => $exception->errors(),
+                ], 422);
+            }
+
+            return redirect()->back()->withErrors($exception->errors());
+        }
+
+        return $profileId;
     }
 
     /**
@@ -3098,6 +3364,11 @@ class LeadController extends Controller
         }
 
         return $ids[$index % count($ids)];
+    }
+
+    protected function maxBulkLeadImportRows(): int
+    {
+        return 500;
     }
 
     /**
@@ -3405,7 +3676,7 @@ class LeadController extends Controller
 
         $lead = $this->leadRepository->with(['person', 'tags'])->findOrFail($id);
 
-        if (! $this->sourceAccessService->canAccessLead($lead)) {
+        if (! $this->sourceAccessService->canEditLead($lead)) {
             return redirect()->route($this->leadsIndexRouteName());
         }
 
@@ -3576,6 +3847,12 @@ class LeadController extends Controller
             'close_followup'         => ['nullable', 'boolean'],
             'next_followup_date'     => ['required_if:schedule_next_followup,1', 'nullable', 'date', 'after:now'],
         ]);
+
+        $lead = $this->leadRepository->findOrFail($id);
+
+        if (! $this->sourceAccessService->canEditLead($lead)) {
+            abort(403);
+        }
 
         $result = DB::transaction(function () use ($id, $data) {
             $lead = $this->leadRepository

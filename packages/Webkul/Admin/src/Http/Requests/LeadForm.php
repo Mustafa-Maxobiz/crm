@@ -219,6 +219,13 @@ class LeadForm extends FormRequest
 
         $data['person'] = $person;
 
+        if (
+            $this->sourceAccessService->isSdrUser()
+            && ($this->isMethod('PUT') || $this->isMethod('PATCH'))
+        ) {
+            unset($data['person'], $data['organization_id'], $data['organization_name']);
+        }
+
         $this->replace($data);
     }
 
@@ -247,7 +254,7 @@ class LeadForm extends FormRequest
                 ?: request()->input('person.organization_name');
             $isSdr = $this->sourceAccessService->isSdrUser();
 
-            // New company by name is always allowed; SDR/LGE can reassign company on leads they edit.
+            // SDRs cannot reassign company on update; LGE and other roles still validate org access.
             if (
                 $organizationId
                 && ! $organizationName

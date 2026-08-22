@@ -24,6 +24,8 @@ class SourceAccessService
 
     protected array $sharedStageIdsCache = [];
 
+    protected array $handedOffStageIdsCache = [];
+
     /**
      * Source IDs assigned directly to the user/role. Null means all sources.
      *
@@ -383,6 +385,86 @@ class SourceAccessService
             ->values();
     }
 
+    /**
+     * Pipeline stages to show in lead listings (table/kanban columns).
+     * Includes editable role stages plus current stages of handed-off originated leads.
+     *
+     * @param  iterable<\Webkul\Lead\Contracts\Stage>  $stages
+     * @return \Illuminate\Support\Collection
+     */
+    public function getVisibleStagesForLeadListing(iterable $stages, ?int $pipelineId = null, ?UserContract $user = null)
+    {
+        $collection = $this->filterAccessibleStages($stages, $user);
+
+        if (! $this->isCallingRoleUser($user)) {
+            return $collection;
+        }
+
+        $handedOffStageIds = $this->getHandedOffLeadStageIds($pipelineId, $user);
+
+        if (empty($handedOffStageIds)) {
+            return $collection;
+        }
+
+        $existingIds = $collection
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $missingIds = array_diff($handedOffStageIds, $existingIds);
+
+        if (empty($missingIds)) {
+            return $collection;
+        }
+
+        $extra = collect($stages)
+            ->filter(fn ($stage) => in_array((int) $stage->id, $missingIds, true));
+
+        return $collection
+            ->concat($extra)
+            ->sortBy('sort_order')
+            ->values();
+    }
+
+    /**
+     * Distinct current pipeline stage IDs for leads handed off away from the caller.
+     *
+     * @return array<int>
+     */
+    public function getHandedOffLeadStageIds(?int $pipelineId = null, ?UserContract $user = null): array
+    {
+        $user = $this->resolveUser($user);
+        $cacheKey = $this->userCacheKey($user).':pipeline:'.($pipelineId ?? 'all');
+
+        if (array_key_exists($cacheKey, $this->handedOffStageIdsCache)) {
+            return $this->handedOffStageIdsCache[$cacheKey];
+        }
+
+        if (! $user || ! $this->isCallingRoleUser($user)) {
+            return $this->handedOffStageIdsCache[$cacheKey] = [];
+        }
+
+        $userId = (int) $user->id;
+
+        $query = DB::table('leads')
+            ->where('lead_owner_id', $userId)
+            ->where('user_id', '!=', $userId)
+            ->whereNotNull('user_id')
+            ->whereNull('deleted_at');
+
+        if ($pipelineId) {
+            $query->where('lead_pipeline_id', $pipelineId);
+        }
+
+        return $this->handedOffStageIdsCache[$cacheKey] = $query
+            ->distinct()
+            ->pluck('lead_pipeline_stage_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->values()
+            ->all();
+    }
+
     public function leadIsInNewStage(LeadContract $lead): bool
     {
         if ($lead->relationLoaded('stage') && $lead->stage) {
@@ -535,7 +617,7 @@ class SourceAccessService
             return $query->whereRaw('1 = 0');
         }
 
-        return $query->whereIn("{$table}.lead_pipeline_stage_id", $accessible);
+        return $this->applyEditableStageScopeWithHandoffVisibility($query, $accessible, $table);
     }
 
     public function applyAccessibleStageTableScope(QueryBuilder $query): QueryBuilder
@@ -550,7 +632,59 @@ class SourceAccessService
             return $query->whereRaw('1 = 0');
         }
 
-        return $query->whereIn('leads.lead_pipeline_stage_id', $accessible);
+        return $this->applyEditableStageScopeWithHandoffVisibility($query, $accessible, 'leads');
+    }
+
+    /**
+     * Restrict to editable working stages, but keep handed-off originated leads visible in later stages.
+     */
+    protected function applyEditableStageScopeWithHandoffVisibility(
+        Builder|QueryBuilder $query,
+        array $accessible,
+        string $table = 'leads',
+    ): Builder|QueryBuilder {
+        $userId = auth()->guard('user')->id();
+
+        if (! $userId || (! $this->isSdrUser() && ! $this->isLgeUser())) {
+            return $query->whereIn("{$table}.lead_pipeline_stage_id", $accessible);
+        }
+
+        return $query->where(function ($stageQuery) use ($accessible, $userId, $table) {
+            $stageQuery
+                ->whereIn("{$table}.lead_pipeline_stage_id", $accessible)
+                ->orWhere(function ($handoffQuery) use ($userId, $table) {
+                    $handoffQuery
+                        ->where("{$table}.lead_owner_id", $userId)
+                        ->where("{$table}.user_id", '!=', $userId)
+                        ->whereNotNull("{$table}.user_id");
+                });
+        });
+    }
+
+    /**
+     * Leads originated by a calling-role user (SDR/LGE), including legacy rows without lead_owner_id.
+     */
+    public function applyOriginatingCallingOwnerTableScope(QueryBuilder $query, int $userId): QueryBuilder
+    {
+        return $query->where(function ($ownerQuery) use ($userId) {
+            $ownerQuery
+                ->where('leads.lead_owner_id', $userId)
+                ->orWhere(function ($legacyQuery) use ($userId) {
+                    $legacyQuery
+                        ->whereNull('leads.lead_owner_id')
+                        ->where('leads.user_id', $userId);
+                });
+        });
+    }
+
+    public function applyCurrentAssigneeTableScope(QueryBuilder $query, int $userId): QueryBuilder
+    {
+        return $query->where('leads.user_id', $userId);
+    }
+
+    public function isCallingRoleUser(?UserContract $user = null): bool
+    {
+        return $this->isSdrUser($user) || $this->isLgeUser($user);
     }
 
     public function canAccessSourceId(int $sourceId, ?UserContract $user = null): bool
@@ -622,20 +756,17 @@ class SourceAccessService
         return in_array($organizationId, $allowed, true);
     }
 
-    public function canAccessLead(LeadContract $lead, ?UserContract $user = null): bool
+    /**
+     * Whether the user may view/read a lead (listings, detail, status tracking).
+     * Handed-off originated leads remain visible even when the stage is beyond the role's editable stages.
+     */
+    public function canViewLead(LeadContract $lead, ?UserContract $user = null): bool
     {
         if ($this->isAdmin($user)) {
             return true;
         }
 
         if ($lead->getAttributes()['lead_disqualification_reason'] ?? null) {
-            return false;
-        }
-
-        if (! $this->canAccessStageId(
-            $lead->lead_pipeline_stage_id ? (int) $lead->lead_pipeline_stage_id : null,
-            $user
-        )) {
             return false;
         }
 
@@ -647,7 +778,58 @@ class SourceAccessService
             return false;
         }
 
-        return $this->canAccessLeadByOwner($lead, $user);
+        if (! $this->canAccessLeadByOwner($lead, $user)) {
+            return false;
+        }
+
+        $user = $this->resolveUser($user);
+
+        if ($user && MeetingHandoffService::isHandoffLeadForUser($lead, $user)) {
+            return true;
+        }
+
+        return $this->canAccessStageId(
+            $lead->lead_pipeline_stage_id ? (int) $lead->lead_pipeline_stage_id : null,
+            $user
+        );
+    }
+
+    /**
+     * Whether the user may mutate lead data (edit, stage change, delete, mass actions).
+     */
+    public function canEditLead(LeadContract $lead, ?UserContract $user = null): bool
+    {
+        if (! $this->canViewLead($lead, $user)) {
+            return false;
+        }
+
+        $user = $this->resolveUser($user);
+
+        if (! $user || $user->role?->permission_type === 'all') {
+            return true;
+        }
+
+        if (MeetingHandoffService::isHandoffLeadForUser($lead, $user)) {
+            return false;
+        }
+
+        if ((int) $lead->user_id === (int) $user->id) {
+            return true;
+        }
+
+        if ($this->isCallingRoleUser($user)) {
+            return $this->canAccessLeadByOwner($lead, $user);
+        }
+
+        return false;
+    }
+
+    /**
+     * @deprecated Use canViewLead() for read access and canEditLead() for writes.
+     */
+    public function canAccessLead(LeadContract $lead, ?UserContract $user = null): bool
+    {
+        return $this->canViewLead($lead, $user);
     }
 
     public function applyLeadQueryScope(Builder $query): Builder

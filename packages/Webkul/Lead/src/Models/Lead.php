@@ -53,6 +53,7 @@ class Lead extends Model implements LeadContract
         'lead_sub_source_id',
         'source_sub_type',
         'source_link',
+        'linkedin_profile_id',
         'lead_type_id',
         'lead_pipeline_id',
         'lead_pipeline_stage_id',
@@ -143,6 +144,14 @@ class Lead extends Model implements LeadContract
     public function subSource(): BelongsTo
     {
         return $this->belongsTo(SourceProxy::modelClass(), 'lead_sub_source_id');
+    }
+
+    /**
+     * Get the LinkedIn working profile used for this lead.
+     */
+    public function linkedinProfile(): BelongsTo
+    {
+        return $this->belongsTo(LinkedInProfile::class, 'linkedin_profile_id');
     }
 
     /**

@@ -12,6 +12,8 @@ use Maatwebsite\Excel\Concerns\ToArray;
 use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
+use Webkul\Lead\Services\LinkedInProfileAccessService;
+use Webkul\Lead\Services\LinkedInUrlNormalizer;
 use Webkul\Lead\Services\SourceAccessService;
 
 class LinkedInEntryController extends Controller
@@ -33,7 +35,8 @@ class LinkedInEntryController extends Controller
             'status'    => (string) $request->query('status', ''),
             'date_from' => (string) $request->query('date_from', ''),
             'date_to'   => (string) $request->query('date_to', ''),
-            'user_id'   => $isAdmin ? (string) $request->query('user_id', '') : '',
+            'user_id'             => $isAdmin ? (string) $request->query('user_id', '') : '',
+            'linkedin_profile_id' => (string) $request->query('linkedin_profile_id', ''),
         ];
 
         if (! array_key_exists($filters['status'], self::STATUSES)) {
@@ -50,20 +53,27 @@ class LinkedInEntryController extends Controller
             $filters['user_id'] = '';
         }
 
+        if ($filters['linkedin_profile_id'] !== '' && (! ctype_digit($filters['linkedin_profile_id']) || (int) $filters['linkedin_profile_id'] <= 0)) {
+            $filters['linkedin_profile_id'] = '';
+        }
+
         if ($isAdmin && $filters['user_id'] !== '' && ! $this->userCanAccessLinkedInEntries((int) $filters['user_id'])) {
             $filters['user_id'] = '';
         }
 
         $query = DB::table('linkedin_entry')
             ->join('users', 'linkedin_entry.user_id', '=', 'users.id')
+            ->leftJoin('linkedin_profiles', 'linkedin_entry.linkedin_profile_id', '=', 'linkedin_profiles.id')
             ->select(
                 'linkedin_entry.id',
                 'linkedin_entry.user_id',
+                'linkedin_entry.linkedin_profile_id',
                 'linkedin_entry.name',
                 'linkedin_entry.url',
                 'linkedin_entry.status',
                 'linkedin_entry.created_at',
-                'users.name as owner_name'
+                'users.name as owner_name',
+                'linkedin_profiles.name as working_profile_name',
             )
             ->latest('linkedin_entry.id');
 
@@ -97,6 +107,27 @@ class LinkedInEntryController extends Controller
             $query->where('linkedin_entry.user_id', (int) $filters['user_id']);
         }
 
+        if ($filters['linkedin_profile_id'] !== '') {
+            $query->where('linkedin_entry.linkedin_profile_id', (int) $filters['linkedin_profile_id']);
+        }
+
+        $profileAccess = app(LinkedInProfileAccessService::class);
+        $availableProfiles = $profileAccess->getFilterOptionsWithHistoricalEntries($user);
+
+        if (! $isAdmin) {
+            $assignedIds = $profileAccess->getAssignedProfileIds($user, false);
+
+            if (empty($assignedIds)) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->where(function ($profileScope) use ($assignedIds) {
+                    $profileScope
+                        ->whereIn('linkedin_entry.linkedin_profile_id', $assignedIds)
+                        ->orWhereNull('linkedin_entry.linkedin_profile_id');
+                });
+            }
+        }
+
         $availableUsers = $isAdmin
             ? $this->linkedinEntryUsers()
             : collect([$user]);
@@ -105,13 +136,15 @@ class LinkedInEntryController extends Controller
             'entries'  => $query->paginate(10)->withQueryString(),
             'statuses' => self::STATUSES,
             'availableUsers' => $availableUsers,
+            'availableProfiles' => $availableProfiles,
             'isAdmin'  => $isAdmin,
             'filters'  => $filters,
             'search'   => $filters['search'],
             'hasFilters' => $filters['status'] !== ''
                 || $filters['date_from'] !== ''
                 || $filters['date_to'] !== ''
-                || $filters['user_id'] !== '',
+                || $filters['user_id'] !== ''
+                || $filters['linkedin_profile_id'] !== '',
         ]);
     }
 
@@ -120,9 +153,10 @@ class LinkedInEntryController extends Controller
         $this->authorizeAccess('linkedin_entries.create');
 
         $data = $request->validate([
-            'user_id' => ['nullable', 'integer', 'exists:users,id'],
-            'name'    => ['required', 'string', 'max:255'],
-            'url'     => ['required', 'string', 'max:2048'],
+            'user_id'             => ['nullable', 'integer', 'exists:users,id'],
+            'linkedin_profile_id' => ['required', 'integer', 'exists:linkedin_profiles,id'],
+            'name'                => ['required', 'string', 'max:255'],
+            'url'                 => ['required', 'string', 'max:2048'],
         ]);
 
         $url = $this->normalizeUrl($data['url']);
@@ -148,13 +182,22 @@ class LinkedInEntryController extends Controller
                 ->withErrors(['user_id' => 'Please select a user who has LinkedIn Entries access.']);
         }
 
+        $ownerId = $isAdmin ? (int) $data['user_id'] : (int) $user->id;
+
+        app(LinkedInProfileAccessService::class)->assertCanUseProfile(
+            (int) $data['linkedin_profile_id'],
+            $user,
+            $ownerId,
+        );
+
         DB::table('linkedin_entry')->insert([
-            'user_id'    => $isAdmin ? (int) $data['user_id'] : (int) $user->id,
-            'name'       => $data['name'],
-            'url'        => $url,
-            'status'     => 'pending',
-            'created_at' => now(),
-            'updated_at' => now(),
+            'user_id'             => $ownerId,
+            'linkedin_profile_id' => (int) $data['linkedin_profile_id'],
+            'name'                => $data['name'],
+            'url'                 => $url,
+            'status'              => 'pending',
+            'created_at'          => now(),
+            'updated_at'          => now(),
         ]);
 
         session()->flash('success', 'LinkedIn entry created successfully.');
@@ -224,8 +267,9 @@ class LinkedInEntryController extends Controller
         $this->authorizeAccess('linkedin_entries.create');
 
         $data = $request->validate([
-            'file'           => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:10240'],
-            'import_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'file'                       => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:10240'],
+            'import_user_id'             => ['nullable', 'integer', 'exists:users,id'],
+            'import_linkedin_profile_id' => ['required', 'integer', 'exists:linkedin_profiles,id'],
         ]);
 
         $user = auth()->guard('user')->user();
@@ -272,6 +316,7 @@ class LinkedInEntryController extends Controller
         }
 
         $ownerId = $isAdmin ? (int) $data['import_user_id'] : (int) $user->id;
+        $profileId = $this->resolveImportWorkingProfileId($data, $user, $ownerId);
         $created = 0;
         $errors = [];
         $now = now();
@@ -302,12 +347,13 @@ class LinkedInEntryController extends Controller
             }
 
             DB::table('linkedin_entry')->insert([
-                'user_id'    => $ownerId,
-                'name'       => trim((string) $rowData['name']),
-                'url'        => $url,
-                'status'     => 'pending',
-                'created_at' => $now,
-                'updated_at' => $now,
+                'user_id'             => $ownerId,
+                'linkedin_profile_id' => $profileId,
+                'name'                => trim((string) $rowData['name']),
+                'url'                 => $url,
+                'status'              => 'pending',
+                'created_at'          => $now,
+                'updated_at'          => $now,
             ]);
 
             $created++;
@@ -321,8 +367,9 @@ class LinkedInEntryController extends Controller
         $this->authorizeAccess('linkedin_entries.create');
 
         $data = $request->validate([
-            'file'           => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:10240'],
-            'import_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'file'                       => ['required', 'file', 'mimes:csv,txt,xlsx,xls', 'max:10240'],
+            'import_user_id'             => ['nullable', 'integer', 'exists:users,id'],
+            'import_linkedin_profile_id' => ['required', 'integer', 'exists:linkedin_profiles,id'],
         ]);
 
         $user = auth()->guard('user')->user();
@@ -337,6 +384,16 @@ class LinkedInEntryController extends Controller
         if ($isAdmin && ! $this->userCanAccessLinkedInEntries((int) $data['import_user_id'])) {
             return response()->json([
                 'message' => 'Please select a user who has LinkedIn Entries access.',
+            ], 422);
+        }
+
+        $ownerId = $isAdmin ? (int) $data['import_user_id'] : (int) $user->id;
+
+        try {
+            $profileId = $this->resolveImportWorkingProfileId($data, $user, $ownerId);
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            return response()->json([
+                'message' => collect($exception->errors())->flatten()->first(),
             ], 422);
         }
 
@@ -395,12 +452,13 @@ class LinkedInEntryController extends Controller
         }
 
         file_put_contents($this->pendingImportPath($token), json_encode([
-            'user_id'     => $isAdmin ? (int) $data['import_user_id'] : (int) $user->id,
-            'rows'        => $importRows,
-            'created'     => 0,
-            'skipped'     => 0,
-            'errors'      => [],
-            'failed_rows' => [],
+            'user_id'             => $isAdmin ? (int) $data['import_user_id'] : (int) $user->id,
+            'linkedin_profile_id' => $profileId,
+            'rows'                => $importRows,
+            'created'             => 0,
+            'skipped'             => 0,
+            'errors'              => [],
+            'failed_rows'         => [],
         ], JSON_THROW_ON_ERROR));
 
         return response()->json([
@@ -429,12 +487,13 @@ class LinkedInEntryController extends Controller
 
         $payload = json_decode(file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
         $userId = (int) ($payload['user_id'] ?? 0);
+        $profileId = (int) ($payload['linkedin_profile_id'] ?? 0);
 
-        if (! $userId) {
+        if (! $userId || ! $profileId) {
             @unlink($path);
 
             return response()->json([
-                'message' => 'Import session is missing a valid entry owner. Please upload the file again.',
+                'message' => 'Import session is missing a valid entry owner or working profile. Please upload the file again.',
             ], 422);
         }
 
@@ -476,12 +535,13 @@ class LinkedInEntryController extends Controller
             }
 
             DB::table('linkedin_entry')->insert([
-                'user_id'    => $userId,
-                'name'       => trim((string) $rowData['name']),
-                'url'        => $url,
-                'status'     => 'pending',
-                'created_at' => $now,
-                'updated_at' => $now,
+                'user_id'             => $userId,
+                'linkedin_profile_id' => $profileId,
+                'name'                => trim((string) $rowData['name']),
+                'url'                 => $url,
+                'status'              => 'pending',
+                'created_at'          => $now,
+                'updated_at'          => $now,
             ]);
 
             $payload['created']++;
@@ -516,8 +576,9 @@ class LinkedInEntryController extends Controller
         $this->authorizeAccess('linkedin_entries.create');
 
         $data = $request->validate([
-            'import_user_id'          => ['nullable', 'integer', 'exists:users,id'],
-            'rows'                    => ['required', 'array', 'min:1'],
+            'import_user_id'             => ['nullable', 'integer', 'exists:users,id'],
+            'import_linkedin_profile_id' => ['required', 'integer', 'exists:linkedin_profiles,id'],
+            'rows'                       => ['required', 'array', 'min:1'],
             'rows.*.row_number'       => ['required', 'integer', 'min:1'],
             'rows.*.data'             => ['required', 'array'],
             'rows.*.data.name'        => ['nullable', 'string', 'max:255'],
@@ -540,6 +601,7 @@ class LinkedInEntryController extends Controller
         }
 
         $userId = $isAdmin ? (int) $data['import_user_id'] : (int) $user->id;
+        $profileId = $this->resolveImportWorkingProfileId($data, $user, $userId);
         $created = 0;
         $skipped = 0;
         $errors = [];
@@ -573,12 +635,13 @@ class LinkedInEntryController extends Controller
             }
 
             DB::table('linkedin_entry')->insert([
-                'user_id'    => $userId,
-                'name'       => trim((string) $rowData['name']),
-                'url'        => $url,
-                'status'     => 'pending',
-                'created_at' => $now,
-                'updated_at' => $now,
+                'user_id'             => $userId,
+                'linkedin_profile_id' => $profileId,
+                'name'                => trim((string) $rowData['name']),
+                'url'                 => $url,
+                'status'              => 'pending',
+                'created_at'          => $now,
+                'updated_at'          => $now,
             ]);
 
             $created++;
@@ -1136,5 +1199,14 @@ class LinkedInEntryController extends Controller
         $safeToken = preg_replace('/[^a-zA-Z0-9-]/', '', $token);
 
         return storage_path('app/imports/pending/linkedin-accepted-'.$safeToken.'.json');
+    }
+
+    protected function resolveImportWorkingProfileId(array $data, $user, int $ownerUserId): int
+    {
+        $profileId = (int) ($data['import_linkedin_profile_id'] ?? $data['linkedin_profile_id'] ?? 0);
+
+        app(LinkedInProfileAccessService::class)->assertCanUseProfile($profileId, $user, $ownerUserId);
+
+        return $profileId;
     }
 }

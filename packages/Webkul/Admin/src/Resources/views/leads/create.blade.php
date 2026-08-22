@@ -268,6 +268,36 @@
                                             'source_link' => old('source_link', request('source_link')),
                                         ]"
                                     />
+
+                                    @if (lead_variant() === 'lge')
+                                        <x-admin::form.control-group id="lge-linkedin-profile-group">
+                                            <x-admin::form.control-group.label class="required">
+                                                LinkedIn Working Profile
+                                            </x-admin::form.control-group.label>
+
+                                            <x-admin::form.control-group.control
+                                                type="select"
+                                                name="linkedin_profile_id"
+                                                id="linkedin_profile_id"
+                                                rules="required"
+                                                :label="'LinkedIn Working Profile'"
+                                                :value="old('linkedin_profile_id')"
+                                            >
+                                                <option value="">Select LinkedIn Profile</option>
+
+                                                @foreach ($linkedInProfiles ?? [] as $profile)
+                                                    <option
+                                                        value="{{ $profile->id }}"
+                                                        @selected((string) old('linkedin_profile_id') === (string) $profile->id)
+                                                    >
+                                                        {{ $profile->name }}
+                                                    </option>
+                                                @endforeach
+                                            </x-admin::form.control-group.control>
+
+                                            <x-admin::form.control-group.error control-name="linkedin_profile_id" />
+                                        </x-admin::form.control-group>
+                                    @endif
                                 </div>
 
                                 <div class="w-full">
@@ -426,8 +456,10 @@
                         linkedInSourceLinkCheckUrl: @json(lead_variant() === 'lge' ? route('admin.leads.lge.source_link.check') : null),
                         linkedInSourceLinkTimer: null,
                         linkedInSourceLinkRequestId: 0,
-                        linkedInSourceLinkValid: true,
                         linkedInSourceLinkChecking: false,
+                        linkedInRequiresProfileSelection: true,
+                        linkedInProfileLocked: false,
+                        linkedInSelectedProfileId: @json(old('linkedin_profile_id', '')),
                     };
                 },
                 
@@ -448,22 +480,24 @@
 
                         document.getElementById('lead-create-form')?.addEventListener('submit', (event) => {
                             const sourceLinkInput = document.querySelector('[name="source_link"]');
+                            const profileSelect = document.querySelector('[name="linkedin_profile_id"]');
 
                             if (! sourceLinkInput) {
                                 return;
                             }
 
-                            if (! this.linkedInSourceLinkValid || this.linkedInSourceLinkChecking) {
+                            if (this.linkedInSourceLinkChecking) {
                                 event.preventDefault();
                                 event.stopPropagation();
+                                this.showLinkedInSourceLinkMessage('Please wait while we verify this LinkedIn profile URL.');
 
-                                this.showLinkedInSourceLinkMessage(
-                                    this.linkedInSourceLinkChecking
-                                        ? 'Please wait while we verify this LinkedIn profile URL.'
-                                        : 'This LinkedIn profile URL is not present in LinkedIn Entries.'
-                                );
+                                return;
+                            }
 
-                                this.updateLinkedInSourceLinkSubmitState(true);
+                            if (this.linkedInRequiresProfileSelection && profileSelect && ! profileSelect.value) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                this.showLinkedInProfileMessage('Please select a LinkedIn working profile.');
                             }
                         });
 
@@ -547,17 +581,16 @@
 
                         if (! value) {
                             this.linkedInSourceLinkChecking = false;
-                            this.linkedInSourceLinkValid = true;
+                            this.linkedInRequiresProfileSelection = true;
+                            this.linkedInProfileLocked = false;
                             this.showLinkedInSourceLinkMessage('');
-                            this.updateLinkedInSourceLinkSubmitState(false);
+                            this.resetLinkedInProfileField();
 
                             return;
                         }
 
                         this.linkedInSourceLinkChecking = true;
-                        this.linkedInSourceLinkValid = false;
                         this.showLinkedInSourceLinkMessage('Checking LinkedIn profile URL...', false);
-                        this.updateLinkedInSourceLinkSubmitState(true);
 
                         const requestId = ++this.linkedInSourceLinkRequestId;
 
@@ -571,23 +604,26 @@
                                     return;
                                 }
 
-                                const exists = Boolean(response.data?.exists);
-
                                 this.linkedInSourceLinkChecking = false;
-                                this.linkedInSourceLinkValid = exists;
-                                this.showLinkedInSourceLinkMessage(
-                                    exists ? '' : 'This LinkedIn profile URL is not present in LinkedIn Entries.'
-                                );
-                                this.updateLinkedInSourceLinkSubmitState(! exists);
+                                this.linkedInRequiresProfileSelection = Boolean(response.data?.requires_profile_selection);
+                                this.linkedInProfileLocked = Boolean(response.data?.linkedin_profile_id);
+
+                                if (response.data?.linkedin_profile_id) {
+                                    this.setLinkedInProfileValue(response.data.linkedin_profile_id, true);
+                                } else {
+                                    this.resetLinkedInProfileField(false);
+                                }
+
+                                this.showLinkedInSourceLinkMessage('');
                             }).catch(() => {
                                 if (requestId !== this.linkedInSourceLinkRequestId) {
                                     return;
                                 }
 
                                 this.linkedInSourceLinkChecking = false;
-                                this.linkedInSourceLinkValid = false;
+                                this.linkedInRequiresProfileSelection = true;
+                                this.linkedInProfileLocked = false;
                                 this.showLinkedInSourceLinkMessage('Unable to verify this LinkedIn profile URL. Please try again.');
-                                this.updateLinkedInSourceLinkSubmitState(true);
                             });
                         }, 600);
                     },
@@ -616,16 +652,57 @@
                         messageElement.classList.toggle('hidden', ! message);
                     },
 
-                    updateLinkedInSourceLinkSubmitState(disabled) {
-                        const button = document.getElementById('lead-create-submit-button');
+                    showLinkedInProfileMessage(message) {
+                        const select = document.querySelector('[name="linkedin_profile_id"]');
 
-                        if (! button) {
+                        if (! select) {
                             return;
                         }
 
-                        button.disabled = disabled;
-                        button.classList.toggle('opacity-60', disabled);
-                        button.classList.toggle('cursor-not-allowed', disabled);
+                        let messageElement = document.getElementById('lge-linkedin-profile-error');
+
+                        if (! messageElement) {
+                            messageElement = document.createElement('p');
+                            messageElement.id = 'lge-linkedin-profile-error';
+                            messageElement.className = 'mt-1 text-xs italic text-red-600 dark:text-red-400';
+                            select.insertAdjacentElement('afterend', messageElement);
+                        }
+
+                        messageElement.textContent = message || '';
+                        messageElement.classList.toggle('hidden', ! message);
+                    },
+
+                    setLinkedInProfileValue(profileId, locked = false) {
+                        const select = document.querySelector('[name="linkedin_profile_id"]');
+                        const group = document.getElementById('lge-linkedin-profile-group');
+
+                        if (! select || ! group) {
+                            return;
+                        }
+
+                        group.classList.remove('hidden');
+                        select.value = String(profileId);
+                        select.disabled = locked;
+                        this.linkedInProfileLocked = locked;
+                        this.showLinkedInProfileMessage('');
+                    },
+
+                    resetLinkedInProfileField(clearValue = true) {
+                        const select = document.querySelector('[name="linkedin_profile_id"]');
+                        const group = document.getElementById('lge-linkedin-profile-group');
+
+                        if (! select || ! group) {
+                            return;
+                        }
+
+                        group.classList.remove('hidden');
+
+                        if (clearValue) {
+                            select.value = '';
+                        }
+
+                        select.disabled = false;
+                        this.showLinkedInProfileMessage('');
                     },
                 },
             });

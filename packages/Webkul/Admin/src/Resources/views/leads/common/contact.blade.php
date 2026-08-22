@@ -1,14 +1,20 @@
 {!! view_render_event('admin.leads.create.contact_person.form_controls.before') !!}
 
 @php
-    $canEditLeadCompany = app(\Webkul\Lead\Services\SourceAccessService::class)->isSdrUser()
-        || bouncer()->hasPermission('contacts.organizations.edit')
-        || bouncer()->hasPermission('contacts.organizations.create');
+    $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
+    $isSdrUser = $sourceAccessService->isSdrUser();
+    $isContactEditContext = $contactEditContext ?? isset($lead);
+    $canEditContactDetails = ! ($isSdrUser && $isContactEditContext);
+    $canEditLeadCompany = $canEditContactDetails && (
+        bouncer()->hasPermission('contacts.organizations.edit')
+        || bouncer()->hasPermission('contacts.organizations.create')
+    );
 @endphp
 
 <v-contact-component
     :data="person"
     :can-edit-company='@json($canEditLeadCompany)'
+    :can-edit-contact-details='@json($canEditContactDetails)'
 ></v-contact-component>
 
 {!! view_render_event('admin.leads.create.contact_person.form_controls.after') !!}
@@ -24,24 +30,37 @@
                 @lang('admin::app.leads.common.contact.name')
             </x-admin::form.control-group.label>
 
-            <x-admin::lookup
-                ::src="src"
-                name="person[id]"
-                ::params="params"
-                ::rules="nameValidationRule"
-                :label="trans('admin::app.leads.common.contact.name')"
-                ::value="{id: person.id, name: person.name}"
-                :placeholder="trans('admin::app.leads.common.contact.name')"
-                @on-selected="addPerson"
-                :can-add-new="true"
-            />
+            <template v-if="canEditContactDetails">
+                <x-admin::lookup
+                    ::src="src"
+                    name="person[id]"
+                    ::params="params"
+                    ::rules="nameValidationRule"
+                    :label="trans('admin::app.leads.common.contact.name')"
+                    ::value="{id: person.id, name: person.name}"
+                    :placeholder="trans('admin::app.leads.common.contact.name')"
+                    @on-selected="addPerson"
+                    :can-add-new="true"
+                />
 
-            <x-admin::form.control-group.control
-                type="hidden"
-                name="person[name]"
-                v-model="person.name"
-                v-if="person.name"
-            />
+                <x-admin::form.control-group.control
+                    type="hidden"
+                    name="person[name]"
+                    v-model="person.name"
+                    v-if="person.name"
+                />
+            </template>
+
+            <template v-else>
+                <x-admin::form.control-group.control
+                    type="text"
+                    name="person[name]"
+                    ::value="person.name"
+                    disabled
+                    class="cursor-not-allowed opacity-70"
+                    :label="trans('admin::app.leads.common.contact.name')"
+                />
+            </template>
 
             <x-admin::form.control-group.error control-name="person[id]" />
         </x-admin::form.control-group>
@@ -57,7 +76,7 @@
             <v-email-component
                 :attribute="{'id': person?.id, 'code': 'person[emails]', 'name': 'Email'}"
                 :value="person.emails"
-                :is-disabled="person?.id ? true : false"
+                :is-disabled="! canEditContactDetails || !! person?.id"
             ></v-email-component>
         </x-admin::form.control-group>
 
@@ -72,7 +91,7 @@
             <v-phone-component
                 :attribute="{'id': person?.id, 'code': 'person[contact_numbers]', 'name': 'Contact Numbers'}"
                 :value="person.contact_numbers"
-                :is-disabled="person?.id ? true : false"
+                :is-disabled="! canEditContactDetails || !! person?.id"
             ></v-phone-component>
         </x-admin::form.control-group>
 
@@ -183,6 +202,11 @@
                     type: Boolean,
                     default: @json($canEditLeadCompany),
                 },
+
+                canEditContactDetails: {
+                    type: Boolean,
+                    default: @json($canEditContactDetails),
+                },
             },
 
             data () {
@@ -222,6 +246,10 @@
                 },
 
                 isCompanyDisabled() {
+                    if (! this.canEditContactDetails) {
+                        return true;
+                    }
+
                     if (this.canEditCompany) {
                         return false;
                     }

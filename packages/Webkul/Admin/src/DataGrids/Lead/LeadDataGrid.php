@@ -71,6 +71,8 @@ class LeadDataGrid extends DataGrid
                 'organizations.name as company_name',
                 'leads.description',
                 'leads.source_link',
+                'leads.linkedin_profile_id',
+                'linkedin_profiles.name as linkedin_profile_name',
                 'leads.status',
                 'leads.lead_value',
                 'leads.next_followup_date',
@@ -129,6 +131,7 @@ class LeadDataGrid extends DataGrid
             ->leftJoin('lead_types', 'leads.lead_type_id', '=', 'lead_types.id')
             ->leftJoin('lead_pipeline_stages', 'leads.lead_pipeline_stage_id', '=', 'lead_pipeline_stages.id')
             ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
+            ->leftJoin('linkedin_profiles', 'leads.linkedin_profile_id', '=', 'linkedin_profiles.id')
             ->leftJoin('lead_pipelines', 'leads.lead_pipeline_id', '=', 'lead_pipelines.id')
             ->leftJoin('lead_tags', 'leads.id', '=', 'lead_tags.lead_id')
             ->leftJoin('tags', 'tags.id', '=', 'lead_tags.tag_id')
@@ -172,13 +175,6 @@ class LeadDataGrid extends DataGrid
             ['Warm Lead', 'Cold Lead', $coldCallSourceId ?: 0]
         );
 
-        if (
-            in_array(lead_variant(), ['sdr', 'lge'], true)
-            && ! app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin()
-        ) {
-            $queryBuilder->where('leads.user_id', auth()->guard('user')->id());
-        }
-
         if (! app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin()) {
             app(\Webkul\Lead\Services\SourceAccessService::class)->applyLeadOwnerVisibilityTableScope($queryBuilder);
         }
@@ -191,6 +187,7 @@ class LeadDataGrid extends DataGrid
         $this->addFilter('organization_id', 'leads.organization_id');
         $this->addFilter('description', 'leads.description');
         $this->addFilter('source_link', 'leads.source_link');
+        $this->addFilter('linkedin_profile_id', 'leads.linkedin_profile_id');
         $this->addFilter('user', 'leads.user_id');
         $this->addFilter('lead_source_name', 'lead_sources.id');
         $this->addFilter('lead_source_search', 'lead_sources.name');
@@ -334,6 +331,20 @@ class LeadDataGrid extends DataGrid
             'filterable_type'    => 'dropdown',
             'filterable_options' => $this->sourceRepository->getRootDropdownOptions(),
         ]);
+
+        if (lead_variant() === 'lge') {
+            $this->addColumn([
+                'index'              => 'linkedin_profile_id',
+                'label'              => 'LinkedIn Profile',
+                'type'               => 'string',
+                'searchable'         => false,
+                'sortable'           => true,
+                'filterable'         => true,
+                'filterable_type'    => 'dropdown',
+                'filterable_options' => app(\Webkul\Lead\Services\LinkedInProfileAccessService::class)->getFilterOptionsWithHistoricalLeads(),
+                'closure'            => fn ($row) => $row->linkedin_profile_name ?: '--',
+            ]);
+        }
 
         $this->addColumn([
             'index'              => 'lead_type_name',
