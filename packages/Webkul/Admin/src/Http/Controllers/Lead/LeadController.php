@@ -29,6 +29,7 @@ use Webkul\Attribute\Repositories\AttributeRepository;
 use Webkul\Contact\Repositories\OrganizationRepository;
 use Webkul\Contact\Repositories\PersonRepository;
 use Webkul\Contact\Repositories\TeamRepository;
+use Webkul\Contact\Support\ContactPhoneCollection;
 use Webkul\Lead\Helpers\MagicAI;
 use Webkul\Lead\Models\Lead;
 use Webkul\Lead\Repositories\LeadRepository;
@@ -44,6 +45,7 @@ use Webkul\Lead\Services\LinkedInUrlNormalizer;
 use Webkul\Lead\Services\MagicAIService;
 use Webkul\Lead\Services\MeetingHandoffService;
 use Webkul\Lead\Services\SourceAccessService;
+use Webkul\Lead\Services\UsStateTimezoneService;
 use Webkul\Tag\StaticTags;
 use Webkul\Tag\Repositories\TagRepository;
 use Webkul\User\Repositories\UserRepository;
@@ -78,6 +80,7 @@ class LeadController extends Controller
         protected LinkedInProfileAccessService $linkedInProfileAccessService,
         protected FollowupScheduleService $followupScheduleService,
         protected MeetingHandoffService $meetingHandoffService,
+        protected UsStateTimezoneService $usStateTimezoneService,
     ) {
         request()->request->add(['entity_type' => 'leads']);
     }
@@ -210,7 +213,7 @@ class LeadController extends Controller
             'Fixed Price',
             'John Smith',
             'john@example.com',
-            '+15551234567',
+            '+15551234567,+15557654321',
             'Sample Company',
             '123 Main St Suite 100',
             'San Jose',
@@ -924,10 +927,17 @@ class LeadController extends Controller
                 ->orWhere('source_link', 'like', "%{$search}%")
                 ->orWhere('lead_value', 'like', "%{$search}%")
                 ->orWhereHas('person', function ($query) use ($search) {
+                    $like = '%'.ContactPhoneCollection::escapeLike($search).'%';
+                    $digits = ContactPhoneCollection::compareKey($search);
+
                     $query
-                        ->where('name', 'like', "%{$search}%")
+                        ->where('name', 'like', $like)
+                        ->orWhere('contact_numbers', 'like', $like)
+                        ->when($digits && strlen($digits) >= 7 && $digits !== $search, function ($query) use ($digits) {
+                            $query->orWhere('contact_numbers', 'like', '%'.ContactPhoneCollection::escapeLike($digits).'%');
+                        })
                         ->orWhereHas('organization', function ($query) use ($search) {
-                            $query->where('name', 'like', "%{$search}%");
+                            $query->where('name', 'like', '%'.ContactPhoneCollection::escapeLike($search).'%');
                         });
                 })
                 ->orWhereHas('user', function ($query) use ($search) {
@@ -1188,10 +1198,6 @@ class LeadController extends Controller
             return redirect()->route(lead_route_name('view'), $lead->id);
         }
 
-        if ($this->isSdrUser()) {
-            $lead = $this->claimNewLeadForSdr($lead);
-        }
-
         $lead->load(['person.organization', 'products']);
 
         $person = $this->leadPersonFormPayload($lead->person);
@@ -1212,10 +1218,6 @@ class LeadController extends Controller
 
         if (! $this->sourceAccessService->canEditLead($lead)) {
             abort(403);
-        }
-
-        if ($this->isSdrUser()) {
-            $lead = $this->claimNewLeadForSdr($lead);
         }
 
         $lead->load(['person.organization', 'organization', 'tags', 'pipeline.stages']);
@@ -1334,8 +1336,46 @@ class LeadController extends Controller
         }
 
         return response()->json([
-            'data' => $this->meetingHandoffService->getEligibleMeetingOwnersForLead($lead),
+            'data'               => $this->meetingHandoffService->getEligibleMeetingOwnersForLead($lead),
+            'scheduling_context' => $this->leadSchedulingContext($lead),
         ]);
+    }
+
+    /**
+     * Timezone context for follow-up and meeting scheduling modals.
+     */
+    public function schedulingContext(int $id): JsonResponse
+    {
+        $lead = $this->leadRepository->findOrFail($id);
+
+        if (! $this->sourceAccessService->canViewLead($lead)) {
+            abort(403);
+        }
+
+        return response()->json([
+            'data' => $this->leadSchedulingContext($lead),
+        ]);
+    }
+
+    /**
+     * Build prospect timezone metadata without changing stored schedule values.
+     */
+    protected function leadSchedulingContext(Lead $lead): array
+    {
+        $lead->loadMissing('person');
+
+        $person = $lead->person;
+        $timezone = $this->usStateTimezoneService->timezoneFromPerson($person);
+        $state = $person?->state;
+
+        return [
+            'customer_timezone' => $timezone,
+            'customer_state'    => $state,
+            'customer_city'     => $person?->city,
+            'customer_country'  => $person?->country,
+            'app_timezone'      => $this->usStateTimezoneService->appTimezone(),
+            'pakistan_timezone' => 'Asia/Karachi',
+        ];
     }
 
     /**
@@ -1351,15 +1391,12 @@ class LeadController extends Controller
             return redirect()->route($this->leadsIndexRouteName());
         }
 
-        if ($this->isSdrUser()) {
-            $lead = $this->claimNewLeadForSdr($lead);
-        }
-
-        $lead->load(['tags', 'user']);
+        $lead->load(['tags', 'user', 'person']);
 
         return view('admin::leads.view', [
             'lead'            => $lead,
             'meetingOwnerOptions' => $this->meetingHandoffService->getEligibleMeetingOwnersForLead($lead),
+            'schedulingContext' => $this->leadSchedulingContext($lead),
             'readOnlyForCurrentUser' => ! $this->sourceAccessService->canEditLead($lead),
         ]);
     }
@@ -1611,61 +1648,6 @@ class LeadController extends Controller
     protected function stripSdrLockedLeadFields(array $data): array
     {
         return $this->stripLockedLeadFields($data);
-    }
-
-    /**
-     * First SDR to open a New lead claims it and moves it into Follow Up.
-     */
-    protected function claimNewLeadForSdr($lead)
-    {
-        return DB::transaction(function () use ($lead) {
-            $lead = Lead::query()
-                ->with(['pipeline.stages', 'stage'])
-                ->lockForUpdate()
-                ->findOrFail($lead->id);
-
-            if (($lead->stage?->code ?? null) !== 'new') {
-                return $lead;
-            }
-
-            $followUpStage = $lead->pipeline?->stages
-                ->firstWhere('code', 'follow-up');
-
-            if (! $followUpStage) {
-                return $lead;
-            }
-
-            Event::dispatch('lead.update.before', $lead->id);
-
-            $payload = [
-                'entity_type'            => 'leads',
-                'user_id'                => auth()->guard('user')->id(),
-                'lead_pipeline_stage_id' => $followUpStage->id,
-            ];
-
-            $attributes = ['user_id', 'lead_pipeline_stage_id'];
-
-            if (empty($lead->lead_owner_id)) {
-                $payload['lead_owner_id'] = auth()->guard('user')->id();
-                $attributes[] = 'lead_owner_id';
-            }
-
-            if (empty($lead->next_followup_date)) {
-                $payload['next_followup_date'] = $this->followupScheduleService->calculateNext(
-                    $lead,
-                    Carbon::now(),
-                    (int) ($lead->followup_count ?? 0)
-                );
-
-                $attributes[] = 'next_followup_date';
-            }
-
-            $lead = $this->leadRepository->update($payload, $lead->id, $attributes);
-
-            Event::dispatch('lead.update.after', $lead);
-
-            return $lead->fresh(['pipeline.stages', 'stage']);
-        });
     }
 
     /**
@@ -2926,6 +2908,7 @@ class LeadController extends Controller
             'contact_email'      => 'email',
             'contact_phone'      => 'phone',
             'phone_number'       => 'phone',
+            'mobile'             => 'phone',
             'street'             => 'address',
             'address_line'       => 'address',
             'zip'                => 'postcode',
@@ -3037,6 +3020,12 @@ class LeadController extends Controller
 
         if (filled($row['email'] ?? null) && ! filter_var($row['email'], FILTER_VALIDATE_EMAIL)) {
             $errors[] = 'email must be a valid email address.';
+        }
+
+        if (filled($row['phone'] ?? null)) {
+            foreach (ContactPhoneCollection::invalidTokens($row['phone']) as $invalidPhone) {
+                $errors[] = 'phone "'.$invalidPhone.'" is not a valid phone number.';
+            }
         }
 
         foreach (['type' => 'lead_types'] as $column => $table) {
@@ -3159,9 +3148,7 @@ class LeadController extends Controller
                 'emails'           => filled($row['email'] ?? null)
                     ? [['value' => trim($row['email']), 'label' => 'work']]
                     : [],
-                'contact_numbers'  => filled($row['phone'] ?? null)
-                    ? [['value' => trim((string) $row['phone']), 'label' => 'work']]
-                    : [],
+                'contact_numbers'  => ContactPhoneCollection::fromImportValue($row['phone'] ?? null),
                 'address'          => $personAddress,
             ],
         ];
@@ -3381,23 +3368,23 @@ class LeadController extends Controller
      */
     protected function importDuplicateSkipMessage(array $rowData, array &$seenDuplicateKeys): ?string
     {
-        $key = $this->importDuplicateKeyFromRow($rowData);
+        $keys = $this->importDuplicateKeysFromRow($rowData);
 
-        if (! $key) {
+        if (empty($keys)) {
             return null;
         }
 
-        if (in_array($key, $seenDuplicateKeys, true)) {
+        if (array_intersect($keys, $seenDuplicateKeys)) {
             return 'skipped duplicate lead (same company, email, and phone in this file).';
         }
 
         if ($this->leadExistsWithCompanyEmailPhone($rowData)) {
-            $seenDuplicateKeys[] = $key;
+            array_push($seenDuplicateKeys, ...$keys);
 
             return 'skipped duplicate lead (same company, email, and phone already exist).';
         }
 
-        $seenDuplicateKeys[] = $key;
+        array_push($seenDuplicateKeys, ...$keys);
 
         return null;
     }
@@ -3408,13 +3395,34 @@ class LeadController extends Controller
             $rowData['companies'] ?? $rowData['title'] ?? $rowData['company'] ?? null
         );
         $email = $this->normalizeImportEmail($rowData['email'] ?? null);
-        $phone = $this->normalizeImportPhone($rowData['phone'] ?? null);
+        $phones = ContactPhoneCollection::compareKeys($rowData['phone'] ?? null);
 
-        if ($company === null || $email === null || $phone === null) {
+        if ($company === null || $email === null || empty($phones)) {
             return null;
         }
 
-        return $company.'|'.$email.'|'.$phone;
+        return $company.'|'.$email.'|'.implode(',', $phones);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function importDuplicateKeysFromRow(array $rowData): array
+    {
+        $company = $this->normalizeImportCompanyName(
+            $rowData['companies'] ?? $rowData['title'] ?? $rowData['company'] ?? null
+        );
+        $email = $this->normalizeImportEmail($rowData['email'] ?? null);
+        $phones = ContactPhoneCollection::compareKeys($rowData['phone'] ?? null);
+
+        if ($company === null || $email === null || empty($phones)) {
+            return [];
+        }
+
+        return array_map(
+            fn (string $phone) => $company.'|'.$email.'|'.$phone,
+            $phones
+        );
     }
 
     protected function normalizeImportCompanyName($value): ?string
@@ -3460,9 +3468,9 @@ class LeadController extends Controller
             $rowData['companies'] ?? $rowData['title'] ?? $rowData['company'] ?? null
         );
         $email = $this->normalizeImportEmail($rowData['email'] ?? null);
-        $phone = $this->normalizeImportPhone($rowData['phone'] ?? null);
+        $phones = ContactPhoneCollection::compareKeys($rowData['phone'] ?? null);
 
-        if ($company === null || $email === null || $phone === null) {
+        if ($company === null || $email === null || empty($phones)) {
             return false;
         }
 
@@ -3486,14 +3494,15 @@ class LeadController extends Controller
             $emails = is_string($candidate->emails)
                 ? (json_decode($candidate->emails, true) ?: [])
                 : (array) $candidate->emails;
-            $phones = is_string($candidate->contact_numbers)
-                ? (json_decode($candidate->contact_numbers, true) ?: [])
-                : (array) $candidate->contact_numbers;
+            $candidatePhones = ContactPhoneCollection::compareKeys(
+                is_string($candidate->contact_numbers)
+                    ? (json_decode($candidate->contact_numbers, true) ?: [])
+                    : (array) $candidate->contact_numbers
+            );
 
             $candidateEmail = $this->normalizeImportEmail($emails[0]['value'] ?? null);
-            $candidatePhone = $this->normalizeImportPhone($phones[0]['value'] ?? null);
 
-            if ($candidateEmail === $email && $candidatePhone === $phone) {
+            if ($candidateEmail === $email && array_intersect($phones, $candidatePhones)) {
                 return true;
             }
         }

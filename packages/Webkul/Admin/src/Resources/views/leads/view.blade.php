@@ -716,4 +716,6 @@
             });
         </script>
     @endPushOnce
+
+    @include('admin::leads.index.partials.scripts.copy-phone')
 </x-admin::layouts>

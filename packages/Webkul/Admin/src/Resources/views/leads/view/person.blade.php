@@ -92,17 +92,26 @@
                         
                             @foreach ($lead->person->contact_numbers as $contactNumber)
                                 @if (!empty($contactNumber['value']))
-                                    <div class="flex min-w-0 flex-wrap gap-x-1">
-                                        <a  
+                                    <div class="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1">
+                                        <a
                                             class="min-w-0 break-all text-brandColor"
                                             href="callto:{{ $contactNumber['value'] }}"
                                         >
                                             {{ $contactNumber['value'] }}
                                         </a>
-            
+
                                         <span class="text-gray-500 dark:text-gray-300">
                                             ({{ $contactNumber['label'] }})
                                         </span>
+
+                                        <button
+                                            type="button"
+                                            class="inline-flex h-6 shrink-0 items-center justify-center rounded border border-gray-200 px-1.5 text-xs font-semibold text-gray-600 transition-all hover:border-brandColor hover:text-brandColor dark:border-gray-700 dark:text-gray-300"
+                                            title="@lang('admin::app.leads.index.datagrid.copy-phone')"
+                                            onclick='event.stopPropagation(); (window.copyLeadPhone || function () {})(this, @json($contactNumber['value']))'
+                                        >
+                                            Copy
+                                        </button>
                                     </div>
                                 @endif
                             @endforeach

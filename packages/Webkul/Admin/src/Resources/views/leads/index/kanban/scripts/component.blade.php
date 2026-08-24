@@ -42,6 +42,12 @@
 
                     meetingErrors: {},
 
+                    meetingScheduleFrom: '',
+
+                    meetingScheduleTo: '',
+
+                    schedulingContext: {},
+
                     meetingOwnerOptions: [],
 
                     meetingOwnersLoading: false,
@@ -412,7 +418,9 @@
                         this.pendingFollowupStage = stage;
                         this.followupMode = null;
                         this.customFollowupDate = '';
-                        this.$refs.followupStageModal.open();
+                        this.loadSchedulingContext(event.added.element.id).then(() => {
+                            this.$refs.followupStageModal.open();
+                        });
 
                         return;
                     }
@@ -529,6 +537,20 @@
                     return Number(lead.lead_owner_id || 0) === Number(this.currentUserId);
                 },
 
+                kanbanPhones(lead) {
+                    return (lead?.person?.contact_numbers || [])
+                        .map(item => (item && item.value ? String(item.value).trim() : ''))
+                        .filter(Boolean);
+                },
+
+                copyKanbanPhone(event, phone) {
+                    const button = event?.currentTarget;
+
+                    if (button && window.copyLeadPhone) {
+                        window.copyLeadPhone(button, phone);
+                    }
+                },
+
                 findStageForList(list) {
                     if (! list) {
                         return null;
@@ -578,19 +600,179 @@
                     });
                 },
 
+                defaultSchedulingContext() {
+                    return {
+                        customer_timezone: null,
+                        customer_state: null,
+                        customer_city: null,
+                        customer_country: null,
+                        app_timezone: @json(config('app.timezone')),
+                        pakistan_timezone: 'Asia/Karachi',
+                    };
+                },
+
+                setSchedulingContext(context = {}) {
+                    this.schedulingContext = {
+                        ...this.defaultSchedulingContext(),
+                        ...(context || {}),
+                    };
+                },
+
+                loadSchedulingContext(leadId) {
+                    this.setSchedulingContext();
+
+                    return this.$axios.get(`{{ lead_url() }}/${leadId}/scheduling-context`)
+                        .then(response => {
+                            this.setSchedulingContext(response.data.data || {});
+                        })
+                        .catch(() => {
+                            this.setSchedulingContext();
+                        });
+                },
+
+                parseScheduleValue(value) {
+                    const raw = String(value || '').trim();
+
+                    if (! raw) {
+                        return null;
+                    }
+
+                    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
+
+                    if (! match) {
+                        return null;
+                    }
+
+                    let hour = Number(match[4]);
+                    const meridian = match[7]?.toUpperCase();
+
+                    if (meridian === 'PM' && hour < 12) {
+                        hour += 12;
+                    } else if (meridian === 'AM' && hour === 12) {
+                        hour = 0;
+                    }
+
+                    return {
+                        year: Number(match[1]),
+                        month: Number(match[2]),
+                        day: Number(match[3]),
+                        hour,
+                        minute: Number(match[5]),
+                        second: Number(match[6] || 0),
+                    };
+                },
+
+                timeZoneOffsetMinutes(date, timeZone) {
+                    const parts = new Intl.DateTimeFormat('en-US', {
+                        timeZone,
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hourCycle: 'h23',
+                    }).formatToParts(date).reduce((carry, part) => {
+                        if (part.type !== 'literal') {
+                            carry[part.type] = part.value;
+                        }
+
+                        return carry;
+                    }, {});
+
+                    const asUtc = Date.UTC(
+                        Number(parts.year),
+                        Number(parts.month) - 1,
+                        Number(parts.day),
+                        Number(parts.hour),
+                        Number(parts.minute),
+                        Number(parts.second)
+                    );
+
+                    return Math.round((asUtc - date.getTime()) / 60000);
+                },
+
+                dateFromPartsInTimeZone(parts, timeZone) {
+                    const utcGuess = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+                    const firstOffset = this.timeZoneOffsetMinutes(new Date(utcGuess), timeZone);
+                    const firstInstant = new Date(utcGuess - firstOffset * 60000);
+                    const secondOffset = this.timeZoneOffsetMinutes(firstInstant, timeZone);
+
+                    return new Date(utcGuess - secondOffset * 60000);
+                },
+
+                formatInTimeZone(date, timeZone) {
+                    try {
+                        return new Intl.DateTimeFormat('en-US', {
+                            timeZone,
+                            month: 'short',
+                            day: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                            timeZoneName: 'short',
+                        }).format(date);
+                    } catch (error) {
+                        return null;
+                    }
+                },
+
+                timezonePreview(value) {
+                    const parts = this.parseScheduleValue(value);
+                    const context = {
+                        ...this.defaultSchedulingContext(),
+                        ...(this.schedulingContext || {}),
+                    };
+                    const pakistanTimezone = context.pakistan_timezone || 'Asia/Karachi';
+                    const appTimezone = context.app_timezone || pakistanTimezone;
+
+                    if (! parts) {
+                        return { hasValue: false };
+                    }
+
+                    let instant = null;
+
+                    try {
+                        instant = this.dateFromPartsInTimeZone(parts, appTimezone);
+                    } catch (error) {
+                        instant = this.dateFromPartsInTimeZone(parts, pakistanTimezone);
+                    }
+
+                    const location = [context.customer_city, context.customer_state, context.customer_country].filter(Boolean).join(', ');
+                    const customer = context.customer_timezone
+                        ? this.formatInTimeZone(instant, context.customer_timezone)
+                        : null;
+
+                    return {
+                        hasValue: true,
+                        customer: customer || 'Unavailable',
+                        customerMeta: context.customer_timezone
+                            ? [context.customer_timezone, location].filter(Boolean).join(' · ')
+                            : 'Customer timezone unavailable',
+                        pakistan: this.formatInTimeZone(instant, pakistanTimezone) || 'Unavailable',
+                        pakistanMeta: pakistanTimezone,
+                    };
+                },
+
                 loadEligibleMeetingOwners(leadId) {
                     this.meetingOwnerOptions = [];
                     this.meetingOwnersLoading = true;
                     this.meetingOwnersEmpty = false;
+                    this.meetingScheduleFrom = '';
+                    this.meetingScheduleTo = '';
+                    this.setSchedulingContext();
 
                     return this.$axios.get(`{{ lead_url() }}/${leadId}/eligible-meeting-owners`)
                         .then(response => {
                             this.meetingOwnerOptions = response.data.data || [];
                             this.meetingOwnersEmpty = this.meetingOwnerOptions.length === 0;
+                            this.setSchedulingContext(response.data.scheduling_context || {});
                         })
                         .catch(() => {
                             this.meetingOwnerOptions = [];
                             this.meetingOwnersEmpty = true;
+                            this.setSchedulingContext();
                         })
                         .finally(() => {
                             this.meetingOwnersLoading = false;
@@ -613,6 +795,9 @@
                         this.isMeetingSaving = false;
                         this.pendingStageLeadId = null;
                         this.pendingStageId = null;
+                        this.meetingScheduleFrom = '';
+                        this.meetingScheduleTo = '';
+                        this.setSchedulingContext();
                         this.$refs.meetingActivityModal.close();
                         this.$emitter.emit('add-flash', {
                             type: 'success',
@@ -647,6 +832,9 @@
                         this.pendingStageLeadId = null;
                         this.pendingStageId = null;
                         this.meetingErrors = {};
+                        this.meetingScheduleFrom = '';
+                        this.meetingScheduleTo = '';
+                        this.setSchedulingContext();
                         this.refreshKanban();
                     }
                 },
@@ -661,6 +849,7 @@
                         this.pendingFollowupStage = null;
                         this.followupMode = null;
                         this.customFollowupDate = '';
+                        this.setSchedulingContext();
                         this.refreshKanban();
                     }
                 },

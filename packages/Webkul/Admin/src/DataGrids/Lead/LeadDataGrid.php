@@ -233,6 +233,42 @@ class LeadDataGrid extends DataGrid
             }
         }
 
+        if (! empty($requestedFilters['all'])) {
+            $this->queryBuilder->where(function ($scopeQueryBuilder) use ($requestedFilters) {
+                foreach ((array) $requestedFilters['all'] as $value) {
+                    $value = trim((string) $value);
+
+                    if ($value === '') {
+                        continue;
+                    }
+
+                    $like = '%'.\Webkul\Contact\Support\ContactPhoneCollection::escapeLike($value).'%';
+                    $digits = \Webkul\Contact\Support\ContactPhoneCollection::compareKey($value);
+
+                    $scopeQueryBuilder->orWhere(function ($inner) use ($value, $like, $digits) {
+                        collect($this->columns)
+                            ->filter(fn ($column) => $column->getSearchable() && ! in_array($column->getType(), [
+                                \Webkul\DataGrid\Enums\ColumnTypeEnum::BOOLEAN->value,
+                                \Webkul\DataGrid\Enums\ColumnTypeEnum::AGGREGATE->value,
+                            ]))
+                            ->each(fn ($column) => $inner->orWhere($column->getColumnName(), 'LIKE', $like));
+
+                        $inner->orWhere('persons.contact_numbers', 'like', $like);
+
+                        if ($digits && strlen($digits) >= 7 && $digits !== $value) {
+                            $inner->orWhere(
+                                'persons.contact_numbers',
+                                'like',
+                                '%'.\Webkul\Contact\Support\ContactPhoneCollection::escapeLike($digits).'%'
+                            );
+                        }
+                    });
+                }
+            });
+
+            unset($requestedFilters['all']);
+        }
+
         return parent::processRequestedFilters($requestedFilters);
     }
 
@@ -478,29 +514,32 @@ class LeadDataGrid extends DataGrid
             'sortable'   => false,
             'filterable' => false,
             'closure'    => function ($row) {
-                $numbers = collect(json_decode($row->contact_numbers ?? '[]', true) ?? [])
-                    ->pluck('value')
-                    ->filter()
-                    ->values();
+                $numbers = collect(\Webkul\Contact\Support\ContactPhoneCollection::values($row->contact_numbers ?? []));
 
                 if ($numbers->isEmpty()) {
                     return '--';
                 }
 
-                $phone = e($numbers->first());
-                $allPhones = e($numbers->join(', '));
+                $copyTitle = e(trans('admin::app.leads.index.datagrid.copy-phone'));
 
-                return '<span class="inline-flex items-center gap-1.5 whitespace-nowrap">'
-                    .'<span title="'.$allPhones.'">'.$phone.'</span>'
-                    .'<button '
-                    .'type="button" '
-                    .'class="inline-flex h-6 shrink-0 items-center justify-center rounded border border-gray-200 px-1.5 text-xs font-semibold text-gray-600 transition-all hover:border-brandColor hover:text-brandColor dark:border-gray-700 dark:text-gray-300" '
-                    .'title="'.e(trans('admin::app.leads.index.datagrid.copy-phone')).'" '
-                    .'onclick="event.stopPropagation(); (window.copyLeadPhone || function () {})(this, \''.$phone.'\')"'
-                    .'>'
-                    .'Copy'
-                    .'</button>'
-                    .'</span>';
+                $rows = $numbers->map(function ($phone) use ($copyTitle) {
+                    $safePhone = e($phone);
+                    $jsPhone = json_encode($phone, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_UNESCAPED_SLASHES);
+
+                    return '<div class="flex items-center gap-1.5">'
+                        .'<span class="min-w-0 break-all">'.$safePhone.'</span>'
+                        .'<button '
+                        .'type="button" '
+                        .'class="inline-flex h-6 shrink-0 items-center justify-center rounded border border-gray-200 px-1.5 text-xs font-semibold text-gray-600 transition-all hover:border-brandColor hover:text-brandColor dark:border-gray-700 dark:text-gray-300" '
+                        .'title="'.$copyTitle.'" '
+                        ."onclick='event.stopPropagation(); (window.copyLeadPhone || function () {})(this, {$jsPhone})'"
+                        .'>'
+                        .'Copy'
+                        .'</button>'
+                        .'</div>';
+                })->implode('');
+
+                return '<div class="flex flex-col gap-1">'.$rows.'</div>';
             },
         ]);
 

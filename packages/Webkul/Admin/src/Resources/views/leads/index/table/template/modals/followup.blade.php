@@ -27,6 +27,11 @@
                             v-model="customFollowupDate"
                             class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-brandColor dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                         >
+
+                        @include('admin::leads.components.scheduling-time-preview', [
+                            'value' => 'customFollowupDate',
+                            'label' => 'Next Follow-up Preview',
+                        ])
                     </div>
                 </x-slot>
 

@@ -32,6 +32,8 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
 
     Route::get('{id}/eligible-meeting-owners', 'eligibleMeetingOwners')->name('admin.leads.eligible_meeting_owners');
 
+    Route::get('{id}/scheduling-context', 'schedulingContext')->name('admin.leads.scheduling_context');
+
     Route::get('edit/{id}', 'edit')->name('admin.leads.edit');
 
     Route::get('edit/{id}/form-data', 'formData')->name('admin.leads.form_data');
@@ -101,6 +103,10 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
         Route::get('', 'leadClouser')->name('admin.leads.lead_clouser');
 
         Route::get('view/{id}', 'view')->name('admin.leads.lead_clouser.view');
+
+        Route::get('{id}/eligible-meeting-owners', 'eligibleMeetingOwners')->name('admin.leads.lead_clouser.eligible_meeting_owners');
+
+        Route::get('{id}/scheduling-context', 'schedulingContext')->name('admin.leads.lead_clouser.scheduling_context');
 
         Route::get('edit/{id}', 'edit')->name('admin.leads.lead_clouser.edit');
 
@@ -182,6 +188,8 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
         Route::get('view/{id}', 'view')->name('admin.leads.sdr.view');
 
         Route::get('{id}/eligible-meeting-owners', 'eligibleMeetingOwners')->name('admin.leads.sdr.eligible_meeting_owners');
+
+        Route::get('{id}/scheduling-context', 'schedulingContext')->name('admin.leads.sdr.scheduling_context');
 
         Route::get('edit/{id}', 'edit')->name('admin.leads.sdr.edit');
 
@@ -275,6 +283,8 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
         Route::get('view/{id}', 'view')->name('admin.leads.lge.view');
 
         Route::get('{id}/eligible-meeting-owners', 'eligibleMeetingOwners')->name('admin.leads.lge.eligible_meeting_owners');
+
+        Route::get('{id}/scheduling-context', 'schedulingContext')->name('admin.leads.lge.scheduling_context');
 
         Route::get('edit/{id}', 'edit')->name('admin.leads.lge.edit');
 

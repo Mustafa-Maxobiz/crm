@@ -219,6 +219,12 @@ class LeadForm extends FormRequest
 
         $data['person'] = $person;
 
+        $mergedPhones = \Webkul\Contact\Support\ContactPhoneCollection::fromRequestPayload($data);
+
+        if (! empty($mergedPhones)) {
+            $data['person']['contact_numbers'] = $mergedPhones;
+        }
+
         if (
             $this->sourceAccessService->isSdrUser()
             && ($this->isMethod('PUT') || $this->isMethod('PATCH'))

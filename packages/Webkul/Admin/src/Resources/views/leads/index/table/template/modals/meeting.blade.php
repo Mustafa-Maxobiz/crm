@@ -27,6 +27,7 @@
                                         <x-admin::form.control-group.control
                                             type="datetime"
                                             name="schedule_from"
+                                            v-model="meetingScheduleFrom"
                                             rules="required"
                                             label="Schedule From"
                                         />
@@ -42,12 +43,25 @@
                                         <x-admin::form.control-group.control
                                             type="datetime"
                                             name="schedule_to"
+                                            v-model="meetingScheduleTo"
                                             rules="required|after_datetime:@schedule_from"
                                             label="Schedule To"
                                         />
 
                                         <x-admin::form.control-group.error control-name="schedule_to" />
                                     </x-admin::form.control-group>
+                                </div>
+
+                                <div class="grid gap-3 md:grid-cols-2">
+                                    @include('admin::leads.components.scheduling-time-preview', [
+                                        'value' => 'meetingScheduleFrom',
+                                        'label' => 'Meeting Start Preview',
+                                    ])
+
+                                    @include('admin::leads.components.scheduling-time-preview', [
+                                        'value' => 'meetingScheduleTo',
+                                        'label' => 'Meeting End Preview',
+                                    ])
                                 </div>
 
                                 <x-admin::form.control-group>

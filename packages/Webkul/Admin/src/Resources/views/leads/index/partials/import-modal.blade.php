@@ -58,6 +58,11 @@
                                     <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
                                         Required: companies*, lead_value*, type*, pricing_type*
                                     </p>
+
+                                    <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                        For multiple phone numbers, separate values with commas.
+                                        Example: +13055551111,+13055552222
+                                    </p>
                                 </div>
 
                                 <a

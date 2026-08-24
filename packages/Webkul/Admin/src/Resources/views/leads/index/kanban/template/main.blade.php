@@ -171,6 +171,33 @@
                                         @{{ element.title }}
                                     </p>
 
+                                    <div
+                                        class="flex flex-col gap-0.5"
+                                        v-if="kanbanPhones(element).length"
+                                        @click.stop
+                                    >
+                                        <div class="flex items-center gap-1">
+                                            <span class="min-w-0 truncate text-[10px] leading-normal text-gray-700 dark:text-gray-200">
+                                                @{{ kanbanPhones(element)[0] }}
+                                            </span>
+
+                                            <button
+                                                type="button"
+                                                class="inline-flex h-5 shrink-0 items-center justify-center rounded border border-gray-200 px-1 text-[10px] font-semibold text-gray-600 hover:border-brandColor hover:text-brandColor dark:border-gray-700 dark:text-gray-300"
+                                                @click.stop.prevent="copyKanbanPhone($event, kanbanPhones(element)[0])"
+                                            >
+                                                Copy
+                                            </button>
+                                        </div>
+
+                                        <span
+                                            class="text-[10px] text-gray-500 dark:text-gray-400"
+                                            v-if="kanbanPhones(element).length > 1"
+                                        >
+                                            +@{{ kanbanPhones(element).length - 1 }} more
+                                        </span>
+                                    </div>
+
                                     {!! view_render_event('admin.leads.index.kanban.content.stage.body.card.title.after') !!}
 
                                     <div class="flex flex-col gap-1">

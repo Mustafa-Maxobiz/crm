@@ -246,6 +246,11 @@
                             v-model="customFollowupDate"
                             class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-brandColor dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                         >
+
+                        @include('admin::leads.components.scheduling-time-preview', [
+                            'value' => 'customFollowupDate',
+                            'label' => 'Next Follow-up Preview',
+                        ])
                     </div>
                 </x-slot>
 
@@ -302,6 +307,7 @@
                                         <x-admin::form.control-group.control
                                             type="datetime"
                                             name="schedule_from"
+                                            v-model="meetingScheduleFrom"
                                             rules="required"
                                             label="Schedule From"
                                         />
@@ -317,12 +323,25 @@
                                         <x-admin::form.control-group.control
                                             type="datetime"
                                             name="schedule_to"
+                                            v-model="meetingScheduleTo"
                                             rules="required|after_datetime:@schedule_from"
                                             label="Schedule To"
                                         />
 
                                         <x-admin::form.control-group.error control-name="schedule_to" />
                                     </x-admin::form.control-group>
+                                </div>
+
+                                <div class="grid gap-3 md:grid-cols-2">
+                                    @include('admin::leads.components.scheduling-time-preview', [
+                                        'value' => 'meetingScheduleFrom',
+                                        'label' => 'Meeting Start Preview',
+                                    ])
+
+                                    @include('admin::leads.components.scheduling-time-preview', [
+                                        'value' => 'meetingScheduleTo',
+                                        'label' => 'Meeting End Preview',
+                                    ])
                                 </div>
 
                                 <x-admin::form.control-group>
@@ -510,6 +529,12 @@
 
                     isFollowupSaving: false,
 
+                    meetingScheduleFrom: '',
+
+                    meetingScheduleTo: '',
+
+                    schedulingContext: @json($schedulingContext ?? []),
+
                     stages: @json($accessibleViewStages->values()),
 
                     isLgeLeadVariant: @json($isLgeLeadVariant),
@@ -599,6 +624,8 @@
                     if (stage.code === 'meeting' && ! this.hasMeetingActivity) {
                         this.pendingMeetingStage = stage;
                         this.meetingErrors = {};
+                        this.meetingScheduleFrom = '';
+                        this.meetingScheduleTo = '';
 
                         this.$refs.meetingActivityModal.open();
 
@@ -693,6 +720,142 @@
                         && stage?.code === 'follow-up';
                 },
 
+                defaultSchedulingContext() {
+                    return {
+                        customer_timezone: null,
+                        customer_state: null,
+                        customer_city: null,
+                        customer_country: null,
+                        app_timezone: @json(config('app.timezone')),
+                        pakistan_timezone: 'Asia/Karachi',
+                    };
+                },
+
+                parseScheduleValue(value) {
+                    const raw = String(value || '').trim();
+
+                    if (! raw) {
+                        return null;
+                    }
+
+                    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
+
+                    if (! match) {
+                        return null;
+                    }
+
+                    let hour = Number(match[4]);
+                    const meridian = match[7]?.toUpperCase();
+
+                    if (meridian === 'PM' && hour < 12) {
+                        hour += 12;
+                    } else if (meridian === 'AM' && hour === 12) {
+                        hour = 0;
+                    }
+
+                    return {
+                        year: Number(match[1]),
+                        month: Number(match[2]),
+                        day: Number(match[3]),
+                        hour,
+                        minute: Number(match[5]),
+                        second: Number(match[6] || 0),
+                    };
+                },
+
+                timeZoneOffsetMinutes(date, timeZone) {
+                    const parts = new Intl.DateTimeFormat('en-US', {
+                        timeZone,
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hourCycle: 'h23',
+                    }).formatToParts(date).reduce((carry, part) => {
+                        if (part.type !== 'literal') {
+                            carry[part.type] = part.value;
+                        }
+
+                        return carry;
+                    }, {});
+
+                    const asUtc = Date.UTC(
+                        Number(parts.year),
+                        Number(parts.month) - 1,
+                        Number(parts.day),
+                        Number(parts.hour),
+                        Number(parts.minute),
+                        Number(parts.second)
+                    );
+
+                    return Math.round((asUtc - date.getTime()) / 60000);
+                },
+
+                dateFromPartsInTimeZone(parts, timeZone) {
+                    const utcGuess = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+                    const firstOffset = this.timeZoneOffsetMinutes(new Date(utcGuess), timeZone);
+                    const firstInstant = new Date(utcGuess - firstOffset * 60000);
+                    const secondOffset = this.timeZoneOffsetMinutes(firstInstant, timeZone);
+
+                    return new Date(utcGuess - secondOffset * 60000);
+                },
+
+                formatInTimeZone(date, timeZone) {
+                    try {
+                        return new Intl.DateTimeFormat('en-US', {
+                            timeZone,
+                            month: 'short',
+                            day: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                            timeZoneName: 'short',
+                        }).format(date);
+                    } catch (error) {
+                        return null;
+                    }
+                },
+
+                timezonePreview(value) {
+                    const parts = this.parseScheduleValue(value);
+                    const context = {
+                        ...this.defaultSchedulingContext(),
+                        ...(this.schedulingContext || {}),
+                    };
+                    const pakistanTimezone = context.pakistan_timezone || 'Asia/Karachi';
+                    const appTimezone = context.app_timezone || pakistanTimezone;
+
+                    if (! parts) {
+                        return { hasValue: false };
+                    }
+
+                    let instant = null;
+
+                    try {
+                        instant = this.dateFromPartsInTimeZone(parts, appTimezone);
+                    } catch (error) {
+                        instant = this.dateFromPartsInTimeZone(parts, pakistanTimezone);
+                    }
+
+                    const location = [context.customer_city, context.customer_state, context.customer_country].filter(Boolean).join(', ');
+                    const customer = context.customer_timezone
+                        ? this.formatInTimeZone(instant, context.customer_timezone)
+                        : null;
+
+                    return {
+                        hasValue: true,
+                        customer: customer || 'Unavailable',
+                        customerMeta: context.customer_timezone
+                            ? [context.customer_timezone, location].filter(Boolean).join(' · ')
+                            : 'Customer timezone unavailable',
+                        pakistan: this.formatInTimeZone(instant, pakistanTimezone) || 'Unavailable',
+                        pakistanMeta: pakistanTimezone,
+                    };
+                },
+
                 requiresLgeSdrHandoff(stage) {
                     if (! this.isLgeLeadVariant || ! stage) {
                         return false;
@@ -774,6 +937,8 @@
                             this.$refs.meetingActivityModal.close();
 
                             this.pendingMeetingStage = null;
+                            this.meetingScheduleFrom = '';
+                            this.meetingScheduleTo = '';
 
                             if (this.isCallingRoleLeadVariant && pendingStage) {
                                 this.currentStage = pendingStage;
