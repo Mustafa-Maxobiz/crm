@@ -2233,6 +2233,7 @@ return [
                 'industry'            => 'Industry',
                 'service-offered'     => 'Services Offered',
                 'products'            => 'Products',
+                'packages'            => 'Packages',
                 'tag-name'            => 'Tag',
                 'contact-person'      => 'Contact Person',
                 'phone'               => 'Phone',

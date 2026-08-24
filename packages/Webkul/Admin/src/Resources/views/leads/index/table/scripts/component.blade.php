@@ -43,7 +43,9 @@
                     defaultMeetingParticipants: @json($defaultMeetingParticipants),
                     isLgeLeadVariant: @json($isLgeLeadVariant),
                     isCallingRoleLeadVariant: @json($isCallingRoleLeadVariant),
-                    meetingOwnerOptions: @json($meetingOwnerOptions ?? []),
+                    meetingOwnerOptions: [],
+                    meetingOwnersLoading: false,
+                    meetingOwnersEmpty: false,
                     pendingHandoffLeadId: null,
                     pendingHandoffStageId: null,
                     pendingHandoffSdrUserId: '',
@@ -455,7 +457,9 @@
                             this.pendingStageLeadId = leadId;
                             this.pendingStageId = value;
                             this.meetingErrors = {};
-                            this.$refs.meetingActivityModal.open();
+                            this.loadEligibleMeetingOwners(leadId).then(() => {
+                                this.$refs.meetingActivityModal.open();
+                            });
 
                             return;
                         }
@@ -464,7 +468,9 @@
                             this.pendingHandoffLeadId = leadId;
                             this.pendingHandoffStageId = value;
                             this.pendingHandoffSdrUserId = '';
-                            this.$refs.lgeSdrHandoffModal.open();
+                            this.loadEligibleMeetingOwners(leadId).then(() => {
+                                this.$refs.lgeSdrHandoffModal.open();
+                            });
 
                             return;
                         }
@@ -784,6 +790,25 @@
                     return ['users', 'persons'].some(type => {
                         return (participants[type] || []).some(participantId => !! participantId);
                     });
+                },
+
+                loadEligibleMeetingOwners(leadId) {
+                    this.meetingOwnerOptions = [];
+                    this.meetingOwnersLoading = true;
+                    this.meetingOwnersEmpty = false;
+
+                    return this.$axios.get(`{{ lead_url() }}/${leadId}/eligible-meeting-owners`)
+                        .then(response => {
+                            this.meetingOwnerOptions = response.data.data || [];
+                            this.meetingOwnersEmpty = this.meetingOwnerOptions.length === 0;
+                        })
+                        .catch(() => {
+                            this.meetingOwnerOptions = [];
+                            this.meetingOwnersEmpty = true;
+                        })
+                        .finally(() => {
+                            this.meetingOwnersLoading = false;
+                        });
                 },
 
                 saveMeetingAndMove(params, { setErrors }) {

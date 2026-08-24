@@ -30,6 +30,8 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
 
     Route::get('view/{id}', 'view')->name('admin.leads.view');
 
+    Route::get('{id}/eligible-meeting-owners', 'eligibleMeetingOwners')->name('admin.leads.eligible_meeting_owners');
+
     Route::get('edit/{id}', 'edit')->name('admin.leads.edit');
 
     Route::get('edit/{id}/form-data', 'formData')->name('admin.leads.form_data');
@@ -179,6 +181,8 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
 
         Route::get('view/{id}', 'view')->name('admin.leads.sdr.view');
 
+        Route::get('{id}/eligible-meeting-owners', 'eligibleMeetingOwners')->name('admin.leads.sdr.eligible_meeting_owners');
+
         Route::get('edit/{id}', 'edit')->name('admin.leads.sdr.edit');
 
         Route::get('edit/{id}/form-data', 'formData')->name('admin.leads.sdr.form_data');
@@ -269,6 +273,8 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
         Route::get('disqualified', 'disqualified')->name('admin.leads.lge.disqualified');
 
         Route::get('view/{id}', 'view')->name('admin.leads.lge.view');
+
+        Route::get('{id}/eligible-meeting-owners', 'eligibleMeetingOwners')->name('admin.leads.lge.eligible_meeting_owners');
 
         Route::get('edit/{id}', 'edit')->name('admin.leads.lge.edit');
 

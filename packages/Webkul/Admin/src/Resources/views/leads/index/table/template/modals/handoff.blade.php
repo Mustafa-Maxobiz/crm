@@ -22,8 +22,11 @@
                         <select
                             v-model="pendingHandoffSdrUserId"
                             class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-brandColor dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                            :disabled="meetingOwnersLoading || meetingOwnersEmpty"
                         >
-                            <option value="">Select Admin / Lead User</option>
+                            <option value="">
+                                @{{ meetingOwnersLoading ? 'Loading eligible owners...' : 'Select Admin / Lead User' }}
+                            </option>
 
                             <option
                                 v-for="user in meetingOwnerOptions"
@@ -33,6 +36,13 @@
                                 @{{ user.name }} <template v-if="user.role_name">- @{{ user.role_name }}</template> <template v-if="user.email">(@{{ user.email }})</template>
                             </option>
                         </select>
+
+                        <p
+                            v-if="meetingOwnersEmpty && ! meetingOwnersLoading"
+                            class="mt-2 text-xs text-red-600"
+                        >
+                            No Lead Closers/Admin users are assigned to the selected Services Offered. Please contact an administrator.
+                        </p>
                     </x-admin::form.control-group>
                 </x-slot>
 
@@ -40,7 +50,7 @@
                     <button
                         type="button"
                         class="primary-button"
-                        :disabled="isHandoffSaving"
+                        :disabled="isHandoffSaving || meetingOwnersLoading || meetingOwnersEmpty"
                         @click="applyLgeSdrHandoff"
                     >
                         <template v-if="isHandoffSaving">Saving...</template>

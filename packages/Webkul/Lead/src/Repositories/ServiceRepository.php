@@ -23,6 +23,7 @@ class ServiceRepository extends Repository
     {
         return $this->getModel()
             ->newQuery()
+            ->where('is_show', true)
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get(['id as value', 'name as label'])

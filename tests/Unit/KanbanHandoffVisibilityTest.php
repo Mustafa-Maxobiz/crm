@@ -130,4 +130,64 @@ class KanbanHandoffVisibilityTest extends TestCase
 
         DB::table('leads')->where('id', $leadId)->delete();
     }
+
+    public function test_handed_off_lead_is_hidden_from_sdr_lge_table_scope(): void
+    {
+        $pipelineId = (int) (DB::table('lead_pipelines')->value('id') ?? 0);
+        $newStageId = (int) DB::table('lead_pipeline_stages')->where('code', 'new')->value('id');
+
+        if ($pipelineId <= 0 || $newStageId <= 0) {
+            $this->markTestSkipped('Pipeline new stage is unavailable.');
+        }
+
+        $lgeUserId = (int) (DB::table('users')->where('status', 1)->value('id') ?? 0);
+        $closerUserId = (int) (DB::table('users')->where('status', 1)->where('id', '!=', $lgeUserId)->value('id') ?? 0);
+
+        if ($lgeUserId <= 0 || $closerUserId <= 0) {
+            $this->markTestSkipped('Active users are unavailable.');
+        }
+
+        $ownedLeadId = (int) DB::table('leads')->insertGetId([
+            'title'                  => 'Owned Untransferred Lead',
+            'lead_pipeline_id'       => $pipelineId,
+            'lead_pipeline_stage_id' => $newStageId,
+            'user_id'                => $lgeUserId,
+            'lead_owner_id'          => $lgeUserId,
+            'status'                 => 1,
+            'created_at'             => now(),
+            'updated_at'             => now(),
+        ]);
+
+        $handedOffLeadId = (int) DB::table('leads')->insertGetId([
+            'title'                  => 'Handed Off Table Hidden Lead',
+            'lead_pipeline_id'       => $pipelineId,
+            'lead_pipeline_stage_id' => $newStageId,
+            'user_id'                => $closerUserId,
+            'lead_owner_id'          => $lgeUserId,
+            'status'                 => 1,
+            'created_at'             => now(),
+            'updated_at'             => now(),
+        ]);
+
+        $lge = AccessTestHelpers::user([
+            'id'        => $lgeUserId,
+            'role_name' => 'lge',
+        ]);
+
+        $this->actingAs($lge, 'user');
+        view()->share('leadVariant', 'lge');
+
+        $service = app(SourceAccessService::class);
+
+        $ownedQuery = DB::table('leads')->where('id', $ownedLeadId);
+        $service->applyNonTransferredOwnerTableScope($ownedQuery);
+
+        $handedOffQuery = DB::table('leads')->where('id', $handedOffLeadId);
+        $service->applyNonTransferredOwnerTableScope($handedOffQuery);
+
+        $this->assertTrue($ownedQuery->exists());
+        $this->assertFalse($handedOffQuery->exists());
+
+        DB::table('leads')->whereIn('id', [$ownedLeadId, $handedOffLeadId])->delete();
+    }
 }

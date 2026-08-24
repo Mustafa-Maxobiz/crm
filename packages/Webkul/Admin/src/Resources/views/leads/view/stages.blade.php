@@ -361,6 +361,12 @@
                                             @endforeach
                                         </x-admin::form.control-group.control>
 
+                                        @if (empty($meetingOwnerOptions))
+                                            <p class="mt-1 text-xs text-red-600">
+                                                No Lead Closers/Admin users are assigned to the selected Services Offered. Please contact an administrator.
+                                            </p>
+                                        @endif
+
                                         <x-admin::form.control-group.error control-name="assigned_user_id" />
                                     </x-admin::form.control-group>
                                 @endif
@@ -406,7 +412,7 @@
                             <button
                                 type="submit"
                                 class="primary-button"
-                                :disabled="isMeetingStoring"
+                                :disabled="isMeetingStoring || {{ empty($meetingOwnerOptions) ? 'true' : 'false' }}"
                             >
                                 <template v-if="isMeetingStoring">
                                     Saving...
@@ -444,6 +450,7 @@
                         <select
                             v-model="pendingHandoffSdrUserId"
                             class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-brandColor dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                            :disabled="meetingOwnersEmpty"
                         >
                             <option value="">Select Admin / Lead User</option>
 
@@ -455,6 +462,13 @@
                                 @{{ user.name }} <template v-if="user.role_name">- @{{ user.role_name }}</template> <template v-if="user.email">(@{{ user.email }})</template>
                             </option>
                         </select>
+
+                        <p
+                            v-if="meetingOwnersEmpty"
+                            class="mt-2 text-xs text-red-600"
+                        >
+                            No Lead Closers/Admin users are assigned to the selected Services Offered. Please contact an administrator.
+                        </p>
                     </x-admin::form.control-group>
                 </x-slot>
 
@@ -462,7 +476,7 @@
                     <button
                         type="button"
                         class="primary-button"
-                        :disabled="isHandoffSaving"
+                        :disabled="isHandoffSaving || meetingOwnersEmpty"
                         @click="applyLgeSdrHandoff"
                     >
                         <template v-if="isHandoffSaving">Saving...</template>
@@ -502,6 +516,7 @@
                     isCallingRoleLeadVariant: @json($isCallingRoleView),
 
                     meetingOwnerOptions: @json($meetingOwnerOptions ?? []),
+                    meetingOwnersEmpty: @json(empty($meetingOwnerOptions ?? [])),
 
                     pendingHandoffStage: null,
 

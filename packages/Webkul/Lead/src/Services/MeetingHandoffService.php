@@ -3,6 +3,7 @@
 namespace Webkul\Lead\Services;
 
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
@@ -136,9 +137,95 @@ class MeetingHandoffService
 
     public function isActiveMeetingOwnerId(int $userId): bool
     {
+        return $this->eligibleOwnerBaseQuery()
+            ->where('users.id', $userId)
+            ->exists();
+    }
+
+    /**
+     * @return array<int, array{id: int, name: string, email: string|null, role_name: string|null}>
+     */
+    public function getAllActiveMeetingOwners(): array
+    {
+        return $this->mapEligibleOwnerRows(
+            $this->eligibleOwnerBaseQuery()
+                ->orderBy('users.name')
+                ->get(['users.id', 'users.name', 'users.email', 'roles.name as role_name'])
+        );
+    }
+
+    /**
+     * Eligible handoff owners for a lead. Falls back to all active owners when the lead has no services.
+     *
+     * @return array<int, array{id: int, name: string, email: string|null, role_name: string|null}>
+     */
+    public function getEligibleMeetingOwnersForLead(?LeadContract $lead = null): array
+    {
+        if (! $lead) {
+            return $this->getAllActiveMeetingOwners();
+        }
+
+        $serviceIds = $this->getLeadServiceIds($lead);
+
+        if (empty($serviceIds)) {
+            return $this->getAllActiveMeetingOwners();
+        }
+
+        return $this->mapEligibleOwnerRows(
+            $this->eligibleOwnerBaseQuery()
+                ->join('service_user', 'service_user.user_id', '=', 'users.id')
+                ->whereIn('service_user.service_id', $serviceIds)
+                ->distinct()
+                ->orderBy('users.name')
+                ->get(['users.id', 'users.name', 'users.email', 'roles.name as role_name'])
+        );
+    }
+
+    public function isEligibleMeetingOwnerForLead(LeadContract $lead, int $userId): bool
+    {
+        if (! $this->isActiveMeetingOwnerId($userId)) {
+            return false;
+        }
+
+        $serviceIds = $this->getLeadServiceIds($lead);
+
+        if (empty($serviceIds)) {
+            return true;
+        }
+
+        return DB::table('service_user')
+            ->where('user_id', $userId)
+            ->whereIn('service_id', $serviceIds)
+            ->exists();
+    }
+
+    /**
+     * @return array<int>
+     */
+    public function getLeadServiceIds(LeadContract $lead): array
+    {
+        if ($lead->relationLoaded('services')) {
+            return $lead->services
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->filter()
+                ->values()
+                ->all();
+        }
+
+        return DB::table('lead_service')
+            ->where('lead_id', $lead->id)
+            ->pluck('service_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    protected function eligibleOwnerBaseQuery(): Builder
+    {
         return DB::table('users')
             ->join('roles', 'users.role_id', '=', 'roles.id')
-            ->where('users.id', $userId)
             ->where('users.status', 1)
             ->where(function ($query) {
                 $query->where('roles.permission_type', 'all')
@@ -148,8 +235,24 @@ class MeetingHandoffService
                         'lead closer',
                         'lead closure',
                     ]);
-            })
-            ->exists();
+            });
+    }
+
+    /**
+     * @param  iterable<object>  $rows
+     * @return array<int, array{id: int, name: string, email: string|null, role_name: string|null}>
+     */
+    protected function mapEligibleOwnerRows(iterable $rows): array
+    {
+        return collect($rows)
+            ->map(fn ($user) => [
+                'id'        => (int) $user->id,
+                'name'      => $user->name,
+                'email'     => $user->email,
+                'role_name' => $user->role_name,
+            ])
+            ->values()
+            ->all();
     }
 
     protected function assertCanCompleteHandoff(
@@ -190,9 +293,13 @@ class MeetingHandoffService
             throw new AuthorizationException('You can move SDR/LGE leads up to Meeting only.');
         }
 
-        if (! $this->isActiveMeetingOwnerId($assignedUserId)) {
+        if (! $this->isEligibleMeetingOwnerForLead($lead, $assignedUserId)) {
+            $message = empty($this->getLeadServiceIds($lead))
+                ? 'Please select a valid Admin or Lead user.'
+                : 'The selected owner is not assigned to handle this lead\'s services.';
+
             throw ValidationException::withMessages([
-                'assigned_user_id' => ['Please select a valid Admin or Lead user.'],
+                'assigned_user_id' => [$message],
             ]);
         }
     }

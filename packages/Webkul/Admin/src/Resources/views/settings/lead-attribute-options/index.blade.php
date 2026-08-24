@@ -42,6 +42,8 @@
             store-route="{{ route($routePrefix.'.store') }}"
             update-route-template="{{ $updateRouteTemplate }}"
             :labels='@json($optionLabels)'
+            :show-service-owner-assignment='@json($showServiceOwnerAssignment ?? false)'
+            :assignable-meeting-owners='@json($assignableMeetingOwners ?? [])'
         >
             <x-admin::shimmer.datagrid />
         </v-lead-attribute-option-settings>
@@ -63,7 +65,8 @@
                         applied,
                         selectAll,
                         sort,
-                        performAction
+                        performAction,
+                        gridRowStyle
                     }">
                         <template v-if="isLoading">
                             <x-admin::shimmer.datagrid.table.body />
@@ -72,30 +75,52 @@
                         <template v-else>
                             <div
                                 v-for="record in available.records"
+                                :key="'desktop-' + record.id"
                                 class="row grid items-center gap-2.5 border-b px-4 py-4 text-gray-600 transition-all hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-950 max-lg:hidden"
-                                :style="`grid-template-columns: repeat(${gridsCount}, minmax(0, 1fr))`"
+                                :style="gridRowStyle"
                             >
-                                <p>@{{ record.id }}</p>
-                                <p>@{{ record.name }}</p>
-                                <p>@{{ record.sort_order }}</p>
+                                <template
+                                    v-for="column in available.columns"
+                                    :key="'col-' + record.id + '-' + column.index"
+                                >
+                                    <div v-if="column.visibility && column.index === 'is_show'" class="min-w-0 text-left">
+                                        <button
+                                            type="button"
+                                            class="inline-flex cursor-pointer items-center justify-center rounded-full px-3 py-1 text-center text-xs font-semibold transition-all"
+                                            style="width: 5.5rem; min-width: 5.5rem;"
+                                            :class="(record.is_show == 1 || record.is_show === true) ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-600 hover:bg-red-200'"
+                                            @click="toggleServiceVisibility(record)"
+                                        >
+                                            @{{ (record.is_show == 1 || record.is_show === true) ? 'Active' : 'Inactive' }}
+                                        </button>
+                                    </div>
+                                    <p
+                                        v-else-if="column.visibility"
+                                        class="min-w-0 break-words text-left"
+                                        v-html="record[column.index] || '--'"
+                                    ></p>
+                                </template>
 
-                                <div class="flex justify-end">
+                                <div
+                                    class="flex h-full items-center justify-end place-self-end"
+                                    v-if="available.actions.length"
+                                >
                                     <a
-                                        v-if="record.actions.find(action => action.index === 'edit')"
-                                        @click="selectedOption=true; editModal(record.actions.find(action => action.index === 'edit')?.url)"
+                                        v-if="getAction(record, 'edit')"
+                                        @click="selectedOption=true; editModal(getAction(record, 'edit').url)"
                                     >
                                         <span
-                                            :class="record.actions.find(action => action.index === 'edit')?.icon"
+                                            :class="getAction(record, 'edit').icon"
                                             class="cursor-pointer rounded-md p-1.5 text-2xl transition-all hover:bg-gray-200 dark:hover:bg-gray-800 max-sm:place-self-center"
                                         ></span>
                                     </a>
 
                                     <a
-                                        v-if="record.actions.find(action => action.index === 'delete')"
-                                        @click="performAction(record.actions.find(action => action.index === 'delete'))"
+                                        v-if="getAction(record, 'delete')"
+                                        @click="performAction(getAction(record, 'delete'))"
                                     >
                                         <span
-                                            :class="record.actions.find(action => action.index === 'delete')?.icon"
+                                            :class="getAction(record, 'delete').icon"
                                             class="cursor-pointer rounded-md p-1.5 text-2xl transition-all hover:bg-gray-200 dark:hover:bg-gray-800 max-sm:place-self-center"
                                         ></span>
                                     </a>
@@ -105,24 +130,25 @@
                             <div
                                 class="hidden border-b px-4 py-4 text-black dark:border-gray-800 dark:text-gray-300 max-lg:block"
                                 v-for="record in available.records"
+                                :key="'mobile-' + record.id"
                             >
                                 <div class="mb-2 flex items-center justify-end gap-2">
                                     <a
-                                        v-if="record.actions.find(action => action.index === 'edit')"
-                                        @click="selectedOption=true; editModal(record.actions.find(action => action.index === 'edit')?.url)"
+                                        v-if="getAction(record, 'edit')"
+                                        @click="selectedOption=true; editModal(getAction(record, 'edit').url)"
                                     >
                                         <span
-                                            :class="record.actions.find(action => action.index === 'edit')?.icon"
+                                            :class="getAction(record, 'edit').icon"
                                             class="cursor-pointer rounded-md p-1.5 text-2xl transition-all hover:bg-gray-200 dark:hover:bg-gray-800"
                                         ></span>
                                     </a>
 
                                     <a
-                                        v-if="record.actions.find(action => action.index === 'delete')"
-                                        @click="performAction(record.actions.find(action => action.index === 'delete'))"
+                                        v-if="getAction(record, 'delete')"
+                                        @click="performAction(getAction(record, 'delete'))"
                                     >
                                         <span
-                                            :class="record.actions.find(action => action.index === 'delete')?.icon"
+                                            :class="getAction(record, 'delete').icon"
                                             class="cursor-pointer rounded-md p-1.5 text-2xl transition-all hover:bg-gray-200 dark:hover:bg-gray-800"
                                         ></span>
                                     </a>
@@ -132,7 +158,7 @@
                                     <template v-for="column in available.columns">
                                         <div class="flex flex-wrap items-baseline gap-x-2">
                                             <span class="text-slate-600 dark:text-gray-300" v-html="column.label + ':'"></span>
-                                            <span class="break-words font-medium text-slate-900 dark:text-white" v-html="record[column.index]"></span>
+                                            <span class="break-words font-medium text-slate-900 dark:text-white" v-html="record[column.index] || '--'"></span>
                                         </div>
                                     </template>
                                 </div>
@@ -193,6 +219,46 @@
 
                                     <x-admin::form.control-group.error control-name="sort_order" />
                                 </x-admin::form.control-group>
+
+                                <div v-if="showServiceOwnerAssignment" class="mb-4 flex items-center gap-3">
+                                    <label class="relative inline-flex cursor-pointer items-center">
+                                        <input
+                                            type="checkbox"
+                                            name="is_show"
+                                            class="peer sr-only"
+                                            v-model="isShow"
+                                        />
+                                        <div class="peer h-5 w-9 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white dark:bg-gray-700"></div>
+                                    </label>
+                                    <span class="text-sm font-medium text-gray-800 dark:text-white">
+                                        Show in Dropdowns
+                                    </span>
+                                </div>
+
+                                <div v-if="showServiceOwnerAssignment" class="grid gap-2">
+                                    <label class="text-sm font-medium text-gray-800 dark:text-white">
+                                        Eligible Lead Owners
+                                    </label>
+
+                                    <div class="max-h-48 overflow-auto rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                                        <label
+                                            v-for="user in assignableMeetingOwners"
+                                            :key="'service-owner-' + user.id"
+                                            class="mb-2 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                :value="Number(user.id)"
+                                                v-model="selectedUserIds"
+                                            />
+
+                                            <span>
+                                                @{{ user.name }}
+                                                <template v-if="user.role_name">(@{{ user.role_name }})</template>
+                                            </span>
+                                        </label>
+                                    </div>
+                                </div>
                             </x-slot>
 
                             <x-slot:footer>
@@ -234,34 +300,48 @@
                         type: Object,
                         required: true,
                     },
+
+                    showServiceOwnerAssignment: {
+                        type: Boolean,
+                        default: false,
+                    },
+
+                    assignableMeetingOwners: {
+                        type: Array,
+                        default: () => [],
+                    },
                 },
 
                 data() {
                     return {
                         isProcessing: false,
                         selectedOption: false,
+                        selectedUserIds: [],
+                        isShow: false,
                     };
                 },
 
-                computed: {
-                    gridsCount() {
-                        let count = this.$refs.datagrid.available.columns.length;
-
-                        if (this.$refs.datagrid.available.actions.length) {
-                            ++count;
-                        }
-
-                        if (this.$refs.datagrid.available.massActions.length) {
-                            ++count;
-                        }
-
-                        return count;
-                    },
-                },
-
                 methods: {
+                    getAction(record, index) {
+                        return (record.actions || []).find(action => action.index === index);
+                    },
+
+                    toggleServiceVisibility(record) {
+                        this.$axios.post("{{ route('admin.settings.services_offered.toggle_visibility', '__ID__') }}".replace('__ID__', record.id))
+                            .then(response => {
+                                this.$emitter.emit('add-flash', { type: 'success', message: response.data.message });
+                                this.$refs.datagrid.get();
+                            })
+                            .catch(error => {
+                                this.$emitter.emit('add-flash', { type: 'error', message: 'Failed to update visibility.' });
+                                this.$refs.datagrid.get();
+                            });
+                    },
+
                     openModal() {
                         this.selectedOption = false;
+                        this.selectedUserIds = [];
+                        this.isShow = false;
                         this.$refs.optionUpdateAndCreateModal.toggle();
                     },
 
@@ -276,6 +356,8 @@
                             url,
                             {
                                 ...params,
+                                user_ids: (this.selectedUserIds || []).map(id => Number(id)).filter(id => id > 0),
+                                is_show: this.isShow ? 1 : 0,
                                 _method: params.id ? 'put' : 'post',
                             }
                         ).then(response => {
@@ -284,6 +366,8 @@
                             this.$emitter.emit('add-flash', { type: 'success', message: response.data.message });
                             this.$refs.datagrid.get();
                             resetForm();
+                            this.selectedUserIds = [];
+                            this.isShow = false;
                         }).catch(error => {
                             this.isProcessing = false;
 
@@ -296,6 +380,8 @@
                     editModal(url) {
                         this.$axios.get(url)
                             .then(response => {
+                                this.selectedUserIds = (response.data.data.user_ids || []).map(id => Number(id));
+                                this.isShow = response.data.data.is_show !== undefined ? !!response.data.data.is_show : false;
                                 this.$refs.modalForm.setValues(response.data.data);
                                 this.$refs.optionUpdateAndCreateModal.toggle();
                             })

@@ -97,6 +97,8 @@ Route::prefix('settings')->group(function () {
         Route::put('edit/{id}', 'update')->name('admin.settings.services_offered.update');
 
         Route::delete('{id}', 'destroy')->name('admin.settings.services_offered.delete');
+
+        Route::post('{id}/toggle-visibility', 'toggleVisibility')->name('admin.settings.services_offered.toggle_visibility');
     });
 
     /**

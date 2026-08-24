@@ -22,6 +22,7 @@ use Webkul\Admin\Http\Resources\ActivityResource;
 use Webkul\Attribute\Repositories\AttributeRepository;
 use Webkul\Email\Repositories\EmailRepository;
 use Webkul\Lead\Repositories\LeadRepository;
+use Webkul\Lead\Models\Lead;
 use Webkul\Lead\Services\FollowupScheduleService;
 use Webkul\Lead\Services\MeetingHandoffService;
 
@@ -182,13 +183,25 @@ class ActivityController extends Controller
         $this->ensureCurrentUserParticipant();
 
         if ($this->isCallingRoleStageMeetingRequest()) {
+            $lead = Lead::query()->find((int) request('lead_id'));
+
             $this->validate(request(), [
                 'assigned_user_id' => [
                     'required',
                     'integer',
-                    function ($attribute, $value, $fail) {
-                        if (! $this->meetingHandoffService->isActiveMeetingOwnerId((int) $value)) {
-                            $fail('Please select a valid Admin or Lead user.');
+                    function ($attribute, $value, $fail) use ($lead) {
+                        if (! $lead) {
+                            $fail('Lead not found.');
+
+                            return;
+                        }
+
+                        if (! $this->meetingHandoffService->isEligibleMeetingOwnerForLead($lead, (int) $value)) {
+                            $message = empty($this->meetingHandoffService->getLeadServiceIds($lead))
+                                ? 'Please select a valid Admin or Lead user.'
+                                : 'The selected owner is not assigned to handle this lead\'s services.';
+
+                            $fail($message);
                         }
                     },
                 ],

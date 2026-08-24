@@ -76,15 +76,27 @@
                                             name="assigned_user_id"
                                             rules="required"
                                             label="Assigned Owner"
+                                            ::disabled="meetingOwnersLoading || meetingOwnersEmpty"
                                         >
-                                            <option value="">Select Admin / Lead User</option>
+                                            <option value="">
+                                                @{{ meetingOwnersLoading ? 'Loading eligible owners...' : 'Select Admin / Lead User' }}
+                                            </option>
 
-                                            @foreach ($meetingOwnerOptions ?? [] as $user)
-                                                <option value="{{ $user['id'] }}">
-                                                    {{ $user['name'] }}@if (! empty($user['role_name'])) - {{ $user['role_name'] }}@endif @if (! empty($user['email']))({{ $user['email'] }})@endif
-                                                </option>
-                                            @endforeach
+                                            <option
+                                                v-for="user in meetingOwnerOptions"
+                                                :key="'meeting-owner-' + user.id"
+                                                :value="user.id"
+                                            >
+                                                @{{ user.name }}<template v-if="user.role_name"> - @{{ user.role_name }}</template><template v-if="user.email"> (@{{ user.email }})</template>
+                                            </option>
                                         </x-admin::form.control-group.control>
+
+                                        <p
+                                            v-if="meetingOwnersEmpty && ! meetingOwnersLoading"
+                                            class="mt-1 text-xs text-red-600"
+                                        >
+                                            No Lead Closers/Admin users are assigned to the selected Services Offered. Please contact an administrator.
+                                        </p>
 
                                         <x-admin::form.control-group.error control-name="assigned_user_id" />
                                     </x-admin::form.control-group>
@@ -133,7 +145,7 @@
                                 class="primary-button"
                                 title="Save Meeting"
                                 ::loading="isMeetingSaving"
-                                ::disabled="isMeetingSaving"
+                                ::disabled="isMeetingSaving || meetingOwnersLoading || meetingOwnersEmpty"
                             />
                         </x-slot>
                     </x-admin::modal>

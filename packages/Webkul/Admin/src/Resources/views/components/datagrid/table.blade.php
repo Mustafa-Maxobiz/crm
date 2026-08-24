@@ -187,6 +187,7 @@
                     :select-all="selectAll"
                     :sort="sort"
                     :perform-action="performAction"
+                    :grid-row-style="gridRowStyle"
                 >
                     <template v-if="isLoading">
                         <x-admin::shimmer.datagrid.table.body :isMultiRow="$isMultiRow" />

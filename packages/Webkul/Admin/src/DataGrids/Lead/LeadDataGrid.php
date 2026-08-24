@@ -177,6 +177,7 @@ class LeadDataGrid extends DataGrid
 
         if (! app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin()) {
             app(\Webkul\Lead\Services\SourceAccessService::class)->applyLeadOwnerVisibilityTableScope($queryBuilder);
+            app(\Webkul\Lead\Services\SourceAccessService::class)->applyNonTransferredOwnerTableScope($queryBuilder);
         }
 
         app(\Webkul\Lead\Services\SourceAccessService::class)->applyLeadTableScope($queryBuilder);
@@ -203,7 +204,6 @@ class LeadDataGrid extends DataGrid
         $this->addFilter('followup_count', 'leads.followup_count');
         $this->addFilter('last_followup_date', 'leads.last_followup_date');
         $this->addFilter('lead_disqualification_reason', 'leads.lead_disqualification_reason');
-        $this->addFilter('created_at', 'leads.created_at');
 
         return $queryBuilder;
     }
@@ -414,7 +414,9 @@ class LeadDataGrid extends DataGrid
 
         $this->addColumn([
             'index'      => 'product_names',
-            'label'      => trans('admin::app.leads.index.datagrid.products'),
+            'label'      => lead_variant() === 'sdr'
+                ? trans('admin::app.leads.index.datagrid.packages')
+                : trans('admin::app.leads.index.datagrid.products'),
             'type'       => 'string',
             'searchable' => false,
             'sortable'   => false,
@@ -563,22 +565,6 @@ class LeadDataGrid extends DataGrid
             },
         ]);
 
-        $this->addColumn([
-            'index'           => 'created_at',
-            'label'           => trans('admin::app.leads.index.datagrid.created-at'),
-            'type'            => 'date',
-            'searchable'      => false,
-            'sortable'        => true,
-            'filterable'      => true,
-            'filterable_type' => 'date_range',
-            'closure'         => function ($row) {
-                if (! $row->created_at) {
-                    return '--';
-                }
-
-                return core()->formatDate($row->created_at);
-            },
-        ]);
     }
 
     /**

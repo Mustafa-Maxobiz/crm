@@ -682,6 +682,31 @@ class SourceAccessService
         return $query->where('leads.user_id', $userId);
     }
 
+    /**
+     * Table-only: SDR/LGE see leads they still own as originator and sales owner.
+     * Handed-off leads (sales owner changed) stay visible on pipeline/kanban.
+     */
+    public function applyNonTransferredOwnerTableScope(QueryBuilder $query): QueryBuilder
+    {
+        if ($this->isAdmin() || ! in_array(lead_variant(), ['sdr', 'lge'], true)) {
+            return $query;
+        }
+
+        $userId = auth()->guard('user')->id();
+
+        if (! $userId || ! $this->isCallingRoleUser()) {
+            return $query;
+        }
+
+        return $query
+            ->where('leads.user_id', $userId)
+            ->where(function ($ownerQuery) use ($userId) {
+                $ownerQuery
+                    ->where('leads.lead_owner_id', $userId)
+                    ->orWhereNull('leads.lead_owner_id');
+            });
+    }
+
     public function isCallingRoleUser(?UserContract $user = null): bool
     {
         return $this->isSdrUser($user) || $this->isLgeUser($user);

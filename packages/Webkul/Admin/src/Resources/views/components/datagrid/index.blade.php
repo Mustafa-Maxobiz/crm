@@ -69,7 +69,8 @@
                         applied,
                         selectAll,
                         sort,
-                        performAction
+                        performAction,
+                        gridRowStyle
                     }">
                         <slot
                             name="body"
@@ -79,6 +80,7 @@
                             :select-all="selectAll"
                             :sort="sort"
                             :perform-action="performAction"
+                            :grid-row-style="gridRowStyle"
                         >
                         </slot>
                     </template>

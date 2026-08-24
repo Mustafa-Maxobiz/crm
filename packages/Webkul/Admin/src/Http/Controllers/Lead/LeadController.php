@@ -144,7 +144,7 @@ class LeadController extends Controller
             'columns'         => $this->getKanbanColumns(),
             'leadVariant'     => $leadVariant,
             'leadsIndexRoute' => $leadsIndexRoute,
-            'meetingOwnerOptions' => $this->meetingOwnerOptions(),
+            'meetingOwnerOptions' => [],
             'linkedInProfileFilterOptions' => $leadVariant === 'lge'
                 ? $this->linkedInProfileAccessService->getFilterOptionsWithHistoricalLeads()
                 : [],
@@ -1323,6 +1323,22 @@ class LeadController extends Controller
     }
 
     /**
+     * Eligible meeting handoff owners for a specific lead (service-filtered).
+     */
+    public function eligibleMeetingOwners(int $id): JsonResponse
+    {
+        $lead = $this->leadRepository->findOrFail($id);
+
+        if (! $this->sourceAccessService->canViewLead($lead)) {
+            abort(403);
+        }
+
+        return response()->json([
+            'data' => $this->meetingHandoffService->getEligibleMeetingOwnersForLead($lead),
+        ]);
+    }
+
+    /**
      * Display a resource.
      */
     public function view(int $id)
@@ -1343,7 +1359,7 @@ class LeadController extends Controller
 
         return view('admin::leads.view', [
             'lead'            => $lead,
-            'meetingOwnerOptions' => $this->meetingOwnerOptions(),
+            'meetingOwnerOptions' => $this->meetingHandoffService->getEligibleMeetingOwnersForLead($lead),
             'readOnlyForCurrentUser' => ! $this->sourceAccessService->canEditLead($lead),
         ]);
     }
@@ -1975,9 +1991,13 @@ class LeadController extends Controller
                     'sdr_user_id' => [
                         'required',
                         'integer',
-                        function ($attribute, $value, $fail) {
-                            if (! $this->isActiveMeetingOwnerId((int) $value)) {
-                                $fail('Please select a valid Admin or Lead user.');
+                        function ($attribute, $value, $fail) use ($lead) {
+                            if (! $this->meetingHandoffService->isEligibleMeetingOwnerForLead($lead, (int) $value)) {
+                                $message = empty($this->meetingHandoffService->getLeadServiceIds($lead))
+                                    ? 'Please select a valid Admin or Lead user.'
+                                    : 'The selected owner is not assigned to handle this lead\'s services.';
+
+                                $fail($message);
                             }
                         },
                     ],
@@ -1995,9 +2015,13 @@ class LeadController extends Controller
                     'assigned_user_id' => [
                         'required',
                         'integer',
-                        function ($attribute, $value, $fail) {
-                            if (! $this->isActiveMeetingOwnerId((int) $value)) {
-                                $fail('Please select a valid Admin or Lead user.');
+                        function ($attribute, $value, $fail) use ($lead) {
+                            if (! $this->meetingHandoffService->isEligibleMeetingOwnerForLead($lead, (int) $value)) {
+                                $message = empty($this->meetingHandoffService->getLeadServiceIds($lead))
+                                    ? 'Please select a valid Admin or Lead user.'
+                                    : 'The selected owner is not assigned to handle this lead\'s services.';
+
+                                $fail($message);
                             }
                         },
                     ],
@@ -2152,30 +2176,9 @@ class LeadController extends Controller
         return $this->meetingHandoffService->canCurrentUserEditStage($lead);
     }
 
-    protected function meetingOwnerOptions(): array
+    protected function meetingOwnerOptions(?Lead $lead = null): array
     {
-        return DB::table('users')
-            ->join('roles', 'users.role_id', '=', 'roles.id')
-            ->where(function ($query) {
-                $query->where('roles.permission_type', 'all')
-                    ->orWhereIn(DB::raw('LOWER(roles.name)'), [
-                        'lead',
-                        'lead clouser',
-                        'lead closer',
-                        'lead closure',
-                    ]);
-            })
-            ->where('users.status', 1)
-            ->orderBy('users.name')
-            ->get(['users.id', 'users.name', 'users.email', 'roles.name as role_name'])
-            ->map(fn ($user) => [
-                'id'        => (int) $user->id,
-                'name'      => $user->name,
-                'email'     => $user->email,
-                'role_name' => $user->role_name,
-            ])
-            ->values()
-            ->all();
+        return $this->meetingHandoffService->getEligibleMeetingOwnersForLead($lead);
     }
 
     protected function isActiveMeetingOwnerId(int $userId): bool

@@ -42,6 +42,12 @@
 
                     meetingErrors: {},
 
+                    meetingOwnerOptions: [],
+
+                    meetingOwnersLoading: false,
+
+                    meetingOwnersEmpty: false,
+
                     defaultMeetingParticipants: @json($defaultMeetingParticipants),
                     currentUserId: @json($currentUserId),
                     isLgeLeadVariant: @json($isLgeLeadVariant),
@@ -390,7 +396,9 @@
                         this.pendingStageLeadId = event.added.element.id;
                         this.pendingStageId = stage.id;
                         this.meetingErrors = {};
-                        this.$refs.meetingActivityModal.open();
+                        this.loadEligibleMeetingOwners(event.added.element.id).then(() => {
+                            this.$refs.meetingActivityModal.open();
+                        });
 
                         return;
                     }
@@ -568,6 +576,25 @@
                     return ['users', 'persons'].some(type => {
                         return (participants[type] || []).some(participantId => !! participantId);
                     });
+                },
+
+                loadEligibleMeetingOwners(leadId) {
+                    this.meetingOwnerOptions = [];
+                    this.meetingOwnersLoading = true;
+                    this.meetingOwnersEmpty = false;
+
+                    return this.$axios.get(`{{ lead_url() }}/${leadId}/eligible-meeting-owners`)
+                        .then(response => {
+                            this.meetingOwnerOptions = response.data.data || [];
+                            this.meetingOwnersEmpty = this.meetingOwnerOptions.length === 0;
+                        })
+                        .catch(() => {
+                            this.meetingOwnerOptions = [];
+                            this.meetingOwnersEmpty = true;
+                        })
+                        .finally(() => {
+                            this.meetingOwnersLoading = false;
+                        });
                 },
 
                 saveMeetingAndMove(params, { setErrors }) {
