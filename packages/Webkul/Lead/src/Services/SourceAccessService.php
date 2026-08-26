@@ -7,6 +7,7 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
 use Webkul\Lead\Contracts\Lead as LeadContract;
 use Webkul\User\Contracts\User as UserContract;
+use Webkul\User\Services\ActiveRoleService;
 
 class SourceAccessService
 {
@@ -48,10 +49,13 @@ class SourceAccessService
             return $this->effectiveSourceIdsCache[$cacheKey] = [];
         }
 
-        $user->loadMissing(['sources', 'role.sources']);
+        $user->loadMissing(['sources']);
+
+        $activeRole = $this->activeRole($user);
+        $this->ensureRelationLoaded($activeRole, 'sources');
 
         $userSourceIds = $user->sources->pluck('id')->map(fn ($id) => (int) $id)->all();
-        $roleSourceIds = $user->role?->sources->pluck('id')->map(fn ($id) => (int) $id)->all() ?? [];
+        $roleSourceIds = $activeRole?->sources->pluck('id')->map(fn ($id) => (int) $id)->all() ?? [];
 
         if (! empty($userSourceIds)) {
             if (! empty($roleSourceIds)) {
@@ -147,10 +151,13 @@ class SourceAccessService
             return $this->effectiveOrganizationIdsCache[$cacheKey] = [];
         }
 
-        $user->loadMissing(['organizations', 'role.organizations']);
+        $user->loadMissing(['organizations']);
+
+        $activeRole = $this->activeRole($user);
+        $this->ensureRelationLoaded($activeRole, 'organizations');
 
         $userOrganizationIds = $user->organizations->pluck('id')->all();
-        $roleOrganizationIds = $user->role?->organizations->pluck('id')->all() ?? [];
+        $roleOrganizationIds = $activeRole?->organizations->pluck('id')->all() ?? [];
 
         if (! empty($userOrganizationIds)) {
             if (! empty($roleOrganizationIds)) {
@@ -209,29 +216,30 @@ class SourceAccessService
     public function isAdmin(?UserContract $user = null): bool
     {
         $user = $this->resolveUser($user);
+        $role = $this->activeRole($user);
 
-        return $user && $user->role?->permission_type === 'all';
+        return $role && $role->permission_type === 'all';
     }
 
     public function isSdrUser(?UserContract $user = null): bool
     {
         $user = $this->resolveUser($user);
 
-        return strtolower(trim((string) $user?->role?->name)) === 'sdr';
+        return strtolower(trim((string) $this->activeRole($user)?->name)) === 'sdr';
     }
 
     public function isLgeUser(?UserContract $user = null): bool
     {
         $user = $this->resolveUser($user);
 
-        return strtolower(trim((string) $user?->role?->name)) === 'lge';
+        return strtolower(trim((string) $this->activeRole($user)?->name)) === 'lge';
     }
 
     public function isLeadCloserUser(?UserContract $user = null): bool
     {
         $user = $this->resolveUser($user);
 
-        return $this->isLeadCloserRoleName($user?->role?->name);
+        return $this->isLeadCloserRoleName($this->activeRole($user)?->name);
     }
 
     public function isLeadCloserRoleName(?string $roleName): bool
@@ -295,13 +303,11 @@ class SourceAccessService
             return $this->accessibleStageIdsCache[$cacheKey] = [];
         }
 
-        $user->loadMissing(['role.pipelineStages']);
-
-        $stageIds = $user->role?->pipelineStages
+        $stageIds = $this->activeRolePipelineStages($user)
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->values()
-            ->all() ?? [];
+            ->all();
 
         if (empty($stageIds)) {
             return $this->accessibleStageIdsCache[$cacheKey] = null;
@@ -329,14 +335,12 @@ class SourceAccessService
             return $this->sharedStageIdsCache[$cacheKey] = [];
         }
 
-        $user->loadMissing(['role.pipelineStages']);
-
-        $sharedIds = $user->role?->pipelineStages
+        $sharedIds = $this->activeRolePipelineStages($user)
             ->filter(fn ($stage) => (bool) ($stage->pivot->is_shared ?? false))
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->values()
-            ->all() ?? [];
+            ->all();
 
         if (! empty($sharedIds)) {
             return $this->sharedStageIdsCache[$cacheKey] = $sharedIds;
@@ -821,7 +825,7 @@ class SourceAccessService
 
         $user = $this->resolveUser($user);
 
-        if (! $user || $user->role?->permission_type === 'all') {
+        if (! $user || $this->isAdmin($user)) {
             return true;
         }
 
@@ -1129,10 +1133,48 @@ class SourceAccessService
         return $user ?? auth()->guard('user')->user();
     }
 
+    protected function activeRole(?UserContract $user = null): ?\Webkul\User\Models\Role
+    {
+        return app(ActiveRoleService::class)->getActiveRole($user);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, mixed>
+     */
+    protected function activeRolePipelineStages(?UserContract $user = null)
+    {
+        $role = $this->activeRole($user);
+
+        if (! $role) {
+            return collect();
+        }
+
+        $this->ensureRelationLoaded($role, 'pipelineStages');
+
+        return $role->pipelineStages ?? collect();
+    }
+
+    protected function ensureRelationLoaded(?object $model, string $relation): void
+    {
+        if (! $model || $model->relationLoaded($relation)) {
+            return;
+        }
+
+        try {
+            $model->load($relation);
+        } catch (\Throwable) {
+            $model->setRelation($relation, collect());
+        }
+    }
+
     protected function userCacheKey(?UserContract $user = null): string
     {
-        return $user?->id
-            ? 'user:'.$user->id
-            : 'guest';
+        if (! $user?->id) {
+            return 'guest';
+        }
+
+        $activeRoleId = app(ActiveRoleService::class)->getActiveRoleId($user) ?? 0;
+
+        return 'user:'.$user->id.':role:'.$activeRoleId;
     }
 }

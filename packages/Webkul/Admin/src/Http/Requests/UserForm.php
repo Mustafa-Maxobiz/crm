@@ -31,7 +31,9 @@ class UserForm extends FormRequest
             'password'              => 'nullable',
             'password_confirmation' => 'nullable|required_with:password|same:password',
             'status'                => 'sometimes',
-            'role_id'               => 'required',
+            'role_ids'              => 'required|array|min:1',
+            'role_ids.*'            => 'integer|exists:roles,id',
+            'role_id'               => 'nullable|integer|exists:roles,id',
         ];
 
         if ($this->method() == 'PUT') {

@@ -855,20 +855,8 @@ class ActivityController extends Controller
 
     protected function isActiveMeetingOwnerId(int $userId): bool
     {
-        return DB::table('users')
-            ->join('roles', 'users.role_id', '=', 'roles.id')
-            ->where('users.id', $userId)
-            ->where('users.status', 1)
-            ->where(function ($query) {
-                $query->where('roles.permission_type', 'all')
-                    ->orWhereIn(DB::raw('LOWER(roles.name)'), [
-                        'lead',
-                        'lead clouser',
-                        'lead closer',
-                        'lead closure',
-                    ]);
-            })
-            ->exists();
+        return app(\Webkul\Lead\Services\MeetingHandoffService::class)
+            ->isActiveMeetingOwnerId($userId);
     }
 
     protected function canModifyActivity($activity): bool
@@ -879,7 +867,7 @@ class ActivityController extends Controller
             return false;
         }
 
-        if ($user->role?->permission_type === 'all') {
+        if (app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin($user)) {
             return true;
         }
 

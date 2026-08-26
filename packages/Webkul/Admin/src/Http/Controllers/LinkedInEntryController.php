@@ -61,6 +61,21 @@ class LinkedInEntryController extends Controller
             $filters['user_id'] = '';
         }
 
+        $profileAccess = app(LinkedInProfileAccessService::class);
+        $availableProfiles = $profileAccess->getFilterOptionsWithHistoricalEntries($user);
+        $availableProfileIds = collect($availableProfiles)
+            ->pluck('value')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        // Only allow filtering by profiles the user is authorized to see/use.
+        if (
+            $filters['linkedin_profile_id'] !== ''
+            && ! in_array((int) $filters['linkedin_profile_id'], $availableProfileIds, true)
+        ) {
+            $filters['linkedin_profile_id'] = '';
+        }
+
         $query = DB::table('linkedin_entry')
             ->join('users', 'linkedin_entry.user_id', '=', 'users.id')
             ->leftJoin('linkedin_profiles', 'linkedin_entry.linkedin_profile_id', '=', 'linkedin_profiles.id')
@@ -107,13 +122,7 @@ class LinkedInEntryController extends Controller
             $query->where('linkedin_entry.user_id', (int) $filters['user_id']);
         }
 
-        if ($filters['linkedin_profile_id'] !== '') {
-            $query->where('linkedin_entry.linkedin_profile_id', (int) $filters['linkedin_profile_id']);
-        }
-
-        $profileAccess = app(LinkedInProfileAccessService::class);
-        $availableProfiles = $profileAccess->getFilterOptionsWithHistoricalEntries($user);
-
+        // Existing authorization scope for non-admins (assigned profiles), then optional profile filter.
         if (! $isAdmin) {
             $assignedIds = $profileAccess->getAssignedProfileIds($user, false);
 
@@ -126,6 +135,10 @@ class LinkedInEntryController extends Controller
                         ->orWhereNull('linkedin_entry.linkedin_profile_id');
                 });
             }
+        }
+
+        if ($filters['linkedin_profile_id'] !== '') {
+            $query->where('linkedin_entry.linkedin_profile_id', (int) $filters['linkedin_profile_id']);
         }
 
         $availableUsers = $isAdmin
@@ -143,8 +156,7 @@ class LinkedInEntryController extends Controller
             'hasFilters' => $filters['status'] !== ''
                 || $filters['date_from'] !== ''
                 || $filters['date_to'] !== ''
-                || $filters['user_id'] !== ''
-                || $filters['linkedin_profile_id'] !== '',
+                || $filters['user_id'] !== '',
         ]);
     }
 
@@ -202,7 +214,14 @@ class LinkedInEntryController extends Controller
 
         session()->flash('success', 'LinkedIn entry created successfully.');
 
-        return redirect()->route('admin.linkedin_entries.index');
+        return redirect()->route('admin.linkedin_entries.index', array_filter([
+            'search'              => $request->input('_return_search'),
+            'status'              => $request->input('_return_status'),
+            'date_from'           => $request->input('_return_date_from'),
+            'date_to'             => $request->input('_return_date_to'),
+            'user_id'             => $request->input('_return_user_id'),
+            'linkedin_profile_id' => $request->input('_return_linkedin_profile_id'),
+        ], fn ($value) => filled($value)));
     }
 
     public function importTemplate(): StreamedResponse
@@ -986,23 +1005,13 @@ class LinkedInEntryController extends Controller
 
     protected function linkedinEntryUsers()
     {
-        return DB::table('users')
-            ->leftJoin('roles', 'users.role_id', '=', 'roles.id')
+        $users = DB::table('users')
             ->where('users.status', 1)
             ->orderBy('users.name')
-            ->get([
-                'users.id',
-                'users.name',
-                'users.email',
-                'roles.permission_type',
-                'roles.permissions',
-            ])
-            ->filter(fn ($user) => $this->roleCanAccessLinkedInEntries($user->permission_type, $user->permissions))
-            ->map(fn ($user) => (object) [
-                'id'    => $user->id,
-                'name'  => $user->name,
-                'email' => $user->email,
-            ])
+            ->get(['users.id', 'users.name', 'users.email']);
+
+        return $users
+            ->filter(fn ($user) => $this->userCanAccessLinkedInEntries((int) $user->id))
             ->values();
     }
 
@@ -1010,6 +1019,19 @@ class LinkedInEntryController extends Controller
     {
         if (! $userId) {
             return false;
+        }
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('user_roles')) {
+            $roles = DB::table('user_roles')
+                ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                ->where('user_roles.user_id', $userId)
+                ->get(['roles.permission_type', 'roles.permissions']);
+
+            foreach ($roles as $role) {
+                if ($this->roleCanAccessLinkedInEntries($role->permission_type, $role->permissions)) {
+                    return true;
+                }
+            }
         }
 
         $user = DB::table('users')

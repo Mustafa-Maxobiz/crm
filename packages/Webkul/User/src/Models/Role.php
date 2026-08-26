@@ -28,11 +28,20 @@ class Role extends Model implements RoleContract
     ];
 
     /**
-     * Get the users.
+     * Users that still point at this role via the legacy users.role_id FK.
      */
     public function users()
     {
         return $this->hasMany(UserProxy::modelClass());
+    }
+
+    /**
+     * Users assigned this role through user_roles.
+     */
+    public function assignedUsers(): BelongsToMany
+    {
+        return $this->belongsToMany(UserProxy::modelClass(), 'user_roles', 'role_id', 'user_id')
+            ->withTimestamps();
     }
 
     public function sources(): BelongsToMany

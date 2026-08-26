@@ -149,6 +149,7 @@ class MeetingHandoffService
     {
         return $this->mapEligibleOwnerRows(
             $this->eligibleOwnerBaseQuery()
+                ->distinct()
                 ->orderBy('users.name')
                 ->get(['users.id', 'users.name', 'users.email', 'roles.name as role_name'])
         );
@@ -224,9 +225,26 @@ class MeetingHandoffService
 
     protected function eligibleOwnerBaseQuery(): Builder
     {
-        return DB::table('users')
+        $query = DB::table('users')
+            ->where('users.status', 1);
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('user_roles')) {
+            return $query
+                ->join('user_roles', 'users.id', '=', 'user_roles.user_id')
+                ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                ->where(function ($query) {
+                    $query->where('roles.permission_type', 'all')
+                        ->orWhereIn(DB::raw('LOWER(roles.name)'), [
+                            'lead',
+                            'lead clouser',
+                            'lead closer',
+                            'lead closure',
+                        ]);
+                });
+        }
+
+        return $query
             ->join('roles', 'users.role_id', '=', 'roles.id')
-            ->where('users.status', 1)
             ->where(function ($query) {
                 $query->where('roles.permission_type', 'all')
                     ->orWhereIn(DB::raw('LOWER(roles.name)'), [

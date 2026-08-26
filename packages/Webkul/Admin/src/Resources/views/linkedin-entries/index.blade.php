@@ -386,12 +386,13 @@
                     @if (bouncer()->hasPermission('linkedin_entries.create'))
                     <x-admin::modal
                         ref="linkedinEntryCreateModal"
-                        :is-active="$errors->has('user_id') || $errors->has('name') || $errors->has('url')"
+                        :is-active="$errors->has('user_id') || $errors->has('name') || $errors->has('url') || $errors->has('linkedin_profile_id')"
                     >
                     <x-slot:toggle>
                         <button
                             type="button"
                             class="primary-button"
+                            onclick="window.resetLinkedinCreateProfileDefault?.()"
                         >
                             Add Entry
                         </button>
@@ -411,6 +412,14 @@
                             class="grid gap-4"
                         >
                             @csrf
+
+                            {{-- Preserve page filters after create; page filter stays independent of modal profile. --}}
+                            <input type="hidden" name="_return_search" value="{{ $filters['search'] }}" />
+                            <input type="hidden" name="_return_status" value="{{ $filters['status'] }}" />
+                            <input type="hidden" name="_return_date_from" value="{{ $filters['date_from'] }}" />
+                            <input type="hidden" name="_return_date_to" value="{{ $filters['date_to'] }}" />
+                            <input type="hidden" name="_return_user_id" value="{{ $filters['user_id'] }}" />
+                            <input type="hidden" name="_return_linkedin_profile_id" value="{{ $filters['linkedin_profile_id'] }}" />
 
                             @if ($isAdmin)
                                 <div class="grid gap-1">
@@ -446,7 +455,24 @@
                                     LinkedIn Working Profile *
                                 </label>
 
+                                @php
+                                    $createProfileDefault = (string) old(
+                                        'linkedin_profile_id',
+                                        $filters['linkedin_profile_id'] ?? ''
+                                    );
+
+                                    $createProfileValues = collect($availableProfiles)
+                                        ->pluck('value')
+                                        ->map(fn ($id) => (string) $id)
+                                        ->all();
+
+                                    if ($createProfileDefault !== '' && ! in_array($createProfileDefault, $createProfileValues, true)) {
+                                        $createProfileDefault = '';
+                                    }
+                                @endphp
+
                                 <select
+                                    id="linkedin-entry-create-profile"
                                     name="linkedin_profile_id"
                                     class="custom-select min-h-[39px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-800 dark:bg-gray-900 dark:text-white"
                                     required
@@ -456,7 +482,7 @@
                                     @foreach ($availableProfiles as $profile)
                                         <option
                                             value="{{ $profile['value'] }}"
-                                            @selected((string) old('linkedin_profile_id') === (string) $profile['value'])
+                                            @selected($createProfileDefault === (string) $profile['value'])
                                         >
                                             {{ $profile['label'] }}
                                         </option>
@@ -542,8 +568,8 @@
                     action="{{ route('admin.linkedin_entries.index') }}"
                     class="grid gap-3"
                 >
-                    <div class="flex items-center justify-between gap-3 max-lg:flex-wrap">
-                        <div class="relative w-full">
+                    <div class="flex items-center gap-3 max-lg:flex-wrap">
+                        <div class="relative min-w-0 flex-1">
                             <input
                                 id="linkedin-entry-search"
                                 type="text"
@@ -565,58 +591,85 @@
                             </div>
                         </div>
 
-                        <button
-                            id="linkedin-entry-filter-toggle"
-                            type="button"
-                            class="secondary-button shrink-0"
-                            onclick="document.getElementById('linkedin-entry-filter-panel')?.classList.toggle('hidden')"
-                        >
-                            Filter
-                        </button>
+                        <div class="ms-auto flex shrink-0 flex-wrap items-center gap-2.5">
+                            <label
+                                for="linkedin-entry-profile-filter"
+                                class="whitespace-nowrap text-sm font-medium text-gray-800 dark:text-white"
+                            >
+                                LinkedIn Profile:
+                            </label>
 
-                        <div class="flex shrink-0 items-center gap-2">
-                            <p class="whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
-                                {{ $entries->firstItem() ?? 0 }} - {{ $entries->lastItem() ?? 0 }} of {{ $entries->total() }}
-                            </p>
+                            <select
+                                id="linkedin-entry-profile-filter"
+                                name="linkedin_profile_id"
+                                class="custom-select min-h-[39px] w-[200px] rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-white"
+                                onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()"
+                            >
+                                <option value="">All</option>
 
-                            <div class="flex items-center gap-1">
-                                @if ($entries->onFirstPage())
-                                    <span
-                                        class="inline-flex cursor-not-allowed appearance-none items-center justify-center rounded-md border border-gray-200 p-1.5 text-gray-300 dark:border-gray-800 dark:text-gray-600"
-                                        aria-disabled="true"
-                                        aria-label="Previous page"
+                                @foreach ($availableProfiles as $profile)
+                                    <option
+                                        value="{{ $profile['value'] }}"
+                                        @selected((string) $filters['linkedin_profile_id'] === (string) $profile['value'])
                                     >
-                                        <span class="icon-left-arrow rtl:icon-right-arrow text-2xl"></span>
-                                    </span>
-                                @else
-                                    <a
-                                        href="{{ $entries->previousPageUrl() }}"
-                                        class="inline-flex appearance-none items-center justify-center rounded-md border border-transparent p-1.5 text-center text-gray-600 transition-all hover:bg-gray-200 active:border-gray-300 dark:text-gray-300 dark:hover:bg-gray-800"
-                                        aria-label="Previous page"
-                                        rel="prev"
-                                    >
-                                        <span class="icon-left-arrow rtl:icon-right-arrow text-2xl"></span>
-                                    </a>
-                                @endif
+                                        {{ $profile['label'] }}
+                                    </option>
+                                @endforeach
+                            </select>
 
-                                @if ($entries->hasMorePages())
-                                    <a
-                                        href="{{ $entries->nextPageUrl() }}"
-                                        class="inline-flex appearance-none items-center justify-center rounded-md border border-transparent p-1.5 text-center text-gray-600 transition-all hover:bg-gray-200 active:border-gray-300 dark:text-gray-300 dark:hover:bg-gray-800"
-                                        aria-label="Next page"
-                                        rel="next"
-                                    >
-                                        <span class="icon-right-arrow rtl:icon-left-arrow text-2xl"></span>
-                                    </a>
-                                @else
-                                    <span
-                                        class="inline-flex cursor-not-allowed appearance-none items-center justify-center rounded-md border border-gray-200 p-1.5 text-gray-300 dark:border-gray-800 dark:text-gray-600"
-                                        aria-disabled="true"
-                                        aria-label="Next page"
-                                    >
-                                        <span class="icon-right-arrow rtl:icon-left-arrow text-2xl"></span>
-                                    </span>
-                                @endif
+                            <button
+                                id="linkedin-entry-filter-toggle"
+                                type="button"
+                                class="secondary-button shrink-0"
+                                onclick="document.getElementById('linkedin-entry-filter-panel')?.classList.toggle('hidden')"
+                            >
+                                Filter
+                            </button>
+
+                            <div class="flex items-center gap-2 ltr:pl-1 rtl:pr-1">
+                                <p class="whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
+                                    {{ $entries->firstItem() ?? 0 }} - {{ $entries->lastItem() ?? 0 }} of {{ $entries->total() }}
+                                </p>
+
+                                <div class="flex items-center gap-1">
+                                    @if ($entries->onFirstPage())
+                                        <span
+                                            class="inline-flex cursor-not-allowed appearance-none items-center justify-center rounded-md border border-gray-200 p-1.5 text-gray-300 dark:border-gray-800 dark:text-gray-600"
+                                            aria-disabled="true"
+                                            aria-label="Previous page"
+                                        >
+                                            <span class="icon-left-arrow rtl:icon-right-arrow text-2xl"></span>
+                                        </span>
+                                    @else
+                                        <a
+                                            href="{{ $entries->previousPageUrl() }}"
+                                            class="inline-flex appearance-none items-center justify-center rounded-md border border-transparent p-1.5 text-center text-gray-600 transition-all hover:bg-gray-200 active:border-gray-300 dark:text-gray-300 dark:hover:bg-gray-800"
+                                            aria-label="Previous page"
+                                            rel="prev"
+                                        >
+                                            <span class="icon-left-arrow rtl:icon-right-arrow text-2xl"></span>
+                                        </a>
+                                    @endif
+
+                                    @if ($entries->hasMorePages())
+                                        <a
+                                            href="{{ $entries->nextPageUrl() }}"
+                                            class="inline-flex appearance-none items-center justify-center rounded-md border border-transparent p-1.5 text-center text-gray-600 transition-all hover:bg-gray-200 active:border-gray-300 dark:text-gray-300 dark:hover:bg-gray-800"
+                                            aria-label="Next page"
+                                            rel="next"
+                                        >
+                                            <span class="icon-right-arrow rtl:icon-left-arrow text-2xl"></span>
+                                        </a>
+                                    @else
+                                        <span
+                                            class="inline-flex cursor-not-allowed appearance-none items-center justify-center rounded-md border border-gray-200 p-1.5 text-gray-300 dark:border-gray-800 dark:text-gray-600"
+                                            aria-disabled="true"
+                                            aria-label="Next page"
+                                        >
+                                            <span class="icon-right-arrow rtl:icon-left-arrow text-2xl"></span>
+                                        </span>
+                                    @endif
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -671,28 +724,6 @@
                                     </select>
                                 </div>
                             @endif
-
-                            <div class="grid gap-1">
-                                <label class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
-                                    LinkedIn Profile
-                                </label>
-
-                                <select
-                                    name="linkedin_profile_id"
-                                    class="custom-select min-h-[39px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-800 dark:bg-gray-900 dark:text-white"
-                                >
-                                    <option value="">All Profiles</option>
-
-                                    @foreach ($availableProfiles as $profile)
-                                        <option
-                                            value="{{ $profile['value'] }}"
-                                            @selected((string) $filters['linkedin_profile_id'] === (string) $profile['value'])
-                                        >
-                                            {{ $profile['label'] }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                            </div>
 
                             <div class="grid gap-1">
                                 <label class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
@@ -896,6 +927,26 @@
 
     @pushOnce('scripts')
         <script>
+            window.resetLinkedinCreateProfileDefault = function () {
+                const select = document.getElementById('linkedin-entry-create-profile');
+                const pageFilter = document.getElementById('linkedin-entry-profile-filter');
+
+                if (! select) {
+                    return;
+                }
+
+                // Prefer validation old value when present; otherwise use page filter (All => blank).
+                const oldSelected = select.querySelector('option[selected]');
+                const preferred = oldSelected?.value
+                    || pageFilter?.value
+                    || '';
+
+                const hasOption = Array.from(select.options).some((option) => option.value === preferred);
+
+                select.value = hasOption ? preferred : '';
+                select.disabled = false;
+            };
+
             window.addEventListener('load', function () {
                 let activeStatusForm = null;
 

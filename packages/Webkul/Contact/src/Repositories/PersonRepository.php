@@ -69,6 +69,11 @@ class PersonRepository extends Repository
             $organization = $this->fetchOrCreateOrganizationByName($data['organization_name']);
 
             $data['organization_id'] = $organization->id;
+
+            unset($data['organization_name']);
+
+            // Sanitize runs before org resolution; rebuild identity now that org_id is known.
+            $data = $this->rebuildUniqueId($data);
         }
 
         if (isset($data['user_id'])) {
@@ -128,19 +133,7 @@ class PersonRepository extends Repository
             unset($data['organization_name']);
 
             // Rebuild unique_id now that organization_id is resolved.
-            $uniqueIdParts = array_filter([
-                $data['user_id'] ?? null,
-                $data['organization_id'] ?? null,
-                $data['emails'][0]['value'] ?? null,
-            ]);
-
-            if (! empty($data['contact_numbers'][0]['value'])) {
-                $uniqueIdParts[] = $data['contact_numbers'][0]['value'];
-            }
-
-            $data['unique_id'] = empty($uniqueIdParts)
-                ? 'person_'.uniqid()
-                : implode('|', $uniqueIdParts);
+            $data = $this->rebuildUniqueId($data);
         }
 
         $attributeData = $this->attributePayloadWithoutAddress($data);
@@ -240,30 +233,42 @@ class PersonRepository extends Repository
             $data['organization_id'] = null;
         }
 
-        $uniqueIdParts = array_filter([
-            $data['user_id'] ?? null,
-            $data['organization_id'] ?? null,
-            $data['emails'][0]['value'] ?? null,
-        ]);
-
         if (isset($data['contact_numbers'])) {
-            $data['contact_numbers'] = collect($data['contact_numbers'])->filter(fn ($number) => ! is_null($number['value']))->toArray();
-
-            if (! empty($data['contact_numbers'][0]['value'])) {
-                $uniqueIdParts[] = $data['contact_numbers'][0]['value'];
-            }
+            $data['contact_numbers'] = collect($data['contact_numbers'])
+                ->filter(fn ($number) => ! is_null($number['value'] ?? null))
+                ->values()
+                ->toArray();
         }
 
-        // Generate unique_id, fallback to random string if all parts are empty
-        $data['unique_id'] = empty($uniqueIdParts)
-            ? 'person_'.uniqid()
-            : implode('|', $uniqueIdParts);
+        $data = $this->rebuildUniqueId($data);
 
         if (array_key_exists('website', $data) && empty($data['website'])) {
             $data['website'] = null;
         }
 
         return $this->mapAddressFieldsToColumns($data);
+    }
+
+    /**
+     * Build persons.unique_id from owner / company / email / phone parts.
+     */
+    private function rebuildUniqueId(array $data): array
+    {
+        $uniqueIdParts = array_filter([
+            $data['user_id'] ?? null,
+            $data['organization_id'] ?? null,
+            $data['emails'][0]['value'] ?? null,
+        ]);
+
+        if (! empty($data['contact_numbers'][0]['value'])) {
+            $uniqueIdParts[] = $data['contact_numbers'][0]['value'];
+        }
+
+        $data['unique_id'] = empty($uniqueIdParts)
+            ? 'person_'.uniqid()
+            : implode('|', $uniqueIdParts);
+
+        return $data;
     }
 
     /**

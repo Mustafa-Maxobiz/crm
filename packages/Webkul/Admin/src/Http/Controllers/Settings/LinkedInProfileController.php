@@ -166,9 +166,20 @@ class LinkedInProfileController extends Controller
 
     protected function assignableUsers()
     {
-        return DB::table('users')
+        $query = DB::table('users')->where('users.status', 1);
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('user_roles')) {
+            return $query
+                ->join('user_roles', 'users.id', '=', 'user_roles.user_id')
+                ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                ->distinct()
+                ->orderBy('roles.name')
+                ->orderBy('users.name')
+                ->get(['users.id', 'users.name', 'users.email', 'roles.name as role_name']);
+        }
+
+        return $query
             ->join('roles', 'users.role_id', '=', 'roles.id')
-            ->where('users.status', 1)
             ->orderBy('roles.name')
             ->orderBy('users.name')
             ->get(['users.id', 'users.name', 'users.email', 'roles.name as role_name']);

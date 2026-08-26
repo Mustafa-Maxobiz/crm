@@ -8,7 +8,7 @@ describe('SourceAccessService view vs edit separation', function () {
         $this->service = new SourceAccessService;
     });
 
-    it('allows SDR to view handed-off leads in stages outside their editable list', function () {
+    it('blocks SDR from opening handed-off leads even when they remain the originator', function () {
         $sdr = AccessTestHelpers::user([
             'id'                      => 2,
             'role_name'               => 'sdr',
@@ -21,7 +21,7 @@ describe('SourceAccessService view vs edit separation', function () {
             'lead_pipeline_stage_id' => 9,
         ]);
 
-        expect($this->service->canViewLead($lead, $sdr))->toBeTrue()
+        expect($this->service->canViewLead($lead, $sdr))->toBeFalse()
             ->and($this->service->canEditLead($lead, $sdr))->toBeFalse();
     });
 
@@ -131,7 +131,7 @@ describe('SourceAccessService kanban visible stages', function () {
             ->toEqual([1, 4, 9, 10]);
     });
 
-    it('blocks LGE from editing handed-off leads while still allowing view', function () {
+    it('blocks LGE from opening handed-off leads after sales ownership transfer', function () {
         $lge = AccessTestHelpers::user([
             'id'                      => 5,
             'role_name'               => 'lge',
@@ -146,7 +146,7 @@ describe('SourceAccessService kanban visible stages', function () {
 
         $service = new SourceAccessService;
 
-        expect($service->canViewLead($lead, $lge))->toBeTrue()
+        expect($service->canViewLead($lead, $lge))->toBeFalse()
             ->and($service->canEditLead($lead, $lge))->toBeFalse();
     });
 });

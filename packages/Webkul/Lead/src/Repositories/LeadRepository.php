@@ -277,16 +277,7 @@ class LeadRepository extends Repository
                 $hasPersonData = $this->hasPersonData($data['person']);
                 
                 if ($hasPersonData) {
-                    $personPayload = $data['person'];
-
-                    // Ensure the unique identity calculation includes organization_id (e.g. org_id|phone).
-                    if (empty($personPayload['organization_id']) && ! empty($data['organization_id'])) {
-                        $personPayload['organization_id'] = $data['organization_id'];
-                    }
-
-                    if (empty($personPayload['user_id']) && ! empty($data['user_id'])) {
-                        $personPayload['user_id'] = $data['user_id'];
-                    }
+                    $personPayload = $this->personPayloadForIdentity($data);
 
                     $existingPerson = $this->personRepository->findByUniqueIdentity($personPayload);
 
@@ -298,7 +289,7 @@ class LeadRepository extends Repository
                             $data = $this->fillTitleFromCompanyName($data, $existingPerson->organization?->name);
                         }
                     } else {
-                        $person = $this->personRepository->create(array_merge($data['person'], [
+                        $person = $this->personRepository->create(array_merge($personPayload, [
                             'entity_type' => 'persons',
                         ]));
                         $data['person_id'] = $person->id;
@@ -406,12 +397,7 @@ class LeadRepository extends Repository
                 $hasPersonData = $this->hasPersonData($data['person']);
                 
                 if ($hasPersonData) {
-                    $personPayload = $data['person'];
-
-                    // Ensure the unique identity calculation includes organization_id (e.g. org_id|phone).
-                    if (empty($personPayload['organization_id']) && ! empty($data['organization_id'])) {
-                        $personPayload['organization_id'] = $data['organization_id'];
-                    }
+                    $personPayload = $this->personPayloadForIdentity($data);
 
                     $existingPerson = $this->personRepository->findByUniqueIdentity($personPayload);
 
@@ -423,7 +409,7 @@ class LeadRepository extends Repository
                             $data = $this->fillTitleFromCompanyName($data, $existingPerson->organization?->name);
                         }
                     } else {
-                        $person = $this->personRepository->create(array_merge($data['person'], [
+                        $person = $this->personRepository->create(array_merge($personPayload, [
                             'entity_type' => 'persons',
                         ]));
                         $data['person_id'] = $person->id;
@@ -639,6 +625,24 @@ class LeadRepository extends Repository
         }
 
         return false;
+    }
+
+    /**
+     * Person payload used for unique-identity lookup and create.
+     *
+     * Lead sales-owner (`user_id`) must NOT be copied onto the person identity —
+     * that made find look up `user|org|email` while existing contacts use `org|email`,
+     * then create hit `persons_unique_id_unique` (HTTP 500).
+     */
+    private function personPayloadForIdentity(array $data): array
+    {
+        $personPayload = is_array($data['person'] ?? null) ? $data['person'] : [];
+
+        if (empty($personPayload['organization_id']) && ! empty($data['organization_id'])) {
+            $personPayload['organization_id'] = $data['organization_id'];
+        }
+
+        return $personPayload;
     }
 
     /**

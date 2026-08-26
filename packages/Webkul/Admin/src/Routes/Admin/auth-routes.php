@@ -23,6 +23,12 @@ Route::withoutMiddleware(['user'])->group(function () {
         });
 
         Route::middleware(['user'])->group(function () {
+            Route::get('select-role', 'createRole')->name('admin.session.role.create');
+
+            Route::post('select-role', 'storeRole')->name('admin.session.role.store');
+
+            Route::post('switch-role', 'switchRole')->name('admin.session.role.switch');
+
             Route::delete('logout', 'destroy')->name('admin.session.destroy');
         });
     });

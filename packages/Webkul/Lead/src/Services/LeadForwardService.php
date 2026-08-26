@@ -204,9 +204,20 @@ class LeadForwardService
 
     public function activeSdrUsers()
     {
-        return DB::table('users')
+        $query = DB::table('users')->where('users.status', 1);
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('user_roles')) {
+            return $query
+                ->join('user_roles', 'users.id', '=', 'user_roles.user_id')
+                ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                ->whereRaw('LOWER(TRIM(roles.name)) = ?', ['sdr'])
+                ->distinct()
+                ->orderBy('users.name')
+                ->get(['users.id', 'users.name', 'users.email']);
+        }
+
+        return $query
             ->leftJoin('roles', 'users.role_id', '=', 'roles.id')
-            ->where('users.status', 1)
             ->whereRaw('LOWER(TRIM(roles.name)) = ?', ['sdr'])
             ->orderBy('users.name')
             ->get(['users.id', 'users.name', 'users.email']);
