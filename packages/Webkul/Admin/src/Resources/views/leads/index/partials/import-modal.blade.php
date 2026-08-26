@@ -6,6 +6,10 @@
                             ->get(['id', 'name']);
                         $defaultImportTagId = $importTags->firstWhere('name', 'Cold Lead')?->id
                             ?? $importTags->first()?->id;
+                        $leadForwardService = app(\Webkul\Lead\Services\LeadForwardService::class);
+                        $coldLeadImportTagId = $leadForwardService->coldLeadTagId();
+                        $isAdminLeadImport = app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin();
+                        $importSdrUsers = $leadForwardService->activeSdrUsers();
                     @endphp
 
                     <x-admin::modal
@@ -46,8 +50,10 @@
                                     <p class="mt-1">
                                         Required columns are marked with * in the template. Blank optional columns are imported as null. Blank schedule_followup uses auto schedule.
                                         Select a <strong>Lead Source</strong> below — it will be applied to every imported lead. Choose a <strong>Tag</strong> to apply to all imported leads (default: Cold Lead).
-                                        @if (app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin())
+                                        @if ($isAdminLeadImport)
                                             Choose one or more <strong>SDR users</strong> to own these leads (multiple users share them equally) and an <strong>Industry</strong> for the whole file.
+                                        @elseif (lead_variant() === 'lge')
+                                            If the selected tag is <strong>Cold Lead</strong>, choose one or more <strong>SDR users</strong> to receive the imported leads.
                                         @endif
                                     </p>
 
@@ -113,6 +119,7 @@
                                         @foreach ($importTags as $tag)
                                             <option
                                                 value="{{ $tag->id }}"
+                                                data-cold-lead="{{ (string) $coldLeadImportTagId === (string) $tag->id ? '1' : '0' }}"
                                                 @selected((string) $defaultImportTagId === (string) $tag->id)
                                             >
                                                 {{ $tag->name }}
@@ -150,15 +157,8 @@
                                     </x-admin::form.control-group>
                                 @endif
 
-                                @if (app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin())
+                                @if ($isAdminLeadImport || lead_variant() === 'lge')
                                     @php
-                                        $importSdrUsers = \Illuminate\Support\Facades\DB::table('users')
-                                            ->leftJoin('roles', 'users.role_id', '=', 'roles.id')
-                                            ->where('users.status', 1)
-                                            ->whereRaw('LOWER(TRIM(roles.name)) = ?', ['sdr'])
-                                            ->orderBy('users.name')
-                                            ->get(['users.id', 'users.name', 'users.email']);
-
                                         $importIndustries = \Illuminate\Support\Facades\DB::table('attribute_options')
                                             ->join('attributes', 'attributes.id', '=', 'attribute_options.attribute_id')
                                             ->where('attributes.entity_type', 'leads')
@@ -171,60 +171,64 @@
                                             ]);
                                     @endphp
 
-                                    <x-admin::form.control-group>
-                                        <x-admin::form.control-group.label class="required">
-                                            Assign to SDR Users
-                                        </x-admin::form.control-group.label>
+                                    <div id="lead-import-sdr-assignment-group">
+                                        <x-admin::form.control-group>
+                                            <x-admin::form.control-group.label class="required">
+                                                {{ $isAdminLeadImport ? 'Assign to SDR Users' : 'Forward Cold Leads To SDRs' }}
+                                            </x-admin::form.control-group.label>
 
-                                        <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">
-                                            Select one or more SDR users. If you select more than one, leads are divided equally between them.
-                                        </p>
+                                            <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                                                Select one or more SDR users. If you select more than one, leads are divided equally between them.
+                                            </p>
 
-                                        <div class="max-h-44 overflow-auto rounded-md border border-gray-200 p-2 dark:border-gray-800">
-                                            @forelse ($importSdrUsers as $sdrUser)
-                                                <label class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-gray-800 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-950">
-                                                    <input
-                                                        type="checkbox"
-                                                        name="assignee_user_ids[]"
-                                                        value="{{ $sdrUser->id }}"
-                                                        class="rounded border-gray-300 text-brandColor focus:ring-brandColor"
-                                                    />
-                                                    <span>
-                                                        {{ $sdrUser->name }}
-                                                        @if ($sdrUser->email)
-                                                            <span class="text-xs text-gray-500">({{ $sdrUser->email }})</span>
-                                                        @endif
-                                                    </span>
-                                                </label>
-                                            @empty
-                                                <p class="px-2 py-2 text-sm text-gray-500 dark:text-gray-400">
-                                                    No active SDR users found.
-                                                </p>
-                                            @endforelse
-                                        </div>
-                                    </x-admin::form.control-group>
+                                            <div class="max-h-44 overflow-auto rounded-md border border-gray-200 p-2 dark:border-gray-800">
+                                                @forelse ($importSdrUsers as $sdrUser)
+                                                    <label class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-gray-800 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-950">
+                                                        <input
+                                                            type="checkbox"
+                                                            name="assignee_user_ids[]"
+                                                            value="{{ $sdrUser->id }}"
+                                                            class="rounded border-gray-300 text-brandColor focus:ring-brandColor"
+                                                        />
+                                                        <span>
+                                                            {{ $sdrUser->name }}
+                                                            @if ($sdrUser->email)
+                                                                <span class="text-xs text-gray-500">({{ $sdrUser->email }})</span>
+                                                            @endif
+                                                        </span>
+                                                    </label>
+                                                @empty
+                                                    <p class="px-2 py-2 text-sm text-gray-500 dark:text-gray-400">
+                                                        No active SDR users found.
+                                                    </p>
+                                                @endforelse
+                                            </div>
+                                        </x-admin::form.control-group>
+                                    </div>
 
-                                    <x-admin::form.control-group>
-                                        <x-admin::form.control-group.label class="required">
-                                            Industry
-                                        </x-admin::form.control-group.label>
+                                    @if ($isAdminLeadImport)
+                                        <x-admin::form.control-group>
+                                            <x-admin::form.control-group.label class="required">
+                                                Industry
+                                            </x-admin::form.control-group.label>
 
-                                        <select
-                                            id="lead-import-industry"
-                                            name="industry_id"
-                                            required
-                                            class="custom-select w-full rounded border border-gray-200 px-2.5 py-2 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
-                                        >
-                                            <option value="">
-                                                Select Industry
-                                            </option>
-                                            @foreach ($importIndustries as $industry)
-                                                <option value="{{ $industry->id }}">
-                                                    {{ $industry->name }}
+                                            <select
+                                                id="lead-import-industry"
+                                                name="industry_id"
+                                                required
+                                                class="custom-select w-full rounded border border-gray-200 px-2.5 py-2 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+                                            >
+                                                <option value="">
+                                                    Select Industry
                                                 </option>
-                                            @endforeach
-                                        </select>
-                                    </x-admin::form.control-group>
+                                                @foreach ($importIndustries as $industry)
+                                                    <option value="{{ $industry->id }}">
+                                                        {{ $industry->name }}
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                        </x-admin::form.control-group>
+                                    @endif
                                 @endif
 
                                 <x-admin::form.control-group>

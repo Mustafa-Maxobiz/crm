@@ -530,6 +530,10 @@
                         return false;
                     }
 
+                    if (lead.forwarded_from_current_user) {
+                        return true;
+                    }
+
                     if (Number(lead.user_id || 0) === Number(this.currentUserId)) {
                         return false;
                     }
@@ -588,6 +592,10 @@
                 isHandoffLead(lead) {
                     if (! this.isCallingRoleLeadVariant) {
                         return false;
+                    }
+
+                    if (lead.forwarded_from_current_user) {
+                        return true;
                     }
 
                     return Number(lead.lead_owner_id || 0) === Number(this.currentUserId)

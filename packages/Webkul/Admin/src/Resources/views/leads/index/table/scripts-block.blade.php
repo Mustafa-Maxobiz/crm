@@ -63,6 +63,7 @@
         ->all();
 
     $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
+    $leadForwardService = app(\Webkul\Lead\Services\LeadForwardService::class);
     $accessibleStages = in_array(lead_variant(), ['sdr', 'lge'], true)
         ? $pipeline->stages->values()
         : $sourceAccessService->filterAccessibleStages($pipeline->stages);
@@ -100,8 +101,19 @@
 
     $isSdrUser = $sourceAccessService->isSdrUser();
     $isLgeLeadVariant = ($leadVariant ?? 'main') === 'lge';
+    $isLgeUser = $sourceAccessService->isLgeUser();
     $isCallingRoleLeadVariant = in_array($leadVariant ?? 'main', ['sdr', 'lge'], true);
     $currentUserId = auth()->guard('user')->id();
+    $activeSdrUsers = $isLgeUser
+        ? $leadForwardService->activeSdrUsers()
+            ->map(fn ($user) => [
+                'id'    => $user->id,
+                'name'  => $user->name,
+                'email' => $user->email,
+            ])
+            ->values()
+            ->all()
+        : [];
 
     $canAddServiceOffered = bouncer()->hasPermission('settings.lead.services_offered.create')
         || bouncer()->hasPermission(lead_permission('create'))
@@ -131,6 +143,7 @@
     @include('admin::leads.index.table.template.modals.meeting')
     @include('admin::leads.index.table.template.modals.followup')
     @include('admin::leads.index.table.template.modals.handoff')
+    @include('admin::leads.index.table.template.modals.cold-forward')
     @include('admin::leads.index.table.template.service-dropdown')
 </script>
 

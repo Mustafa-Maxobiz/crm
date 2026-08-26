@@ -40,6 +40,7 @@ use Webkul\Lead\Repositories\StageRepository;
 use Webkul\Lead\Repositories\TypeRepository;
 use Webkul\Lead\Repositories\ServiceRepository;
 use Webkul\Lead\Services\FollowupScheduleService;
+use Webkul\Lead\Services\LeadForwardService;
 use Webkul\Lead\Services\LinkedInProfileAccessService;
 use Webkul\Lead\Services\LinkedInUrlNormalizer;
 use Webkul\Lead\Services\MagicAIService;
@@ -80,6 +81,7 @@ class LeadController extends Controller
         protected LinkedInProfileAccessService $linkedInProfileAccessService,
         protected FollowupScheduleService $followupScheduleService,
         protected MeetingHandoffService $meetingHandoffService,
+        protected LeadForwardService $leadForwardService,
         protected UsStateTimezoneService $usStateTimezoneService,
     ) {
         request()->request->add(['entity_type' => 'leads']);
@@ -161,10 +163,31 @@ class LeadController extends Controller
     {
         $leadVariant = $variant ?? lead_variant();
 
+        $this->ensureLeadVariantMatchesCurrentUser($leadVariant);
+
         view()->share('leadVariant', $leadVariant);
         view()->share('leadsIndexRoute', lead_route_name('index', $leadVariant));
 
         return $leadVariant;
+    }
+
+    /**
+     * Prevent users from opening another role's lead screen by URL.
+     */
+    protected function ensureLeadVariantMatchesCurrentUser(string $leadVariant): void
+    {
+        if ($leadVariant === 'main' || $this->sourceAccessService->isAdmin()) {
+            return;
+        }
+
+        $allowed = match ($leadVariant) {
+            'sdr'          => $this->sourceAccessService->isSdrUser(),
+            'lge'          => $this->sourceAccessService->isLgeUser(),
+            'lead_clouser' => $this->sourceAccessService->isLeadCloserUser(),
+            default        => false,
+        };
+
+        abort_unless($allowed, 403, 'You are not allowed to access this lead screen.');
     }
 
     /**
@@ -359,29 +382,14 @@ class LeadController extends Controller
             }
 
             try {
-                Event::dispatch('lead.create.before');
-
-                $lead = $this->leadRepository->create($this->prepareImportedLeadData(
+                $lead = $this->createImportedLeadFromRow(
                     $rowData,
                     $sourceId,
-                    $this->assigneeForImportIndex($assignment['assignee_user_ids'], $assignIndex),
-                    $assignment['industry_id'],
+                    $assignment,
+                    $assignIndex,
                     $batchLinkedInProfileId,
-                ));
-
-                $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
-
-                $this->syncImportTagForLead($lead, $importTagId);
-
-                if (lead_variant() === 'lge') {
-                    $this->backfillLinkedInEntryProfile(
-                        $rowData['source_link'] ?? null,
-                        (int) ($lead->linkedin_profile_id ?? 0),
-                    );
-                    $this->markLinkedInSourceLinkAsResponse($rowData['source_link'] ?? null);
-                }
-
-                Event::dispatch('lead.create.after', $lead);
+                    $importTagId,
+                );
 
                 $created++;
                 $assignIndex++;
@@ -603,29 +611,17 @@ class LeadController extends Controller
             }
 
             try {
-                Event::dispatch('lead.create.before');
-
-                $lead = $this->leadRepository->create($this->prepareImportedLeadData(
+                $lead = $this->createImportedLeadFromRow(
                     $rowData,
                     $sourceId,
-                    $this->assigneeForImportIndex($assigneeUserIds, (int) $payload['assign_index']),
-                    $industryId,
+                    [
+                        'assignee_user_ids' => $assigneeUserIds,
+                        'industry_id'       => $industryId,
+                    ],
+                    (int) $payload['assign_index'],
                     $batchLinkedInProfileId,
-                ));
-
-                $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
-
-                $this->syncImportTagForLead($lead, $importTagId);
-
-                if (lead_variant() === 'lge') {
-                    $this->backfillLinkedInEntryProfile(
-                        $rowData['source_link'] ?? null,
-                        (int) ($lead->linkedin_profile_id ?? 0),
-                    );
-                    $this->markLinkedInSourceLinkAsResponse($rowData['source_link'] ?? null);
-                }
-
-                Event::dispatch('lead.create.after', $lead);
+                    $importTagId,
+                );
 
                 $payload['created']++;
                 $payload['assign_index']++;
@@ -733,29 +729,14 @@ class LeadController extends Controller
             }
 
             try {
-                Event::dispatch('lead.create.before');
-
-                $lead = $this->leadRepository->create($this->prepareImportedLeadData(
+                $lead = $this->createImportedLeadFromRow(
                     $rowData,
                     $sourceId,
-                    $this->assigneeForImportIndex($assignment['assignee_user_ids'], $assignIndex),
-                    $assignment['industry_id'],
+                    $assignment,
+                    $assignIndex,
                     $batchLinkedInProfileId,
-                ));
-
-                $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
-
-                $this->syncImportTagForLead($lead, $importTagId);
-
-                if (lead_variant() === 'lge') {
-                    $this->backfillLinkedInEntryProfile(
-                        $rowData['source_link'] ?? null,
-                        (int) ($lead->linkedin_profile_id ?? 0),
-                    );
-                    $this->markLinkedInSourceLinkAsResponse($rowData['source_link'] ?? null);
-                }
-
-                Event::dispatch('lead.create.after', $lead);
+                    $importTagId,
+                );
 
                 $created++;
                 $assignIndex++;
@@ -868,6 +849,8 @@ class LeadController extends Controller
             $this->sourceAccessService->applyLeadOwnerVisibilityScope($query);
             $this->sourceAccessService->applyLeadQueryScope($query);
 
+            $this->addForwardedOriginFlagForKanban($query);
+
             $this->applyKanbanSearch($query, request()->query('lead_search'));
 
             $this->applyWarmLeadPriority($query);
@@ -905,6 +888,37 @@ class LeadController extends Controller
         }
 
         return response()->json($data);
+    }
+
+    protected function addForwardedOriginFlagForKanban(mixed $query): void
+    {
+        if (! in_array(lead_variant(), ['sdr', 'lge'], true)) {
+            return;
+        }
+
+        $userId = (int) auth()->guard('user')->id();
+
+        if (! $userId) {
+            return;
+        }
+
+        $addForwardedSelect = function ($builder) use ($userId) {
+            return $builder->addSelect([
+                'forwarded_from_current_user' => DB::table('lead_forwards')
+                    ->selectRaw('1')
+                    ->whereColumn('lead_forwards.lead_id', 'leads.id')
+                    ->where('lead_forwards.from_user_id', $userId)
+                    ->limit(1),
+            ]);
+        };
+
+        if (method_exists($query, 'scopeQuery')) {
+            $query->scopeQuery($addForwardedSelect);
+
+            return;
+        }
+
+        $addForwardedSelect($query);
     }
 
     /**
@@ -999,6 +1013,11 @@ class LeadController extends Controller
             'linkedInProfiles' => lead_variant() === 'lge'
                 ? $this->linkedInProfileAccessService->getAssignedProfiles()
                 : collect(),
+            'tagOptions'       => $this->leadCreateTagOptions(),
+            'coldLeadTagId'    => $this->leadForwardService->coldLeadTagId(),
+            'activeSdrUsers'   => lead_variant() === 'lge'
+                ? $this->leadForwardService->activeSdrUsers()
+                : collect(),
         ]);
     }
 
@@ -1025,6 +1044,38 @@ class LeadController extends Controller
             'linkedin_profile_name'      => $profileName,
             'requires_profile_selection' => ! $entry || ! $entry->linkedin_profile_id,
         ]);
+    }
+
+    protected function leadCreateTagOptions()
+    {
+        $allowedNames = collect(StaticTags::names())
+            ->map(fn ($name) => strtolower($name))
+            ->all();
+
+        return $this->tagRepository
+            ->getModel()
+            ->newQuery()
+            ->whereIn(DB::raw('LOWER(TRIM(name))'), $allowedNames)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+    }
+
+    /**
+     * @throws \Illuminate\Validation\ValidationException
+     */
+    protected function validatedColdLeadForwardSdrId(array $data): ?int
+    {
+        if (
+            ! $this->sourceAccessService->isLgeUser()
+            || ! $this->leadForwardService->isColdLeadTagSelected($data['tags'] ?? [])
+        ) {
+            return null;
+        }
+
+        return $this->leadForwardService->validateActiveSdrId(
+            request()->input('cold_lead_sdr_user_id'),
+            'cold_lead_sdr_user_id',
+        );
     }
 
     /**
@@ -1054,6 +1105,7 @@ class LeadController extends Controller
         if ($isLgeCreate) {
             try {
                 $this->applyLinkedInProfileToLeadData($data);
+                $coldLeadForwardSdrId = $this->validatedColdLeadForwardSdrId($data);
             } catch (\Illuminate\Validation\ValidationException $exception) {
                 if (request()->ajax()) {
                     return response()->json([
@@ -1067,7 +1119,11 @@ class LeadController extends Controller
                     ->withInput()
                     ->withErrors($exception->errors());
             }
+        } else {
+            $coldLeadForwardSdrId = null;
         }
+
+        unset($data['cold_lead_sdr_user_id']);
 
         // Main create: default Sales Owner to creator (editable to forward); always start in New stage.
         if ($isMainCreate || $isCallingRoleCreate) {
@@ -1133,18 +1189,30 @@ class LeadController extends Controller
             $data['closed_at'] = Carbon::now();
         }
 
-        $lead = $this->leadRepository->create($data);
+        $lead = DB::transaction(function () use ($data, $isLgeCreate, $coldLeadForwardSdrId) {
+            $lead = $this->leadRepository->create($data);
 
-        $this->syncLeadTags($lead, $data['tags'] ?? []);
+            $this->syncLeadTags($lead, $data['tags'] ?? []);
 
-        $this->syncLeadServices($lead, $data['services'] ?? []);
+            $this->syncLeadServices($lead, $data['services'] ?? []);
 
-        $this->syncSourceTagForLead($lead);
+            $this->syncSourceTagForLead($lead);
 
-        if ($isLgeCreate) {
-            $this->backfillLinkedInEntryProfile($data['source_link'] ?? null, (int) ($data['linkedin_profile_id'] ?? 0));
-            $this->markLinkedInSourceLinkAsResponse($data['source_link'] ?? null);
-        }
+            if ($isLgeCreate) {
+                $this->backfillLinkedInEntryProfile($data['source_link'] ?? null, (int) ($data['linkedin_profile_id'] ?? 0));
+                $this->markLinkedInSourceLinkAsResponse($data['source_link'] ?? null);
+            }
+
+            if ($coldLeadForwardSdrId) {
+                $lead = $this->leadForwardService->forwardColdLeadToSdr(
+                    $lead,
+                    (int) auth()->guard('user')->id(),
+                    $coldLeadForwardSdrId,
+                );
+            }
+
+            return $lead;
+        });
 
         if (request()->ajax()) {
             return response()->json([
@@ -1657,6 +1725,10 @@ class LeadController extends Controller
      */
     protected function syncSourceTagForLead($lead): void
     {
+        if ($this->leadForwardService->leadHasClassification($lead)) {
+            return;
+        }
+
         $sourceName = DB::table('lead_sources')
             ->where('id', $lead->lead_source_id)
             ->value('name');
@@ -1665,22 +1737,16 @@ class LeadController extends Controller
             return;
         }
 
-        $isColdCall = $sourceName === 'Cold Call';
+        $isColdCall = strtolower(trim((string) $sourceName)) === 'cold call';
         $tagName = $isColdCall ? 'Cold Lead' : 'Warm Lead';
-        $oppositeTagName = $isColdCall ? 'Warm Lead' : 'Cold Lead';
 
         $tag = $this->findSourceTag($tagName);
-        $oppositeTag = $this->findSourceTag($oppositeTagName);
 
         if (! $tag) {
             return;
         }
 
-        if ($oppositeTag) {
-            $lead->tags()->detach($oppositeTag->id);
-        }
-
-        $lead->tags()->syncWithoutDetaching([$tag->id]);
+        $this->leadForwardService->syncClassificationTag($lead, (int) $tag->id);
     }
 
     /**
@@ -1694,16 +1760,12 @@ class LeadController extends Controller
             return;
         }
 
-        $warmLeadTag = $this->findSourceTag('Warm Lead');
-        $coldLeadTag = $this->findSourceTag('Cold Lead');
         $normalizedName = strtolower(trim((string) $tag->name));
 
-        if ($normalizedName === 'warm lead' && $coldLeadTag) {
-            $lead->tags()->detach($coldLeadTag->id);
-        }
+        if (in_array($normalizedName, ['warm lead', 'cold lead'], true)) {
+            $this->leadForwardService->syncClassificationTag($lead, (int) $tag->id);
 
-        if ($normalizedName === 'cold lead' && $warmLeadTag) {
-            $lead->tags()->detach($warmLeadTag->id);
+            return;
         }
 
         $lead->tags()->syncWithoutDetaching([$tag->id]);
@@ -2825,6 +2887,14 @@ class LeadController extends Controller
             ->values()
             ->all();
 
+        $tagIds = $this->leadForwardService->normalizeClassificationTagIds($tagIds);
+
+        if ($this->requiresColdLeadForwardForTagSync($lead, $tagIds)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'tags' => ['Forward this cold lead to an SDR from the lead detail tag popup.'],
+            ]);
+        }
+
         $lead->tags()->sync($tagIds);
 
         $newTags = $lead->tags()->pluck('name')->sort()->values()->implode(', ');
@@ -2835,6 +2905,37 @@ class LeadController extends Controller
             $oldTags !== '' ? $oldTags : null,
             $newTags !== '' ? $newTags : null
         );
+    }
+
+    /**
+     * Generic tag form submissions do not include the SDR needed for the Warm
+     * -> Cold handoff, so block that transition outside the dedicated popup.
+     */
+    private function requiresColdLeadForwardForTagSync($lead, array $tagIds): bool
+    {
+        $user = auth()->guard('user')->user();
+        $userId = (int) ($user?->id ?? 0);
+        $coldLeadTagId = $this->leadForwardService->coldLeadTagId();
+        $warmLeadTagId = $this->leadForwardService->warmLeadTagId();
+
+        if (
+            ! $userId
+            || ! $coldLeadTagId
+            || ! $warmLeadTagId
+            || ! $this->sourceAccessService->isLgeUser($user)
+            || ! in_array($coldLeadTagId, $tagIds, true)
+        ) {
+            return false;
+        }
+
+        $lead->loadMissing('tags');
+
+        if (! $lead->tags->contains('id', $warmLeadTagId) || $lead->tags->contains('id', $coldLeadTagId)) {
+            return false;
+        }
+
+        return (int) $lead->user_id === $userId
+            && (int) ($lead->lead_owner_id ?? $lead->user_id) === $userId;
     }
 
     /**
@@ -3176,6 +3277,67 @@ class LeadController extends Controller
         return $lead;
     }
 
+    protected function createImportedLeadFromRow(
+        array $rowData,
+        int $sourceId,
+        array $assignment,
+        int $assignIndex,
+        ?int $batchLinkedInProfileId,
+        int $importTagId,
+    ): Lead {
+        $assigneeUserId = $this->assigneeForImportIndex($assignment['assignee_user_ids'] ?? [], $assignIndex);
+        $isLgeColdForward = $this->isLgeColdForwardImport($importTagId);
+
+        if ($isLgeColdForward && ! $assigneeUserId) {
+            throw new \InvalidArgumentException('Please select one or more SDR users to forward cold leads.');
+        }
+
+        return DB::transaction(function () use (
+            $rowData,
+            $sourceId,
+            $assignment,
+            $batchLinkedInProfileId,
+            $importTagId,
+            $assigneeUserId,
+            $isLgeColdForward,
+        ) {
+            Event::dispatch('lead.create.before');
+
+            $lead = $this->leadRepository->create($this->prepareImportedLeadData(
+                $rowData,
+                $sourceId,
+                $isLgeColdForward ? null : $assigneeUserId,
+                $assignment['industry_id'] ?? null,
+                $batchLinkedInProfileId,
+            ));
+
+            $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
+
+            $this->syncImportTagForLead($lead, $importTagId);
+
+            if (lead_variant() === 'lge') {
+                $this->backfillLinkedInEntryProfile(
+                    $rowData['source_link'] ?? null,
+                    (int) ($lead->linkedin_profile_id ?? 0),
+                );
+                $this->markLinkedInSourceLinkAsResponse($rowData['source_link'] ?? null);
+            }
+
+            if ($isLgeColdForward) {
+                $lead = $this->leadForwardService->forwardColdLeadToSdr(
+                    $lead,
+                    (int) auth()->guard('user')->id(),
+                    (int) $assigneeUserId,
+                    false,
+                );
+            }
+
+            Event::dispatch('lead.create.after', $lead);
+
+            return $lead;
+        });
+    }
+
     /**
      * @return int|null|JsonResponse|RedirectResponse
      */
@@ -3263,6 +3425,26 @@ class LeadController extends Controller
      */
     protected function validatedBulkImportAssignment(): array|JsonResponse|RedirectResponse
     {
+        $isLgeColdForwardImport = $this->isLgeColdForwardImport((int) request()->input('import_tag_id', 0));
+
+        if ($isLgeColdForwardImport) {
+            $assigneeUserIds = $this->normalizeImportAssigneeIds(request()->input('assignee_user_ids', []));
+
+            try {
+                $assigneeUserIds = $this->leadForwardService->validateActiveSdrIds(
+                    $assigneeUserIds,
+                    'assignee_user_ids',
+                );
+            } catch (\Illuminate\Validation\ValidationException) {
+                return $this->bulkImportAssignmentError('Please select one or more active SDR users to forward cold leads.');
+            }
+
+            return [
+                'assignee_user_ids' => array_values($assigneeUserIds),
+                'industry_id'       => null,
+            ];
+        }
+
         if (! $this->sourceAccessService->isAdmin()) {
             return [
                 'assignee_user_ids' => [],
@@ -3308,13 +3490,17 @@ class LeadController extends Controller
      */
     protected function sdrUserIdsForBulkImport(): array
     {
-        return DB::table('users')
-            ->leftJoin('roles', 'users.role_id', '=', 'roles.id')
-            ->where('users.status', 1)
-            ->whereRaw('LOWER(TRIM(roles.name)) = ?', ['sdr'])
-            ->pluck('users.id')
+        return $this->leadForwardService->activeSdrUsers()
+            ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->all();
+    }
+
+    protected function isLgeColdForwardImport(int $importTagId): bool
+    {
+        return lead_variant() === 'lge'
+            && $this->sourceAccessService->isLgeUser()
+            && $this->leadForwardService->isColdLeadTagSelected([$importTagId]);
     }
 
     protected function industryOptionExists(int $industryId): bool

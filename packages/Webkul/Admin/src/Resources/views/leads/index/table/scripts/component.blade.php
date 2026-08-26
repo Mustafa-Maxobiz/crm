@@ -45,7 +45,9 @@
                     schedulingContext: {},
                     defaultMeetingParticipants: @json($defaultMeetingParticipants),
                     isLgeLeadVariant: @json($isLgeLeadVariant),
+                    isLgeUser: @json($isLgeUser),
                     isCallingRoleLeadVariant: @json($isCallingRoleLeadVariant),
+                    activeSdrUsers: @json($activeSdrUsers),
                     meetingOwnerOptions: [],
                     meetingOwnersLoading: false,
                     meetingOwnersEmpty: false,
@@ -56,6 +58,12 @@
                     followupMode: null,
                     customFollowupDate: '',
                     isFollowupSaving: false,
+                    pendingColdForwardRecord: null,
+                    pendingColdForwardOldTagId: null,
+                    pendingColdForwardNewTagId: null,
+                    selectedForwardSdrUserId: '',
+                    isColdForwardStoring: false,
+                    coldForwardErrors: {},
                 };
             },
 
@@ -404,6 +412,17 @@
 
                         if (tagName === 'do not call') {
                             this.attachTagAndDisqualify(leadId, record.tag_id, value, 'do_not_call');
+
+                            return;
+                        }
+
+                        if (this.shouldOpenColdLeadForwardModal(record, tagName)) {
+                            this.pendingColdForwardRecord = record;
+                            this.pendingColdForwardOldTagId = record.tag_id || null;
+                            this.pendingColdForwardNewTagId = value;
+                            this.selectedForwardSdrUserId = '';
+                            this.coldForwardErrors = {};
+                            this.$refs.coldLeadForwardModal.open();
 
                             return;
                         }
@@ -1072,6 +1091,84 @@
                         this.$emitter.emit('add-flash', { type: 'error', message: error.response?.data?.message || 'Tag update failed.' });
                         throw error;
                     });
+                },
+
+                shouldOpenColdLeadForwardModal(record, selectedTagName) {
+                    if (
+                        ! this.isLgeUser
+                        || selectedTagName !== 'cold lead'
+                        || (record.tag_name || '').trim().toLowerCase() !== 'warm lead'
+                    ) {
+                        return false;
+                    }
+
+                    const ownerId = Number(record.user_id || 0);
+                    const leadOwnerId = Number(record.lead_owner_id || record.user_id || 0);
+
+                    return ownerId === Number(this.currentUserId)
+                        && leadOwnerId === Number(this.currentUserId);
+                },
+
+                confirmColdLeadForward() {
+                    if (! this.selectedForwardSdrUserId) {
+                        this.coldForwardErrors = {
+                            sdr_user_id: 'Please select an SDR user.',
+                        };
+
+                        return;
+                    }
+
+                    if (! this.pendingColdForwardRecord || ! this.pendingColdForwardNewTagId) {
+                        return;
+                    }
+
+                    this.coldForwardErrors = {};
+                    this.isColdForwardStoring = true;
+
+                    this.$axios.patch(`{{ lead_url() }}/${this.pendingColdForwardRecord.id}/tags`, {
+                        tag_id: this.pendingColdForwardNewTagId,
+                        old_tag_id: this.pendingColdForwardOldTagId || null,
+                        sdr_user_id: this.selectedForwardSdrUserId,
+                    }).then(response => {
+                        this.$emitter.emit('add-flash', {
+                            type: 'success',
+                            message: response.data.message,
+                        });
+
+                        this.closeColdLeadForwardModal();
+                    }).catch(error => {
+                        if (error.response?.status === 422) {
+                            this.coldForwardErrors = {
+                                sdr_user_id: error.response.data.errors?.sdr_user_id?.[0]
+                                    || error.response.data.errors?.forward_to_sdr_user_id?.[0]
+                                    || error.response.data.message,
+                            };
+
+                            return;
+                        }
+
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: error.response?.data?.message || 'Cold lead could not be forwarded.',
+                        });
+                    }).finally(() => {
+                        this.isColdForwardStoring = false;
+                    });
+                },
+
+                closeColdLeadForwardModal() {
+                    this.clearColdLeadForwardState();
+                    this.$refs.coldLeadForwardModal.close();
+                    this.$refs.datagrid.get();
+                },
+
+                clearColdLeadForwardState() {
+                    this.pendingColdForwardRecord = null;
+                    this.pendingColdForwardOldTagId = null;
+                    this.pendingColdForwardNewTagId = null;
+                    this.selectedForwardSdrUserId = '';
+                    this.isColdForwardStoring = false;
+                    this.coldForwardErrors = {};
                 },
 
                 attachTagAndDisqualify(leadId, oldTagId, newTagId, reason) {

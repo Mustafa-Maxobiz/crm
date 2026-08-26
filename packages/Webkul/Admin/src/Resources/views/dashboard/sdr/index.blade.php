@@ -273,6 +273,20 @@
 
                     <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
                         <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Lead Forward
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-gray-800 dark:text-white">
+                            @{{ summary.linkedin.forwarded }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Cold leads forwarded to SDRs
+                        </p>
+                    </div>
+
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
                             Meetings
                         </p>
 
@@ -981,6 +995,7 @@
                                 requests: 0,
                                 accepted: 0,
                                 responses: 0,
+                                forwarded: 0,
                                 acceptance_rate: 0,
                                 response_rate: 0,
                             },

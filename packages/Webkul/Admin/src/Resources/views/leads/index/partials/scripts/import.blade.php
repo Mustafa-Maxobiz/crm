@@ -26,6 +26,7 @@
             let importTagId = null;
             const isLgeLeadImport = @json(lead_variant() === 'lge');
             const isAdminLeadImport = @json(app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin());
+            const coldLeadImportTagId = @json(app(\Webkul\Lead\Services\LeadForwardService::class)->coldLeadTagId());
             let failedImportRows = [];
 
             const importElements = () => ({
@@ -60,6 +61,26 @@
 
             const flash = (type, message) => {
                 window.emitter?.emit('add-flash', { type, message });
+            };
+
+            const isColdLeadImportSelected = () => {
+                const tagSelect = document.getElementById('lead-import-tag');
+
+                if (! tagSelect?.value) {
+                    return false;
+                }
+
+                return Number(tagSelect.value) === Number(coldLeadImportTagId);
+            };
+
+            const syncLgeColdForwardPanel = () => {
+                const panel = document.getElementById('lead-import-sdr-assignment-group');
+
+                if (! panel || isAdminLeadImport) {
+                    return;
+                }
+
+                panel.classList.toggle('hidden', ! isLgeLeadImport || ! isColdLeadImportSelected());
             };
 
             const escapeHtml = (value) => String(value ?? '')
@@ -317,6 +338,10 @@
             };
 
             document.addEventListener('change', (event) => {
+                if (event.target?.id === 'lead-import-tag') {
+                    syncLgeColdForwardPanel();
+                }
+
                 if (event.target?.id !== 'lead-import-file') {
                     return;
                 }
@@ -384,6 +409,12 @@
                     return;
                 }
 
+                if (isLgeLeadImport && isColdLeadImportSelected() && ! selectedAssignees.length) {
+                    flash('error', 'Please select at least one SDR user to forward cold leads.');
+
+                    return;
+                }
+
                 if (isAdminLeadImport && ! industrySelect?.value) {
                     flash('error', 'Please select an industry for this import.');
 
@@ -444,6 +475,8 @@
                     elements.submit.classList.remove('opacity-70', 'cursor-not-allowed');
                 }
             }, true);
+
+            syncLgeColdForwardPanel();
 
             document.addEventListener('click', async (event) => {
                 const removeButton = event.target.closest('#lead-import-failed [data-remove-index]');

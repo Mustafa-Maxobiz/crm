@@ -447,18 +447,31 @@ class SourceAccessService
         $userId = (int) $user->id;
 
         $query = DB::table('leads')
-            ->where('lead_owner_id', $userId)
-            ->where('user_id', '!=', $userId)
-            ->whereNotNull('user_id')
-            ->whereNull('deleted_at');
+            ->whereNull('leads.deleted_at')
+            ->where(function ($visibilityQuery) use ($userId) {
+                $visibilityQuery
+                    ->where(function ($handoffQuery) use ($userId) {
+                        $handoffQuery
+                            ->where('leads.lead_owner_id', $userId)
+                            ->where('leads.user_id', '!=', $userId)
+                            ->whereNotNull('leads.user_id');
+                    })
+                    ->orWhereExists(function ($forwardQuery) use ($userId) {
+                        $forwardQuery
+                            ->selectRaw('1')
+                            ->from('lead_forwards')
+                            ->whereColumn('lead_forwards.lead_id', 'leads.id')
+                            ->where('lead_forwards.from_user_id', $userId);
+                    });
+            });
 
         if ($pipelineId) {
-            $query->where('lead_pipeline_id', $pipelineId);
+            $query->where('leads.lead_pipeline_id', $pipelineId);
         }
 
         return $this->handedOffStageIdsCache[$cacheKey] = $query
             ->distinct()
-            ->pluck('lead_pipeline_stage_id')
+            ->pluck('leads.lead_pipeline_stage_id')
             ->map(fn ($id) => (int) $id)
             ->filter()
             ->values()
@@ -492,8 +505,8 @@ class SourceAccessService
     }
 
     /**
-     * SDR: own leads, or any lead in a shared stage. Admin: all.
-     * LGE/main custom roles: own leads only.
+     * Non-admin users only see leads that belong to them directly.
+     * Admin users remain unrestricted.
      */
     public function canAccessLeadByOwner(LeadContract $lead, ?UserContract $user = null): bool
     {
@@ -511,25 +524,14 @@ class SourceAccessService
             return (int) $lead->user_id === (int) $user->id;
         }
 
-        if ($this->isSdrUser($user)) {
-            if (
-                (int) $lead->user_id === (int) $user->id
-                || (int) ($lead->lead_owner_id ?? 0) === (int) $user->id
-            ) {
-                return true;
-            }
-
-            return $this->leadIsInSharedStage($lead, $user);
-        }
-
         return (int) $lead->user_id === (int) $user->id
             || (int) ($lead->lead_owner_id ?? 0) === (int) $user->id;
     }
 
     /**
      * Apply owner visibility for lead listings.
-     * SDR shares configured shared stages (default: New); other stages are owner-only.
-     * LGE/main custom roles see only their own leads. Admins are unrestricted.
+     * Each non-admin user sees only direct assignee/originator leads.
+     * Admins are unrestricted.
      */
     public function applyLeadOwnerVisibilityScope(Builder $query, string $table = 'leads'): Builder
     {
@@ -541,27 +543,22 @@ class SourceAccessService
             return $query->where("{$table}.user_id", auth()->guard('user')->id());
         }
 
-        if ($this->isSdrUser()) {
-            $userId = auth()->guard('user')->id();
-            $sharedStageIds = $this->getSharedStageIds();
-
-            return $query->where(function ($ownerQuery) use ($userId, $sharedStageIds, $table) {
-                $ownerQuery
-                    ->where("{$table}.user_id", $userId)
-                    ->orWhere("{$table}.lead_owner_id", $userId);
-
-                if (! empty($sharedStageIds)) {
-                    $ownerQuery->orWhereIn("{$table}.lead_pipeline_stage_id", $sharedStageIds);
-                }
-            });
-        }
-
         $userId = auth()->guard('user')->id();
 
         return $query->where(function ($ownerQuery) use ($table, $userId) {
             $ownerQuery
                 ->where("{$table}.user_id", $userId)
                 ->orWhere("{$table}.lead_owner_id", $userId);
+
+            if ($this->isCallingRoleUser()) {
+                $ownerQuery->orWhereExists(function ($forwardQuery) use ($table, $userId) {
+                    $forwardQuery
+                        ->selectRaw('1')
+                        ->from('lead_forwards')
+                        ->whereColumn('lead_forwards.lead_id', "{$table}.id")
+                        ->where('lead_forwards.from_user_id', $userId);
+                });
+            }
         });
     }
 
@@ -576,21 +573,6 @@ class SourceAccessService
 
         if (lead_variant() === 'lead_clouser' || $this->isLeadCloserUser()) {
             return $query->where('leads.user_id', auth()->guard('user')->id());
-        }
-
-        if ($this->isSdrUser()) {
-            $userId = auth()->guard('user')->id();
-            $sharedStageIds = $this->getSharedStageIds();
-
-            return $query->where(function ($ownerQuery) use ($userId, $sharedStageIds) {
-                $ownerQuery
-                    ->where('leads.user_id', $userId)
-                    ->orWhere('leads.lead_owner_id', $userId);
-
-                if (! empty($sharedStageIds)) {
-                    $ownerQuery->orWhereIn('leads.lead_pipeline_stage_id', $sharedStageIds);
-                }
-            });
         }
 
         $userId = auth()->guard('user')->id();
@@ -657,6 +639,13 @@ class SourceAccessService
                         ->where("{$table}.lead_owner_id", $userId)
                         ->where("{$table}.user_id", '!=', $userId)
                         ->whereNotNull("{$table}.user_id");
+                })
+                ->orWhereExists(function ($forwardQuery) use ($userId, $table) {
+                    $forwardQuery
+                        ->selectRaw('1')
+                        ->from('lead_forwards')
+                        ->whereColumn('lead_forwards.lead_id', "{$table}.id")
+                        ->where('lead_forwards.from_user_id', $userId);
                 });
         });
     }
@@ -782,8 +771,10 @@ class SourceAccessService
     }
 
     /**
-     * Whether the user may view/read a lead (listings, detail, status tracking).
-     * Handed-off originated leads remain visible even when the stage is beyond the role's editable stages.
+     * Whether the user may open/read a lead detail page.
+     * Sales owner (`user_id`) can open the lead. Lead owner (`lead_owner_id`)
+     * may still see the card in pipeline listings through listing scopes, but
+     * cannot open or edit once sales ownership belongs to another user.
      */
     public function canViewLead(LeadContract $lead, ?UserContract $user = null): bool
     {
@@ -803,14 +794,14 @@ class SourceAccessService
             return false;
         }
 
-        if (! $this->canAccessLeadByOwner($lead, $user)) {
+        $user = $this->resolveUser($user);
+
+        if (! $user) {
             return false;
         }
 
-        $user = $this->resolveUser($user);
-
-        if ($user && MeetingHandoffService::isHandoffLeadForUser($lead, $user)) {
-            return true;
+        if ((int) $lead->user_id !== (int) $user->id) {
+            return false;
         }
 
         return $this->canAccessStageId(
@@ -838,15 +829,7 @@ class SourceAccessService
             return false;
         }
 
-        if ((int) $lead->user_id === (int) $user->id) {
-            return true;
-        }
-
-        if ($this->isCallingRoleUser($user)) {
-            return $this->canAccessLeadByOwner($lead, $user);
-        }
-
-        return false;
+        return (int) $lead->user_id === (int) $user->id;
     }
 
     /**

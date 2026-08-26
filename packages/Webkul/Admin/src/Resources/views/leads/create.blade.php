@@ -33,6 +33,27 @@
         if (lead_variant() === 'main') {
             $detailsExcludedAttributeCodes[] = 'title';
         }
+
+        $tagOptions = collect($tagOptions ?? []);
+        $selectedTagIds = old('tags', []);
+
+        if (! is_array($selectedTagIds)) {
+            $selectedTagIds = array_filter(array_map('intval', explode(',', (string) $selectedTagIds)));
+        } else {
+            $selectedTagIds = collect($selectedTagIds)
+                ->map(function ($value) use ($tagOptions) {
+                    if (is_numeric($value)) {
+                        return (int) $value;
+                    }
+
+                    $match = $tagOptions->firstWhere('name', $value);
+
+                    return $match ? (int) $match->id : null;
+                })
+                ->filter()
+                ->values()
+                ->all();
+        }
     @endphp
 
     <!-- Create Lead Form -->
@@ -207,6 +228,22 @@
 
                             @include('admin::leads.common.services')
 
+                            <x-admin::form.control-group>
+                                <x-admin::form.control-group.label>
+                                    Tags
+                                </x-admin::form.control-group.label>
+
+                                <x-admin::attributes.edit.multiselect
+                                    :attribute="(object) ['code' => 'tags', 'name' => 'Tags', 'lookup_type' => null]"
+                                    :options="$tagOptions"
+                                    :value="$selectedTagIds"
+                                    validations=""
+                                    :can-add-new="false"
+                                />
+
+                                <x-admin::form.control-group.error control-name="tags" />
+                            </x-admin::form.control-group>
+
                             <!-- Lead Details Other input fields -->
                             <div class="flex gap-4 max-sm:flex-wrap">
                                 <div class="w-full">
@@ -296,6 +333,39 @@
                                             </x-admin::form.control-group.control>
 
                                             <x-admin::form.control-group.error control-name="linkedin_profile_id" />
+                                        </x-admin::form.control-group>
+
+                                        <x-admin::form.control-group v-show="coldLeadSelected">
+                                            <x-admin::form.control-group.label class="required">
+                                                Forward To SDR
+                                            </x-admin::form.control-group.label>
+
+                                            <select
+                                                name="cold_lead_sdr_user_id"
+                                                v-model="coldLeadSdrUserId"
+                                                :required="coldLeadSelected"
+                                                :disabled="! coldLeadSelected"
+                                                class="custom-select w-full rounded-md border border-gray-200 px-2.5 py-2 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+                                            >
+                                                <option value="">
+                                                    Select SDR User
+                                                </option>
+
+                                                @foreach ($activeSdrUsers ?? [] as $sdrUser)
+                                                    <option
+                                                        value="{{ $sdrUser->id }}"
+                                                        @selected((string) old('cold_lead_sdr_user_id') === (string) $sdrUser->id)
+                                                    >
+                                                        {{ $sdrUser->name }}@if ($sdrUser->email) ({{ $sdrUser->email }})@endif
+                                                    </option>
+                                                @endforeach
+                                            </select>
+
+                                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                                Cold Lead entries created by LGE must be forwarded to an active SDR.
+                                            </p>
+
+                                            <x-admin::form.control-group.error control-name="cold_lead_sdr_user_id" />
                                         </x-admin::form.control-group>
                                     @endif
                                 </div>
@@ -460,6 +530,10 @@
                         linkedInRequiresProfileSelection: true,
                         linkedInProfileLocked: false,
                         linkedInSelectedProfileId: @json(old('linkedin_profile_id', '')),
+                        coldLeadTagId: @json($coldLeadTagId ? (int) $coldLeadTagId : null),
+                        coldLeadSelected: false,
+                        coldLeadSdrUserId: @json(old('cold_lead_sdr_user_id', '')),
+                        coldLeadTagObserver: null,
                     };
                 },
                 
@@ -472,6 +546,22 @@
                     });
 
                     if (this.isLgeCreate) {
+                        const refreshColdLeadTagState = () => window.setTimeout(() => this.refreshColdLeadTagState(), 0);
+
+                        document.addEventListener('change', refreshColdLeadTagState);
+                        document.addEventListener('click', refreshColdLeadTagState);
+
+                        const form = document.getElementById('lead-create-form');
+                        if (form && this.coldLeadTagId) {
+                            this.coldLeadTagObserver = new MutationObserver(refreshColdLeadTagState);
+                            this.coldLeadTagObserver.observe(form, {
+                                childList: true,
+                                subtree: true,
+                                attributes: true,
+                                attributeFilter: ['value'],
+                            });
+                        }
+
                         document.addEventListener('input', (event) => {
                             if (event.target.name === 'source_link') {
                                 this.handleLinkedInSourceLinkInput(event.target);
@@ -498,10 +588,22 @@
                                 event.preventDefault();
                                 event.stopPropagation();
                                 this.showLinkedInProfileMessage('Please select a LinkedIn working profile.');
+
+                                return;
+                            }
+
+                            this.refreshColdLeadTagState();
+
+                            if (this.coldLeadSelected && ! this.coldLeadSdrUserId) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                this.showColdLeadSdrMessage('Please select an active SDR user to forward this cold lead.');
                             }
                         });
 
                         this.$nextTick(() => {
+                            this.refreshColdLeadTagState();
+
                             const sourceLinkInput = document.querySelector('[name="source_link"]');
 
                             if (sourceLinkInput?.value?.trim()) {
@@ -523,6 +625,63 @@
                 },
 
                 methods: {
+                    refreshColdLeadTagState() {
+                        if (! this.coldLeadTagId) {
+                            this.coldLeadSelected = false;
+
+                            return;
+                        }
+
+                        const expectedValue = String(this.coldLeadTagId);
+                        const tagFields = Array.from(document.querySelectorAll('[name="tags"], [name="tags[]"]'));
+                        const selected = tagFields.some((field) => {
+                            if (field.type === 'hidden' || field.type === 'text') {
+                                return String(field.value || '') === expectedValue;
+                            }
+
+                            if (field.tagName === 'SELECT') {
+                                if (field.multiple) {
+                                    return Array.from(field.selectedOptions).some((option) => option.value === expectedValue);
+                                }
+
+                                return field.value === expectedValue;
+                            }
+
+                            if (field.type === 'checkbox' || field.type === 'radio') {
+                                return field.checked && field.value === expectedValue;
+                            }
+
+                            return false;
+                        });
+
+                        this.coldLeadSelected = selected;
+
+                        if (! selected) {
+                            this.coldLeadSdrUserId = '';
+                            this.showColdLeadSdrMessage('');
+                        }
+                    },
+
+                    showColdLeadSdrMessage(message) {
+                        const select = document.querySelector('[name="cold_lead_sdr_user_id"]');
+
+                        if (! select) {
+                            return;
+                        }
+
+                        let messageElement = document.getElementById('lge-cold-lead-sdr-error');
+
+                        if (! messageElement) {
+                            messageElement = document.createElement('p');
+                            messageElement.id = 'lge-cold-lead-sdr-error';
+                            messageElement.className = 'mt-1 text-xs italic text-red-600 dark:text-red-400';
+                            select.insertAdjacentElement('afterend', messageElement);
+                        }
+
+                        messageElement.textContent = message || '';
+                        messageElement.classList.toggle('hidden', ! message);
+                    },
+
                     /**
                      * Scroll to the section.
                      *

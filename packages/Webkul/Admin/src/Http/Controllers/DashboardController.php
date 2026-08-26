@@ -5,8 +5,10 @@ namespace Webkul\Admin\Http\Controllers;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 use Webkul\Admin\Helpers\Dashboard;
+use Webkul\Lead\Services\LeadForwardService;
 use Webkul\Lead\Services\SourceAccessService;
 use Webkul\Lead\Services\UsStateTimezoneService;
 
@@ -332,6 +334,13 @@ class DashboardController extends Controller
 
         $totalRequests = (int) ($requestStats->total_requests ?? 0);
         $acceptedRequests = (int) ($requestStats->accepted_requests ?? 0);
+        $forwardedColdLeads = Schema::hasTable('lead_forwards')
+            ? (int) DB::table('lead_forwards')
+                ->where('from_user_id', $userId)
+                ->where('forward_type', LeadForwardService::TYPE_COLD_LEAD)
+                ->whereBetween('forwarded_at', [$startDate, $endDate])
+                ->count()
+            : 0;
 
         $leadBase = DB::table('leads')
             ->leftJoin('lead_pipeline_stages', 'leads.lead_pipeline_stage_id', '=', 'lead_pipeline_stages.id')
@@ -408,6 +417,7 @@ class DashboardController extends Controller
                 'requests'        => $totalRequests,
                 'accepted'        => $acceptedRequests,
                 'responses'       => $responses,
+                'forwarded'        => $forwardedColdLeads,
                 'acceptance_rate' => $totalRequests ? round(($acceptedRequests / $totalRequests) * 100, 1) : 0,
                 'response_rate'   => $totalRequests ? round(($responses / $totalRequests) * 100, 1) : 0,
             ],
