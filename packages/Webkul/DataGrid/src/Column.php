@@ -334,7 +334,7 @@ class Column
             'type'                  => $this->type,
             'searchable'            => $this->searchable,
             'filterable'            => $this->filterable,
-            'filterable_type'       => $this->filterableType,
+            'filterable_type'       => $this->filterableType ?? '',
             'filterable_options'    => $this->filterableOptions,
             'allow_multiple_values' => $this->allowMultipleValues,
             'sortable'              => $this->sortable,

@@ -409,6 +409,12 @@ Breadcrumbs::for('settings.tags.edit', function (BreadcrumbTrail $trail, $tag) {
     $trail->push(trans('admin::app.settings.tags.edit-title'), route('admin.settings.tags.edit', $tag->id));
 });
 
+// Settings > LinkedIn Profiles
+Breadcrumbs::for('settings.linkedin_profiles', function (BreadcrumbTrail $trail) {
+    $trail->parent('settings');
+    $trail->push('LinkedIn Profiles', route('admin.settings.linkedin_profiles.index'));
+});
+
 // Settings > Web Form
 Breadcrumbs::for('settings.web_forms', function (BreadcrumbTrail $trail) {
     $trail->parent('settings');

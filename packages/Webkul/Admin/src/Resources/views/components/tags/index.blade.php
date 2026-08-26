@@ -21,7 +21,7 @@
 
 @pushOnce('scripts')
     <script type="text/x-template" id="v-tags-template">
-        <div class="flex flex-wrap items-center gap-1">
+        <div class="relative z-[70] flex flex-wrap items-center gap-1">
             <!-- Tags -->
             <span
                 class="flex items-center gap-1 break-all rounded-md bg-rose-100 px-3 py-1.5 text-xs font-medium"
@@ -43,7 +43,7 @@
                     <button class="icon-settings-tag rounded-md p-1 text-xl transition-all hover:bg-gray-200 dark:hover:bg-gray-950"></button>
                 </x-slot>
 
-                <x-slot:content class="!p-0">
+                <x-slot:content class="!z-[9999] !min-w-[274px] !p-0">
                     <!-- Dropdown Container !-->
                     <div class="flex flex-col gap-2">
                         <!-- Search Input -->
@@ -77,7 +77,7 @@
 
                                 <!-- Search Tags Dropdown -->
                                 <div
-                                    class="absolute z-10 w-full rounded bg-white shadow-[0px_10px_20px_0px_#0000001F] dark:bg-gray-800"
+                                    class="relative z-[10000] mt-1 rounded border border-gray-200 bg-white shadow-[0px_10px_20px_0px_#0000001F] dark:border-gray-800 dark:bg-gray-900"
                                     v-if="showTagOptions"
                                 >
                                     <ul class="max-h-60 overflow-y-auto p-2">
@@ -202,8 +202,10 @@
                 <form @submit="handleSubmit($event, saveNotAnswerActivity)">
                     <x-admin::modal
                         ref="notAnswerActivityModal"
+                        class="not-answer-activity-modal"
                         position="center"
                         size="medium"
+                        @close="clearNotAnswerModalState"
                     >
                         <x-slot:header>
                             <h3 class="text-base font-semibold dark:text-white">
@@ -278,11 +280,11 @@
                             </div>
                         </x-slot>
 
-                        <x-slot:footer>
+                        <x-slot:footer class="gap-2.5">
                             <button
                                 type="button"
                                 class="secondary-button"
-                                @click="$refs.notAnswerActivityModal.close()"
+                                @click="closeNotAnswerModal"
                             >
                                 Cancel
                             </button>
@@ -304,6 +306,87 @@
                     </x-admin::modal>
                 </form>
             </x-admin::form>
+
+            <x-admin::modal
+                v-if="leadContext"
+                ref="coldLeadForwardModal"
+                position="center"
+                size="medium"
+                @close="clearColdLeadForwardState"
+            >
+                <x-slot:header>
+                    <h3 class="text-base font-semibold dark:text-white">
+                        Forward Cold Lead to SDR
+                    </h3>
+                </x-slot>
+
+                <x-slot:content>
+                    <div class="grid gap-4">
+                        <p class="text-sm text-gray-600 dark:text-gray-300">
+                            This lead will be forwarded to an SDR. The selected SDR will become both the Lead Owner and Sales Owner.
+                        </p>
+
+                        <x-admin::form.control-group class="!mb-0">
+                            <x-admin::form.control-group.label class="required">
+                                Forward To SDR
+                            </x-admin::form.control-group.label>
+
+                            <select
+                                class="custom-select w-full rounded border border-gray-200 px-3 py-2.5 text-sm text-gray-600 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+                                v-model="selectedForwardSdrUserId"
+                            >
+                                <option value="">Select SDR</option>
+
+                                <option
+                                    v-for="user in activeSdrUsers"
+                                    :value="user.id"
+                                >
+                                    @{{ user.name }} (@{{ user.email }})
+                                </option>
+                            </select>
+
+                            <p
+                                class="mt-1 text-xs text-red-600"
+                                v-if="coldForwardErrors.sdr_user_id"
+                            >
+                                @{{ coldForwardErrors.sdr_user_id }}
+                            </p>
+
+                            <p
+                                class="mt-1 text-xs text-red-600"
+                                v-if="! activeSdrUsers.length"
+                            >
+                                No active SDR users are available.
+                            </p>
+                        </x-admin::form.control-group>
+                    </div>
+                </x-slot>
+
+                <x-slot:footer class="gap-2.5">
+                    <button
+                        type="button"
+                        class="secondary-button"
+                        @click="closeColdLeadForwardModal"
+                    >
+                        Cancel
+                    </button>
+
+                    <button
+                        type="button"
+                        class="primary-button"
+                        :disabled="isColdForwardStoring || ! selectedForwardSdrUserId || ! activeSdrUsers.length"
+                        @click="confirmColdLeadForward"
+                    >
+                        <template v-if="isColdForwardStoring">
+                            Forwarding...
+                        </template>
+
+                        <template v-else>
+                            Forward Lead
+                        </template>
+                    </button>
+                </x-slot>
+            </x-admin::modal>
         </div>
     </script>
 
@@ -356,6 +439,14 @@
 
                     notAnswerErrors: {},
 
+                    pendingColdForwardTag: null,
+
+                    selectedForwardSdrUserId: '',
+
+                    isColdForwardStoring: false,
+
+                    coldForwardErrors: {},
+
                     tags: [],
 
                     availableTags: [],
@@ -396,6 +487,10 @@
                         users: [],
                         persons: [],
                     };
+                },
+
+                activeSdrUsers() {
+                    return this.leadContext?.active_sdr_users || [];
                 },
 
                 filteredAvailableTags() {
@@ -500,6 +595,16 @@
                 },
 
                 attachToEntity(params) {
+                    if (this.shouldOpenColdLeadForwardModal(params)) {
+                        this.pendingColdForwardTag = params;
+                        this.selectedForwardSdrUserId = '';
+                        this.coldForwardErrors = {};
+                        this.showTagOptions = false;
+                        this.openColdLeadForwardModal();
+
+                        return;
+                    }
+
                     this.isStoring = true;
 
                     var self = this;
@@ -536,7 +641,7 @@
                                 self.pendingNotAnswerTag = params;
                                 self.notAnswerErrors = {};
                                 self.isStoring = false;
-                                self.$refs.notAnswerActivityModal.open();
+                                self.openNotAnswerModal();
 
                                 return;
                             }
@@ -545,6 +650,91 @@
 
                             self.isStoring = false;
                         });
+                },
+
+                confirmColdLeadForward() {
+                    if (! this.selectedForwardSdrUserId) {
+                        this.coldForwardErrors = {
+                            sdr_user_id: 'Please select an SDR user.',
+                        };
+
+                        return;
+                    }
+
+                    this.coldForwardErrors = {};
+                    this.isColdForwardStoring = true;
+
+                    var self = this;
+
+                    this.$axios.post(this.attachEndpoint, {
+                        tag_id: this.pendingColdForwardTag.id,
+                        sdr_user_id: this.selectedForwardSdrUserId,
+                    })
+                        .then(response => {
+                            self.searchTerm = '';
+                            self.isColdForwardStoring = false;
+
+                            self.removeDetachedTags(response.data.detached_tag_ids || []);
+
+                            if (! self.tags.some(tag => tag.id === self.pendingColdForwardTag.id)) {
+                                self.tags.push(self.pendingColdForwardTag);
+                            }
+
+                            self.pendingColdForwardTag = null;
+                            self.closeColdLeadForwardModal();
+
+                            self.$emitter.emit('add-flash', { type: 'success', message: response.data.message });
+                            self.refreshAfterTagChange();
+                        })
+                        .catch(error => {
+                            self.isColdForwardStoring = false;
+
+                            if (error.response?.status === 422) {
+                                self.coldForwardErrors = {
+                                    sdr_user_id: error.response.data.errors?.sdr_user_id?.[0]
+                                        || error.response.data.errors?.forward_to_sdr_user_id?.[0]
+                                        || error.response.data.message,
+                                };
+
+                                return;
+                            }
+
+                            self.$emitter.emit('add-flash', { type: 'error', message: error.response?.data?.message || 'Cold lead could not be forwarded.' });
+                        });
+                },
+
+                shouldOpenColdLeadForwardModal(tag) {
+                    if (! this.leadContext?.can_forward_cold_lead || ! this.isColdLeadTag(tag)) {
+                        return false;
+                    }
+
+                    return this.tags.some(existingTag => this.isWarmLeadTag(existingTag))
+                        && ! this.tags.some(existingTag => this.isColdLeadTag(existingTag));
+                },
+
+                isColdLeadTag(tag) {
+                    return (tag.name || '').trim().toLowerCase() === 'cold lead';
+                },
+
+                isWarmLeadTag(tag) {
+                    return (tag.name || '').trim().toLowerCase() === 'warm lead';
+                },
+
+                openColdLeadForwardModal() {
+                    this.$refs.coldLeadForwardModal.open();
+                },
+
+                closeColdLeadForwardModal() {
+                    this.clearColdLeadForwardState();
+
+                    this.$refs.coldLeadForwardModal.close();
+                },
+
+                clearColdLeadForwardState() {
+                    this.pendingColdForwardTag = null;
+                    this.selectedForwardSdrUserId = '';
+                    this.isColdForwardStoring = false;
+                    this.coldForwardErrors = {};
                 },
 
                 saveNotAnswerActivity(params) {
@@ -577,7 +767,7 @@
                             }
 
                             self.pendingNotAnswerTag = null;
-                            self.$refs.notAnswerActivityModal.close();
+                            self.closeNotAnswerModal();
 
                             if (response.data.data) {
                                 self.$emitter.emit('on-activity-added', response.data.data);
@@ -607,6 +797,22 @@
 
                 isNotAnswerTag(tag) {
                     return (tag.name || '').trim().toLowerCase() === 'not answered';
+                },
+
+                openNotAnswerModal() {
+                    document.body.classList.add('not-answer-activity-modal-open');
+
+                    this.$refs.notAnswerActivityModal.open();
+                },
+
+                closeNotAnswerModal() {
+                    this.clearNotAnswerModalState();
+
+                    this.$refs.notAnswerActivityModal.close();
+                },
+
+                clearNotAnswerModalState() {
+                    document.body.classList.remove('not-answer-activity-modal-open');
                 },
 
                 removeDetachedTags(tagIds) {
@@ -663,4 +869,12 @@
             },
         });
     </script>
+@endPushOnce
+
+@pushOnce('styles')
+    <style>
+        .not-answer-activity-modal-open .icon-stats-up {
+            display: none !important;
+        }
+    </style>
 @endPushOnce

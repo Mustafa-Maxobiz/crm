@@ -27,6 +27,7 @@ class LeadRepository extends Repository
         'lead_value',
         'status',
         'user_id',
+        'lead_owner_id',
         'user.name',
         'person_id',
         'person.name',
@@ -87,6 +88,8 @@ class LeadRepository extends Repository
         ])->scopeQuery(function ($query) use ($pipelineId, $pipelineStageId, $term, $createdAtRange) {
             $query = $query->select(
                 'leads.id as id',
+                'leads.user_id as user_id',
+                'leads.lead_owner_id as lead_owner_id',
                 'leads.created_at as created_at',
                 'title',
                 'lead_value',
@@ -94,6 +97,8 @@ class LeadRepository extends Repository
                 'leads.person_id as person_id',
                 'lead_pipelines.id as lead_pipeline_id',
                 'lead_pipeline_stages.name as status',
+                'lead_pipeline_stages.code as stage_code',
+                'lead_pipeline_stages.sort_order as stage_sort_order',
                 'lead_pipeline_stages.id as lead_pipeline_stage_id'
             )
                 ->addSelect(DB::raw('DATEDIFF('.DB::getTablePrefix().'leads.created_at + INTERVAL lead_pipelines.rotten_days DAY, now()) as rotten_days'))
@@ -232,6 +237,18 @@ class LeadRepository extends Repository
     }
 
     /**
+     * Follow-up dates are only valid once a lead is in the Follow Up stage.
+     */
+    private function isFollowUpStageId($stageId): bool
+    {
+        if (empty($stageId)) {
+            return false;
+        }
+
+        return $this->stageRepository->find($stageId)?->code === 'follow-up';
+    }
+
+    /**
      * Create.
      *
      * @return \Webkul\Lead\Contracts\Lead
@@ -260,12 +277,7 @@ class LeadRepository extends Repository
                 $hasPersonData = $this->hasPersonData($data['person']);
                 
                 if ($hasPersonData) {
-                    $personPayload = $data['person'];
-
-                    // Ensure the unique identity calculation includes organization_id (e.g. org_id|phone).
-                    if (empty($personPayload['organization_id']) && ! empty($data['organization_id'])) {
-                        $personPayload['organization_id'] = $data['organization_id'];
-                    }
+                    $personPayload = $this->personPayloadForIdentity($data);
 
                     $existingPerson = $this->personRepository->findByUniqueIdentity($personPayload);
 
@@ -277,7 +289,7 @@ class LeadRepository extends Repository
                             $data = $this->fillTitleFromCompanyName($data, $existingPerson->organization?->name);
                         }
                     } else {
-                        $person = $this->personRepository->create(array_merge($data['person'], [
+                        $person = $this->personRepository->create(array_merge($personPayload, [
                             'entity_type' => 'persons',
                         ]));
                         $data['person_id'] = $person->id;
@@ -306,7 +318,8 @@ class LeadRepository extends Repository
             $data['title'] = $data['title'] ?? '';
         }
 
-        $shouldScheduleFollowup = $this->shouldScheduleFollowupFromPayload($data);
+        $shouldScheduleFollowup = $this->shouldScheduleFollowupFromPayload($data)
+            && $this->isFollowUpStageId($data['lead_pipeline_stage_id'] ?? null);
 
         if (! $shouldScheduleFollowup) {
             $data['next_followup_date'] = null;
@@ -320,6 +333,10 @@ class LeadRepository extends Repository
         // Convert empty lead_sub_source_id to null
         if (isset($data['lead_sub_source_id']) && empty($data['lead_sub_source_id'])) {
             $data['lead_sub_source_id'] = null;
+        }
+
+        if (empty($data['lead_owner_id']) && ! empty($data['user_id'])) {
+            $data['lead_owner_id'] = $data['user_id'];
         }
 
         $lead = parent::create(array_merge([
@@ -380,12 +397,7 @@ class LeadRepository extends Repository
                 $hasPersonData = $this->hasPersonData($data['person']);
                 
                 if ($hasPersonData) {
-                    $personPayload = $data['person'];
-
-                    // Ensure the unique identity calculation includes organization_id (e.g. org_id|phone).
-                    if (empty($personPayload['organization_id']) && ! empty($data['organization_id'])) {
-                        $personPayload['organization_id'] = $data['organization_id'];
-                    }
+                    $personPayload = $this->personPayloadForIdentity($data);
 
                     $existingPerson = $this->personRepository->findByUniqueIdentity($personPayload);
 
@@ -397,7 +409,7 @@ class LeadRepository extends Repository
                             $data = $this->fillTitleFromCompanyName($data, $existingPerson->organization?->name);
                         }
                     } else {
-                        $person = $this->personRepository->create(array_merge($data['person'], [
+                        $person = $this->personRepository->create(array_merge($personPayload, [
                             'entity_type' => 'persons',
                         ]));
                         $data['person_id'] = $person->id;
@@ -432,6 +444,17 @@ class LeadRepository extends Repository
             } else {
                 $data['closed_at'] = null;
             }
+
+            if ($stage->code !== 'follow-up') {
+                $data['next_followup_date'] = null;
+
+                if (
+                    is_array($attributes)
+                    && ! in_array('next_followup_date', $attributes, true)
+                ) {
+                    $attributes[] = 'next_followup_date';
+                }
+            }
         }
 
         if (empty($data['expected_close_date'])) {
@@ -444,12 +467,17 @@ class LeadRepository extends Repository
 
         if (array_key_exists('next_followup_date', $data) && empty($data['next_followup_date'])) {
             $existingLead = $this->find($id);
+            $targetStageId = $data['lead_pipeline_stage_id'] ?? $existingLead?->lead_pipeline_stage_id;
 
-            $data['next_followup_date'] = $this->followupScheduleService->calculateNext(
-                $existingLead,
-                Carbon::now(),
-                (int) ($existingLead->followup_count ?? 0)
-            );
+            if ($this->isFollowUpStageId($targetStageId)) {
+                $data['next_followup_date'] = $this->followupScheduleService->calculateNext(
+                    $existingLead,
+                    Carbon::now(),
+                    (int) ($existingLead->followup_count ?? 0)
+                );
+            } else {
+                $data['next_followup_date'] = null;
+            }
         }
 
         // Convert empty lead_sub_source_id to null
@@ -597,6 +625,24 @@ class LeadRepository extends Repository
         }
 
         return false;
+    }
+
+    /**
+     * Person payload used for unique-identity lookup and create.
+     *
+     * Lead sales-owner (`user_id`) must NOT be copied onto the person identity —
+     * that made find look up `user|org|email` while existing contacts use `org|email`,
+     * then create hit `persons_unique_id_unique` (HTTP 500).
+     */
+    private function personPayloadForIdentity(array $data): array
+    {
+        $personPayload = is_array($data['person'] ?? null) ? $data['person'] : [];
+
+        if (empty($personPayload['organization_id']) && ! empty($data['organization_id'])) {
+            $personPayload['organization_id'] = $data['organization_id'];
+        }
+
+        return $personPayload;
     }
 
     /**

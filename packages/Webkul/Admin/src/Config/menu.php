@@ -17,9 +17,20 @@ return [
      */
     [
         'key'        => 'sdr_dashboard',
-        'name'       => 'admin::app.acl.dashboard-sdr',
+        'name'       => 'admin::app.layouts.dashboard',
         'route'      => 'admin.dashboard.sdr',
         'sort'       => 2,
+        'icon-class' => 'icon-dashboard',
+    ],
+
+    /**
+     * Lead Clouser Dashboard.
+     */
+    [
+        'key'        => 'lead_clouser_dashboard',
+        'name'       => 'admin::app.layouts.dashboard',
+        'route'      => 'admin.dashboard.lead_clouser',
+        'sort'       => 3,
         'icon-class' => 'icon-dashboard',
     ],
 
@@ -28,9 +39,9 @@ return [
      */
     [
         'key'        => 'lge_dashboard',
-        'name'       => 'admin::app.acl.dashboard-lge',
+        'name'       => 'admin::app.layouts.dashboard',
         'route'      => 'admin.dashboard.lge',
-        'sort'       => 3,
+        'sort'       => 4,
         'icon-class' => 'icon-dashboard',
     ],
 
@@ -41,7 +52,18 @@ return [
         'key'        => 'leads',
         'name'       => 'admin::app.layouts.leads',
         'route'      => 'admin.leads.index',
-        'sort'       => 4,
+        'sort'       => 5,
+        'icon-class' => 'icon-leads',
+    ],
+
+    /**
+     * Lead Clouser Leads.
+     */
+    [
+        'key'        => 'lead_clouser_leads',
+        'name'       => 'admin::app.layouts.leads',
+        'route'      => 'admin.leads.lead_clouser',
+        'sort'       => 6,
         'icon-class' => 'icon-leads',
     ],
 
@@ -50,9 +72,20 @@ return [
      */
     [
         'key'        => 'sdr_leads',
-        'name'       => 'admin::app.layouts.leads-sdr',
+        'name'       => 'admin::app.layouts.leads',
         'route'      => 'admin.leads.sdr',
-        'sort'       => 5,
+        'sort'       => 7,
+        'icon-class' => 'icon-leads',
+    ],
+
+    /**
+     * LGE Leads.
+     */
+    [
+        'key'        => 'lge_leads',
+        'name'       => 'admin::app.layouts.leads',
+        'route'      => 'admin.leads.lge',
+        'sort'       => 8,
         'icon-class' => 'icon-leads',
     ],
 
@@ -63,7 +96,18 @@ return [
         'key'        => 'meta_leads',
         'name'       => 'admin::app.layouts.meta-leads',
         'route'      => 'admin.meta_leads.index',
-        'sort'       => 6,
+        'sort'       => 9,
+        'icon-class' => 'icon-leads',
+    ],
+
+    /**
+     * LinkedIn Entries.
+     */
+    [
+        'key'        => 'linkedin_entries',
+        'name'       => 'LinkedIn',
+        'route'      => 'admin.linkedin_entries.index',
+        'sort'       => 10,
         'icon-class' => 'icon-leads',
     ],
 
@@ -74,7 +118,7 @@ return [
         'key'        => 'smrtphone',
         'name'       => 'admin::app.layouts.smrtphone',
         'route'      => 'admin.smrtphone.index',
-        'sort'       => 7,
+        'sort'       => 11,
         'icon-class' => 'icon-call',
     ],
 
@@ -85,7 +129,7 @@ return [
         'key'        => 'quotes',
         'name'       => 'admin::app.layouts.quotes',
         'route'      => 'admin.quotes.index',
-        'sort'       => 8,
+        'sort'       => 11,
         'icon-class' => 'icon-quote',
     ],
 
@@ -97,7 +141,7 @@ return [
         'name'       => 'admin::app.layouts.mail.title',
         'route'      => 'admin.mail.index',
         'params'     => ['route' => 'inbox'],
-        'sort'       => 9,
+        'sort'       => 10,
         'icon-class' => 'icon-mail',
     ], [
         'key'        => 'mail.inbox',
@@ -372,6 +416,13 @@ return [
         'route'      => 'admin.settings.tags.index',
         'sort'       => 1,
         'icon-class' => 'icon-settings-tag',
+    ], [
+        'key'        => 'settings.other_settings.linkedin_profiles',
+        'name'       => 'LinkedIn Profiles',
+        'info'       => 'Manage LinkedIn working profiles and user assignments',
+        'route'      => 'admin.settings.linkedin_profiles.index',
+        'sort'       => 2,
+        'icon-class' => 'icon-settings-user',
     ],
 
     /**

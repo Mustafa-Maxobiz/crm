@@ -14,15 +14,20 @@ class Bouncer
      */
     public function hasPermission($permission)
     {
-        if (auth()->guard('user')->check() && auth()->guard('user')->user()->role->permission_type == 'all') {
-            return true;
-        } else {
-            if (! auth()->guard('user')->check() || ! auth()->guard('user')->user()->hasPermission($permission)) {
-                return false;
-            }
+        $user = auth()->guard('user')->user();
+
+        if (! $user) {
+            return false;
         }
 
-        return true;
+        $role = app(\Webkul\User\Services\ActiveRoleService::class)->getActiveRole($user)
+            ?? $user->role;
+
+        if ($role && $role->permission_type == 'all') {
+            return true;
+        }
+
+        return $user->hasPermission($permission);
     }
 
     /**

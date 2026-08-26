@@ -7,7 +7,10 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Event;
 use Webkul\Activity\Repositories\ActivityRepository;
 use Webkul\Admin\Http\Controllers\Controller;
+use Webkul\Lead\Models\Lead;
 use Webkul\Lead\Repositories\LeadRepository;
+use Webkul\Lead\Services\LeadForwardService;
+use Webkul\Lead\Services\SourceAccessService;
 use Webkul\Tag\Repositories\TagRepository;
 
 class TagController extends Controller
@@ -20,7 +23,9 @@ class TagController extends Controller
     public function __construct(
         protected LeadRepository $leadRepository,
         protected ActivityRepository $activityRepository,
-        protected TagRepository $tagRepository
+        protected TagRepository $tagRepository,
+        protected SourceAccessService $sourceAccessService,
+        protected LeadForwardService $leadForwardService,
     ) {}
 
     /**
@@ -33,32 +38,33 @@ class TagController extends Controller
     {
         Event::dispatch('leads.tag.create.before', $id);
 
-        $lead = $this->leadRepository->find($id);
-        $tag = $this->tagRepository->find((int) request()->input('tag_id'));
+        $lead = $this->leadRepository->findOrFail($id);
+        $tag = $this->tagRepository->findOrFail((int) request()->input('tag_id'));
 
         if ($response = $this->prepareNotAnsweredCallActivity($lead, $tag)) {
             return $response;
         }
 
-        if (! $lead->tags->contains(request()->input('tag_id'))) {
-            $oldTags = $lead->tags->pluck('name')->sort()->values()->implode(', ');
+        $oldTags = $lead->tags->pluck('name')->sort()->values()->implode(', ');
+        $detachedTagIds = [];
 
-            $lead->tags()->attach(request()->input('tag_id'));
-
-            $newTags = $lead->fresh('tags')->tags->pluck('name')->sort()->values()->implode(', ');
-
-            \Webkul\Lead\Models\Lead::storeSystemActivity(
-                $lead,
-                'Tags',
-                $oldTags !== '' ? $oldTags : null,
-                $newTags !== '' ? $newTags : null
-            );
+        if ($response = $this->forwardColdLeadIfRequired($lead, $tag, $oldTags)) {
+            return $response;
         }
+
+        if (! $lead->tags->contains('id', $tag->id)) {
+            $detachedTagIds = $this->attachTagWithClassificationRules($lead, (int) $tag->id);
+        } elseif ($this->isClassificationTag((int) $tag->id)) {
+            $detachedTagIds = $this->leadForwardService->syncClassificationTag($lead, (int) $tag->id);
+        }
+
+        $this->storeTagsActivityIfChanged($lead, $oldTags);
 
         Event::dispatch('leads.tag.create.after', $lead);
 
         return response()->json([
-            'message' => trans('admin::app.leads.view.tags.create-success'),
+            'message'          => trans('admin::app.leads.view.tags.create-success'),
+            'detached_tag_ids' => $detachedTagIds,
         ]);
     }
 
@@ -80,36 +86,43 @@ class TagController extends Controller
             ? (int) request()->input('old_tag_id')
             : null;
 
-        $tag = $this->tagRepository->find($newTagId);
+        $tag = $this->tagRepository->findOrFail($newTagId);
 
         if ($response = $this->prepareNotAnsweredCallActivity($lead, $tag)) {
             return $response;
         }
 
         $oldTags = $lead->tags->pluck('name')->sort()->values()->implode(', ');
+        $detachedTagIds = [];
+
+        if ($response = $this->forwardColdLeadIfRequired($lead, $tag, $oldTags)) {
+            return $response;
+        }
 
         if ($oldTagId && $oldTagId !== $newTagId) {
             $lead->tags()->detach($oldTagId);
+            $detachedTagIds[] = $oldTagId;
         }
 
         if (! $lead->tags()->where('tags.id', $newTagId)->exists()) {
-            $lead->tags()->attach($newTagId);
+            $detachedTagIds = array_values(array_unique(array_merge(
+                $detachedTagIds,
+                $this->attachTagWithClassificationRules($lead, $newTagId),
+            )));
+        } elseif ($this->isClassificationTag($newTagId)) {
+            $detachedTagIds = array_values(array_unique(array_merge(
+                $detachedTagIds,
+                $this->leadForwardService->syncClassificationTag($lead, $newTagId),
+            )));
         }
 
-        $lead = $lead->fresh('tags');
-        $newTags = $lead->tags->pluck('name')->sort()->values()->implode(', ');
-
-        \Webkul\Lead\Models\Lead::storeSystemActivity(
-            $lead,
-            'Tags',
-            $oldTags !== '' ? $oldTags : null,
-            $newTags !== '' ? $newTags : null
-        );
+        $this->storeTagsActivityIfChanged($lead, $oldTags);
 
         Event::dispatch('leads.tag.create.after', $lead);
 
         return response()->json([
-            'message' => trans('admin::app.leads.view.tags.create-success'),
+            'message'          => trans('admin::app.leads.view.tags.create-success'),
+            'detached_tag_ids' => $detachedTagIds,
         ]);
     }
 
@@ -226,5 +239,101 @@ class TagController extends Controller
         }
 
         return false;
+    }
+
+    protected function attachTagWithClassificationRules($lead, int $tagId): array
+    {
+        if ($this->isClassificationTag($tagId)) {
+            return $this->leadForwardService->syncClassificationTag($lead, $tagId);
+        }
+
+        $lead->tags()->attach($tagId);
+
+        return [];
+    }
+
+    protected function forwardColdLeadIfRequired($lead, $tag, string $oldTags): ?JsonResponse
+    {
+        if (! $this->requiresColdLeadForward($lead, (int) $tag->id)) {
+            return null;
+        }
+
+        $sdrUserId = request()->input('sdr_user_id', request()->input('forward_to_sdr_user_id'));
+
+        if (! filled($sdrUserId)) {
+            return response()->json([
+                'message'              => 'Please select an SDR to forward this cold lead.',
+                'requires_sdr_forward' => true,
+                'sdr_users'            => $this->leadForwardService->activeSdrUsers(),
+            ], 422);
+        }
+
+        if (! $this->sourceAccessService->canEditLead($lead)) {
+            return response()->json([
+                'message' => trans('admin::app.leads.source-access-denied'),
+            ], 403);
+        }
+
+        $lead = $this->leadForwardService->switchToColdAndForward(
+            $lead,
+            (int) auth()->guard('user')->id(),
+            (int) $sdrUserId,
+        );
+
+        $this->storeTagsActivityIfChanged($lead, $oldTags);
+
+        Event::dispatch('leads.tag.create.after', $lead);
+
+        return response()->json([
+            'message'          => 'Cold lead forwarded to SDR successfully.',
+            'detached_tag_ids' => array_values(array_filter([$this->leadForwardService->warmLeadTagId()])),
+        ]);
+    }
+
+    protected function requiresColdLeadForward($lead, int $tagId): bool
+    {
+        $user = auth()->guard('user')->user();
+        $userId = (int) ($user?->id ?? 0);
+
+        if (
+            ! $userId
+            || ! $this->sourceAccessService->isLgeUser($user)
+            || $tagId !== $this->leadForwardService->coldLeadTagId()
+        ) {
+            return false;
+        }
+
+        $lead->loadMissing('tags');
+
+        $warmLeadTagId = $this->leadForwardService->warmLeadTagId();
+
+        if (! $warmLeadTagId || ! $lead->tags->contains('id', $warmLeadTagId)) {
+            return false;
+        }
+
+        return (int) $lead->user_id === $userId
+            && (int) ($lead->lead_owner_id ?? $lead->user_id) === $userId;
+    }
+
+    protected function isClassificationTag(int $tagId): bool
+    {
+        return in_array($tagId, $this->leadForwardService->classificationTagIds(), true);
+    }
+
+    protected function storeTagsActivityIfChanged($lead, string $oldTags): string
+    {
+        $lead = $lead->fresh('tags');
+        $newTags = $lead->tags->pluck('name')->sort()->values()->implode(', ');
+
+        if ($oldTags !== $newTags) {
+            Lead::storeSystemActivity(
+                $lead,
+                'Tags',
+                $oldTags !== '' ? $oldTags : null,
+                $newTags !== '' ? $newTags : null
+            );
+        }
+
+        return $newTags;
     }
 }

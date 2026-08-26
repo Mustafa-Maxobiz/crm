@@ -140,6 +140,10 @@
         content: "\e944";
     }
 
+    .icon-linked-in:before {
+        content: "\e944";
+    }
+
     .icon-settings-webforms:before {
         content: "\e945";
     }

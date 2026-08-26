@@ -31,6 +31,17 @@
 
                     {!! view_render_event('admin.leads.view.tags.before', ['lead' => $lead]) !!}
 
+                    @php
+                        $leadForwardService = app(\Webkul\Lead\Services\LeadForwardService::class);
+                        $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
+                        $currentUser = auth()->guard('user')->user();
+                        $currentUserId = (int) ($currentUser?->id ?? 0);
+                        $isLgeUser = $sourceAccessService->isLgeUser($currentUser);
+                        $canForwardColdLead = $isLgeUser
+                            && (int) $lead->user_id === $currentUserId
+                            && (int) ($lead->lead_owner_id ?? $lead->user_id) === $currentUserId;
+                    @endphp
+
                     <!-- Tags -->
                     <x-admin::tags
                         :attach-endpoint="lead_route('tags.attach', $lead->id)"
@@ -48,6 +59,15 @@
                                     : [],
                                 'persons' => [],
                             ],
+                            'is_lge_user' => $isLgeUser,
+                            'can_forward_cold_lead' => $canForwardColdLead,
+                            'active_sdr_users' => $isLgeUser
+                                ? $leadForwardService->activeSdrUsers()->map(fn ($user) => [
+                                    'id' => $user->id,
+                                    'name' => $user->name,
+                                    'email' => $user->email,
+                                ])->values()->all()
+                                : [],
                         ]"
                     />
 
@@ -716,4 +736,6 @@
             });
         </script>
     @endPushOnce
+
+    @include('admin::leads.index.partials.scripts.copy-phone')
 </x-admin::layouts>

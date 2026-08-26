@@ -12,15 +12,20 @@ return [
         'route' => 'admin.dashboard.sdr',
         'sort'  => 2,
     ], [
+        'key'   => 'lead_clouser_dashboard',
+        'name'  => 'admin::app.acl.dashboard-lead-clouser',
+        'route' => 'admin.dashboard.lead_clouser',
+        'sort'  => 3,
+    ], [
         'key'   => 'lge_dashboard',
         'name'  => 'admin::app.acl.dashboard-lge',
         'route' => 'admin.dashboard.lge',
-        'sort'  => 3,
+        'sort'  => 4,
     ], [
         'key'   => 'leads',
         'name'  => 'admin::app.acl.leads',
         'route' => 'admin.leads.index',
-        'sort'  => 4,
+        'sort'  => 5,
     ], [
         'key'   => 'leads.create',
         'name'  => 'admin::app.acl.create',
@@ -69,10 +74,36 @@ return [
         ],
         'sort'  => 6,
     ], [
+        'key'   => 'lead_clouser_leads',
+        'name'  => 'admin::app.acl.leads-lead-clouser',
+        'route' => 'admin.leads.lead_clouser',
+        'sort'  => 6,
+    ], [
+        'key'   => 'lead_clouser_leads.view',
+        'name'  => 'admin::app.acl.view',
+        'route' => 'admin.leads.lead_clouser.view',
+        'sort'  => 1,
+    ], [
+        'key'   => 'lead_clouser_leads.edit',
+        'name'  => 'admin::app.acl.edit',
+        'route' => [
+            'admin.leads.lead_clouser.edit',
+            'admin.leads.lead_clouser.form_data',
+            'admin.leads.lead_clouser.update',
+            'admin.leads.lead_clouser.mass_update',
+            'admin.leads.lead_clouser.tags.attach',
+            'admin.leads.lead_clouser.tags.replace',
+            'admin.leads.lead_clouser.tags.detach',
+            'admin.leads.lead_clouser.services_offered.store',
+            'admin.leads.lead_clouser.attributes.update',
+            'admin.leads.lead_clouser.stage.update',
+        ],
+        'sort'  => 2,
+    ], [
         'key'   => 'sdr_leads',
         'name'  => 'admin::app.acl.leads-sdr',
         'route' => 'admin.leads.sdr',
-        'sort'  => 5,
+        'sort'  => 7,
     ], [
         'key'   => 'sdr_leads.create',
         'name'  => 'admin::app.acl.create',
@@ -127,10 +158,68 @@ return [
         ],
         'sort'  => 6,
     ], [
+        'key'   => 'lge_leads',
+        'name'  => 'admin::app.acl.leads-lge',
+        'route' => 'admin.leads.lge',
+        'sort'  => 6,
+    ], [
+        'key'   => 'lge_leads.create',
+        'name'  => 'admin::app.acl.create',
+        'route' => ['admin.leads.lge.create', 'admin.leads.lge.store', 'admin.leads.lge.create_by_ai', 'admin.leads.lge.source_link.check', 'admin.leads.lge.services_offered.store'],
+        'sort'  => 1,
+    ], [
+        'key'   => 'lge_leads.view',
+        'name'  => 'admin::app.acl.view',
+        'route' => 'admin.leads.lge.view',
+        'sort'  => 2,
+    ], [
+        'key'   => 'lge_leads.edit',
+        'name'  => 'admin::app.acl.edit',
+        'route' => [
+            'admin.leads.lge.edit',
+            'admin.leads.lge.form_data',
+            'admin.leads.lge.update',
+            'admin.leads.lge.mass_update',
+            'admin.leads.lge.tags.attach',
+            'admin.leads.lge.tags.replace',
+            'admin.leads.lge.tags.detach',
+            'admin.leads.lge.services_offered.store',
+            'admin.leads.lge.attributes.update',
+            'admin.leads.lge.stage.update',
+        ],
+        'sort'  => 3,
+    ], [
+        'key'   => 'lge_leads.delete',
+        'name'  => 'admin::app.acl.delete',
+        'route' => ['admin.leads.lge.delete', 'admin.leads.lge.mass_delete'],
+        'sort'  => 4,
+    ], [
+        'key'   => 'lge_leads.import',
+        'name'  => 'admin::app.acl.import',
+        'route' => [
+            'admin.leads.lge.import',
+            'admin.leads.lge.import.start',
+            'admin.leads.lge.import.process',
+            'admin.leads.lge.import.retry',
+            'admin.leads.lge.import.template',
+        ],
+        'sort'  => 5,
+    ], [
+        'key'   => 'lge_leads.disqualified',
+        'name'  => 'admin::app.acl.disqualified-leads',
+        'route' => [
+            'admin.leads.lge.disqualified',
+            'admin.leads.lge.restore_disqualified',
+            'admin.leads.lge.incorrect_info.reassign',
+            'admin.leads.lge.ended.reassign',
+            'admin.leads.lge.disqualify',
+        ],
+        'sort'  => 6,
+    ], [
         'key'   => 'meta_leads',
         'name'  => 'admin::app.acl.meta-leads',
         'route' => 'admin.meta_leads.index',
-        'sort'  => 6,
+        'sort'  => 7,
     ], [
         'key'   => 'meta_leads.view',
         'name'  => 'admin::app.acl.view',
@@ -146,6 +235,46 @@ return [
         'name'  => 'admin::app.acl.delete',
         'route' => ['admin.meta_leads.delete', 'admin.meta_leads.mass_delete'],
         'sort'  => 3,
+    ], [
+        'key'   => 'linkedin_entries',
+        'name'  => 'LinkedIn Entries',
+        'route' => 'admin.linkedin_entries.index',
+        'sort'  => 7,
+    ], [
+        'key'   => 'linkedin_entries.create',
+        'name'  => 'admin::app.acl.create',
+        'route' => [
+            'admin.linkedin_entries.store',
+        ],
+        'sort'  => 1,
+    ], [
+        'key'   => 'linkedin_entries.bulk_create',
+        'name'  => 'admin::app.acl.bulk-create',
+        'route' => [
+            'admin.linkedin_entries.import',
+            'admin.linkedin_entries.import_template',
+            'admin.linkedin_entries.import_start',
+            'admin.linkedin_entries.import_process',
+            'admin.linkedin_entries.import_retry',
+        ],
+        'sort'  => 2,
+    ], [
+        'key'   => 'linkedin_entries.edit',
+        'name'  => 'admin::app.acl.edit',
+        'route' => [
+            'admin.linkedin_entries.update_status',
+            'admin.linkedin_entries.response_check',
+        ],
+        'sort'  => 3,
+    ], [
+        'key'   => 'linkedin_entries.bulk_change_status',
+        'name'  => 'admin::app.acl.bulk-change-status',
+        'route' => [
+            'admin.linkedin_entries.accepted_import_template',
+            'admin.linkedin_entries.accepted_import_start',
+            'admin.linkedin_entries.accepted_import_process',
+        ],
+        'sort'  => 4,
     ], [
         'key'   => 'smrtphone',
         'name'  => 'admin::app.acl.smrtphone',
@@ -689,6 +818,26 @@ return [
         'name'  => 'admin::app.acl.tags',
         'route' => 'admin.settings.tags.index',
         'sort'  => 1,
+    ], [
+        'key'   => 'settings.other_settings.linkedin_profiles',
+        'name'  => 'LinkedIn Profiles',
+        'route' => 'admin.settings.linkedin_profiles.index',
+        'sort'  => 2,
+    ], [
+        'key'   => 'settings.other_settings.linkedin_profiles.create',
+        'name'  => 'admin::app.acl.create',
+        'route' => ['admin.settings.linkedin_profiles.store'],
+        'sort'  => 1,
+    ], [
+        'key'   => 'settings.other_settings.linkedin_profiles.edit',
+        'name'  => 'admin::app.acl.edit',
+        'route' => ['admin.settings.linkedin_profiles.edit', 'admin.settings.linkedin_profiles.update'],
+        'sort'  => 2,
+    ], [
+        'key'   => 'settings.other_settings.linkedin_profiles.delete',
+        'name'  => 'admin::app.acl.delete',
+        'route' => 'admin.settings.linkedin_profiles.delete',
+        'sort'  => 3,
     ],     [
         'key'   => 'settings.other_settings.tags.create',
         'name'  => 'admin::app.acl.create',

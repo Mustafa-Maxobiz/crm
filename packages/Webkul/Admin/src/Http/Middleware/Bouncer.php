@@ -3,6 +3,7 @@
 namespace Webkul\Admin\Http\Middleware;
 
 use Illuminate\Support\Facades\Route;
+use Webkul\User\Services\ActiveRoleService;
 
 class Bouncer
 {
@@ -31,11 +32,22 @@ class Bouncer
             return redirect()->route('admin.session.create');
         }
 
+        $activeRoleService = app(ActiveRoleService::class);
+        $user = auth()->guard($guard)->user();
+
+        if ($activeRoleService->requiresRoleSelection($user)) {
+            if (! $request->routeIs('admin.session.role.*') && ! $request->routeIs('admin.session.destroy')) {
+                return redirect()->route('admin.session.role.create');
+            }
+        } else {
+            $activeRoleService->applyActiveRole($user);
+        }
+
         /**
          * If somehow the user deleted all permissions, then it should be
          * auto logged out and need to contact the administrator again.
          */
-        if ($this->isPermissionsEmpty()) {
+        if (! $request->routeIs('admin.session.role.*') && $this->isPermissionsEmpty()) {
             auth()->guard($guard)->logout();
 
             session()->flash('error', __('admin::app.errors.401'));
@@ -53,7 +65,10 @@ class Bouncer
      */
     public function isPermissionsEmpty()
     {
-        if (! $role = auth()->guard('user')->user()->role) {
+        $user = auth()->guard('user')->user();
+        $role = app(ActiveRoleService::class)->getActiveRole($user) ?? $user?->role;
+
+        if (! $role) {
             abort(401, 'This action is unauthorized.');
         }
 

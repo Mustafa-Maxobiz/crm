@@ -3,6 +3,7 @@
 namespace Webkul\Admin\Http\Controllers\Activity;
 
 use Carbon\Carbon;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -21,7 +22,9 @@ use Webkul\Admin\Http\Resources\ActivityResource;
 use Webkul\Attribute\Repositories\AttributeRepository;
 use Webkul\Email\Repositories\EmailRepository;
 use Webkul\Lead\Repositories\LeadRepository;
+use Webkul\Lead\Models\Lead;
 use Webkul\Lead\Services\FollowupScheduleService;
+use Webkul\Lead\Services\MeetingHandoffService;
 
 class ActivityController extends Controller
 {
@@ -37,6 +40,7 @@ class ActivityController extends Controller
         protected LeadRepository $leadRepository,
         protected EmailRepository $emailRepository,
         protected FollowupScheduleService $followupScheduleService,
+        protected MeetingHandoffService $meetingHandoffService,
     ) {}
 
     /**
@@ -103,7 +107,7 @@ class ActivityController extends Controller
 
         $meetingNotifications = $this->dueActivityNotifications();
 
-        $notifications = $followupNotifications
+        $notifications = collect($followupNotifications->all())
             ->merge($meetingNotifications)
             ->sortBy('schedule_from')
             ->values();
@@ -176,6 +180,35 @@ class ActivityController extends Controller
      */
     public function store(): RedirectResponse|JsonResponse
     {
+        $this->ensureCurrentUserParticipant();
+
+        if ($this->isCallingRoleStageMeetingRequest()) {
+            $lead = Lead::query()->find((int) request('lead_id'));
+
+            $this->validate(request(), [
+                'assigned_user_id' => [
+                    'required',
+                    'integer',
+                    function ($attribute, $value, $fail) use ($lead) {
+                        if (! $lead) {
+                            $fail('Lead not found.');
+
+                            return;
+                        }
+
+                        if (! $this->meetingHandoffService->isEligibleMeetingOwnerForLead($lead, (int) $value)) {
+                            $message = empty($this->meetingHandoffService->getLeadServiceIds($lead))
+                                ? 'Please select a valid Admin or Lead user.'
+                                : 'The selected owner is not assigned to handle this lead\'s services.';
+
+                            $fail($message);
+                        }
+                    },
+                ],
+                'lead_pipeline_stage_id' => 'required|integer',
+            ]);
+        }
+
         $this->validate(request(), [
             'type'          => 'required',
             'comment'       => ['required_if:type,note', 'required_if:stage_meeting,1'],
@@ -186,15 +219,6 @@ class ActivityController extends Controller
         ], [
             'schedule_to.after' => 'Schedule To must be later than Schedule From.',
         ]);
-
-        if (request('stage_meeting') && ! $this->hasActivityParticipants(request('participants', []))) {
-            return response()->json([
-                'message' => 'Please select at least one participant.',
-                'errors'  => [
-                    'participants' => ['Please select at least one participant.'],
-                ],
-            ], 422);
-        }
 
         if (request('type') === 'meeting') {
             /**
@@ -226,8 +250,42 @@ class ActivityController extends Controller
 
         $data = $this->prepareMeetingActivityData($data);
 
+        if ($this->isCallingRoleStageMeetingRequest()) {
+            try {
+                $this->meetingHandoffService->completeHandoff(
+                    auth()->guard('user')->user(),
+                    (int) request('lead_id'),
+                    (int) request('lead_pipeline_stage_id'),
+                    (int) request('assigned_user_id'),
+                    $data,
+                );
+            } catch (AuthorizationException $exception) {
+                if (request()->ajax()) {
+                    return response()->json([
+                        'message' => $exception->getMessage(),
+                    ], 403);
+                }
+
+                session()->flash('error', $exception->getMessage());
+
+                return redirect()->back();
+            }
+
+            if (request()->ajax()) {
+                return response()->json([
+                    'message' => trans('admin::app.activities.create-success'),
+                ]);
+            }
+
+            session()->flash('success', trans('admin::app.activities.create-success'));
+
+            return redirect()->back();
+        }
+
+        $activityOwnerId = $this->activityOwnerIdForCreate();
+
         $activity = $this->activityRepository->create(array_merge($data, [
-            'user_id' => auth()->guard('user')->user()->id,
+            'user_id' => $activityOwnerId,
         ]));
 
         if (isset($data['lead_id'])) {
@@ -288,6 +346,7 @@ class ActivityController extends Controller
                 'activities.title',
                 'activities.comment',
                 'activities.location',
+                'activities.user_id',
                 'activities.schedule_from',
                 'activities.schedule_to',
                 'leads.title as lead_title',
@@ -306,6 +365,7 @@ class ActivityController extends Controller
                 'activities.title',
                 'activities.comment',
                 'activities.location',
+                'activities.user_id',
                 'activities.schedule_from',
                 'activities.schedule_to',
                 'leads.title',
@@ -351,7 +411,7 @@ class ActivityController extends Controller
                     'schedule_to'   => $activity->schedule_to ? Carbon::parse($activity->schedule_to)->toIso8601String() : null,
                     'lead_title'    => $activity->lead_title,
                     'person_name'   => $activity->person_name,
-                    'edit_url'      => route('admin.activities.edit', $activity->id),
+                    'edit_url'      => $this->canModifyActivity($activity) ? route('admin.activities.edit', $activity->id) : null,
                 ];
             })
             ->filter()
@@ -463,6 +523,8 @@ class ActivityController extends Controller
     {
         $activity = $this->activityRepository->findOrFail($id);
 
+        abort_unless($this->canModifyActivity($activity), 403);
+
         $leadId = old('lead_id') ?? optional($activity->leads()->first())->id;
 
         $lookUpEntityData = $this->attributeRepository->getLookUpEntity('leads', $leadId);
@@ -477,9 +539,13 @@ class ActivityController extends Controller
     {
         $existingActivity = $this->activityRepository->findOrFail($id);
 
+        abort_unless($this->canModifyActivity($existingActivity), 403);
+
         if (request('activity_status') === 'meeting_scheduled') {
             $this->prepareMeetingScheduleRequest($existingActivity);
         }
+
+        $this->ensureCurrentUserParticipant();
 
         $this->validateActivityStatusRequest();
 
@@ -535,6 +601,10 @@ class ActivityController extends Controller
         $activities = $this->activityRepository->findWhereIn('id', $massUpdateRequest->input('indices'));
 
         foreach ($activities as $activity) {
+            if (! $this->canModifyActivity($activity)) {
+                abort(403);
+            }
+
             Event::dispatch('activity.update.before', $activity->id);
 
             $activity = $this->activityRepository->update([
@@ -617,11 +687,6 @@ class ActivityController extends Controller
                 'schedule_to.after'     => 'Schedule To must be later than Schedule From.',
             ]);
 
-            if (! $this->hasActivityParticipants(request('participants', []))) {
-                throw ValidationException::withMessages([
-                    'participants' => ['Please select at least one participant.'],
-                ]);
-            }
         }
     }
 
@@ -652,6 +717,8 @@ class ActivityController extends Controller
             'participants' => $participants,
             'type'         => 'meeting',
         ]);
+
+        $this->ensureCurrentUserParticipant();
     }
 
     /**
@@ -745,6 +812,69 @@ class ActivityController extends Controller
     }
 
     /**
+     * Creator must always be part of a meeting so it appears on their side too.
+     */
+    protected function ensureCurrentUserParticipant(): void
+    {
+        if (! in_array(request('type'), ['meeting'], true) && ! request('stage_meeting')) {
+            return;
+        }
+
+        if ($this->isCallingRoleStageMeetingRequest()) {
+            return;
+        }
+
+        $participants = (array) request('participants', []);
+        $participants['users'] = array_values(array_unique(array_filter([
+            ...(array) ($participants['users'] ?? []),
+            auth()->guard('user')->id(),
+        ])));
+
+        request()->merge(['participants' => $participants]);
+    }
+
+    protected function isCallingRoleStageMeetingRequest(): bool
+    {
+        $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
+
+        return request('stage_meeting')
+            && (
+                $sourceAccessService->isSdrUser()
+                || $sourceAccessService->isLgeUser()
+            );
+    }
+
+    protected function activityOwnerIdForCreate(): int
+    {
+        if ($this->isCallingRoleStageMeetingRequest()) {
+            return (int) request('assigned_user_id');
+        }
+
+        return (int) auth()->guard('user')->id();
+    }
+
+    protected function isActiveMeetingOwnerId(int $userId): bool
+    {
+        return app(\Webkul\Lead\Services\MeetingHandoffService::class)
+            ->isActiveMeetingOwnerId($userId);
+    }
+
+    protected function canModifyActivity($activity): bool
+    {
+        $user = auth()->guard('user')->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if (app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin($user)) {
+            return true;
+        }
+
+        return (int) $activity->user_id === (int) $user->id;
+    }
+
+    /**
      * Download file from storage.
      */
     public function download(int $id): StreamedResponse
@@ -764,6 +894,8 @@ class ActivityController extends Controller
     public function destroy(int $id): JsonResponse
     {
         $activity = $this->activityRepository->findOrFail($id);
+
+        abort_unless($this->canModifyActivity($activity), 403);
 
         try {
             Event::dispatch('activity.delete.before', $id);
@@ -791,6 +923,10 @@ class ActivityController extends Controller
 
         try {
             foreach ($activities as $activity) {
+                if (! $this->canModifyActivity($activity)) {
+                    abort(403);
+                }
+
                 Event::dispatch('activity.delete.before', $activity->id);
 
                 $this->activityRepository->delete($activity->id);

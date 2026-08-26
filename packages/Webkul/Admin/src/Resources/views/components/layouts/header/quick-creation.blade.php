@@ -1,5 +1,7 @@
 <div>
     @if (bouncer()->hasPermission('leads.create')
+        || bouncer()->hasPermission('lge_leads.create')
+        || bouncer()->hasPermission('lge_leads.import')
         || bouncer()->hasPermission('quotes.create')
         || bouncer()->hasPermission('mail.create')
         || bouncer()->hasPermission('contacts.persons.create')
@@ -29,6 +31,30 @@
                                         <i class="icon-leads text-2xl text-gray-600"></i>
 
                                         <span class="font-medium dark:text-gray-300">@lang('admin::app.layouts.lead')</span>
+                                    </div>
+                                </a>
+                            </div>
+                        @endif
+
+                        @if (bouncer()->hasPermission('lge_leads.create'))
+                            <div class="rounded-lg bg-white p-2 hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-950">
+                                <a href="{{ route('admin.leads.lge.create') }}">
+                                    <div class="flex flex-col gap-1">
+                                        <i class="icon-leads text-2xl text-gray-600"></i>
+
+                                        <span class="font-medium dark:text-gray-300">LGE Lead</span>
+                                    </div>
+                                </a>
+                            </div>
+                        @endif
+
+                        @if (bouncer()->hasPermission('lge_leads.import'))
+                            <div class="rounded-lg bg-white p-2 hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-950">
+                                <a href="{{ route('admin.leads.lge', ['action' => 'import']) }}">
+                                    <div class="flex flex-col gap-1">
+                                        <i class="icon-download text-2xl text-gray-600"></i>
+
+                                        <span class="font-medium dark:text-gray-300">LGE Import</span>
                                     </div>
                                 </a>
                             </div>

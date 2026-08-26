@@ -6,7 +6,7 @@
     {!! view_render_event('admin.leads.create.form.before') !!}
 
     @php
-        $valueAndPricingAttributeCodes = lead_variant() === 'sdr'
+        $valueAndPricingAttributeCodes = lead_variant() !== 'main'
             ? ['pricing_type']
             : ['lead_value', 'pricing_type'];
 
@@ -33,14 +33,40 @@
         if (lead_variant() === 'main') {
             $detailsExcludedAttributeCodes[] = 'title';
         }
+
+        $tagOptions = collect($tagOptions ?? []);
+        $selectedTagIds = old('tags', []);
+
+        if (! is_array($selectedTagIds)) {
+            $selectedTagIds = array_filter(array_map('intval', explode(',', (string) $selectedTagIds)));
+        } else {
+            $selectedTagIds = collect($selectedTagIds)
+                ->map(function ($value) use ($tagOptions) {
+                    if (is_numeric($value)) {
+                        return (int) $value;
+                    }
+
+                    $match = $tagOptions->firstWhere('name', $value);
+
+                    return $match ? (int) $match->id : null;
+                })
+                ->filter()
+                ->values()
+                ->all();
+        }
     @endphp
 
     <!-- Create Lead Form -->
-    <x-admin::form :action="lead_route('store')">
+    <x-admin::form
+        :action="lead_route('store')"
+        id="lead-create-form"
+    >
         <div class="flex flex-col gap-4">
             <div class="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
                 <div class="flex flex-col gap-2">
-                    <x-admin::breadcrumbs name="leads.create" />
+                    @unless (request()->boolean('embed'))
+                        <x-admin::breadcrumbs name="leads.create" />
+                    @endunless
 
                     <div class="text-xl font-bold dark:text-white">
                         @lang('admin::app.leads.create.title')
@@ -55,6 +81,7 @@
                         {!! view_render_event('admin.leads.create.form_buttons.before') !!}
 
                         <button
+                            id="lead-create-submit-button"
                             type="submit"
                             class="primary-button"
                         >
@@ -83,6 +110,22 @@
                     id="lead_pipeline_id"
                     name="lead_pipeline_id"
                     value="{{ request('pipeline_id') }}"
+                />
+            @endif
+
+            @if (request('redirect_to') === 'linkedin_entries')
+                <input
+                    type="hidden"
+                    name="redirect_to"
+                    value="linkedin_entries"
+                />
+            @endif
+
+            @if (request()->boolean('embed'))
+                <input
+                    type="hidden"
+                    name="embed"
+                    value="1"
                 />
             @endif
 
@@ -185,6 +228,22 @@
 
                             @include('admin::leads.common.services')
 
+                            <x-admin::form.control-group>
+                                <x-admin::form.control-group.label>
+                                    Tags
+                                </x-admin::form.control-group.label>
+
+                                <x-admin::attributes.edit.multiselect
+                                    :attribute="(object) ['code' => 'tags', 'name' => 'Tags', 'lookup_type' => null]"
+                                    :options="$tagOptions"
+                                    :value="$selectedTagIds"
+                                    validations=""
+                                    :can-add-new="false"
+                                />
+
+                                <x-admin::form.control-group.error control-name="tags" />
+                            </x-admin::form.control-group>
+
                             <!-- Lead Details Other input fields -->
                             <div class="flex gap-4 max-sm:flex-wrap">
                                 <div class="w-full">
@@ -242,7 +301,73 @@
                                             'entity_type' => 'leads',
                                             'quick_add'   => 1
                                         ])"
+                                        :entity="[
+                                            'source_link' => old('source_link', request('source_link')),
+                                        ]"
                                     />
+
+                                    @if (lead_variant() === 'lge')
+                                        <x-admin::form.control-group id="lge-linkedin-profile-group">
+                                            <x-admin::form.control-group.label class="required">
+                                                LinkedIn Working Profile
+                                            </x-admin::form.control-group.label>
+
+                                            <x-admin::form.control-group.control
+                                                type="select"
+                                                name="linkedin_profile_id"
+                                                id="linkedin_profile_id"
+                                                rules="required"
+                                                :label="'LinkedIn Working Profile'"
+                                                :value="old('linkedin_profile_id')"
+                                            >
+                                                <option value="">Select LinkedIn Profile</option>
+
+                                                @foreach ($linkedInProfiles ?? [] as $profile)
+                                                    <option
+                                                        value="{{ $profile->id }}"
+                                                        @selected((string) old('linkedin_profile_id') === (string) $profile->id)
+                                                    >
+                                                        {{ $profile->name }}
+                                                    </option>
+                                                @endforeach
+                                            </x-admin::form.control-group.control>
+
+                                            <x-admin::form.control-group.error control-name="linkedin_profile_id" />
+                                        </x-admin::form.control-group>
+
+                                        <x-admin::form.control-group v-show="coldLeadSelected">
+                                            <x-admin::form.control-group.label class="required">
+                                                Forward To SDR
+                                            </x-admin::form.control-group.label>
+
+                                            <select
+                                                name="cold_lead_sdr_user_id"
+                                                v-model="coldLeadSdrUserId"
+                                                :required="coldLeadSelected"
+                                                :disabled="! coldLeadSelected"
+                                                class="custom-select w-full rounded-md border border-gray-200 px-2.5 py-2 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+                                            >
+                                                <option value="">
+                                                    Select SDR User
+                                                </option>
+
+                                                @foreach ($activeSdrUsers ?? [] as $sdrUser)
+                                                    <option
+                                                        value="{{ $sdrUser->id }}"
+                                                        @selected((string) old('cold_lead_sdr_user_id') === (string) $sdrUser->id)
+                                                    >
+                                                        {{ $sdrUser->name }}@if ($sdrUser->email) ({{ $sdrUser->email }})@endif
+                                                    </option>
+                                                @endforeach
+                                            </select>
+
+                                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                                Cold Lead entries created by LGE must be forwarded to an active SDR.
+                                            </p>
+
+                                            <x-admin::form.control-group.error control-name="cold_lead_sdr_user_id" />
+                                        </x-admin::form.control-group>
+                                    @endif
                                 </div>
 
                                 <div class="w-full">
@@ -393,7 +518,22 @@
                         availableSubSources: [],
                         selectedSubSource: '',
                         scheduleFollowup: false,
+                        person: {
+                            name: @json(old('person.name', request('person_name', ''))),
+                        },
                         sourceKey: 0,
+                        isLgeCreate: @json(lead_variant() === 'lge'),
+                        linkedInSourceLinkCheckUrl: @json(lead_variant() === 'lge' ? route('admin.leads.lge.source_link.check') : null),
+                        linkedInSourceLinkTimer: null,
+                        linkedInSourceLinkRequestId: 0,
+                        linkedInSourceLinkChecking: false,
+                        linkedInRequiresProfileSelection: true,
+                        linkedInProfileLocked: false,
+                        linkedInSelectedProfileId: @json(old('linkedin_profile_id', '')),
+                        coldLeadTagId: @json($coldLeadTagId ? (int) $coldLeadTagId : null),
+                        coldLeadSelected: false,
+                        coldLeadSdrUserId: @json(old('cold_lead_sdr_user_id', '')),
+                        coldLeadTagObserver: null,
                     };
                 },
                 
@@ -404,9 +544,144 @@
                             this.handleSourceChange(e);
                         }
                     });
+
+                    if (this.isLgeCreate) {
+                        const refreshColdLeadTagState = () => window.setTimeout(() => this.refreshColdLeadTagState(), 0);
+
+                        document.addEventListener('change', refreshColdLeadTagState);
+                        document.addEventListener('click', refreshColdLeadTagState);
+
+                        const form = document.getElementById('lead-create-form');
+                        if (form && this.coldLeadTagId) {
+                            this.coldLeadTagObserver = new MutationObserver(refreshColdLeadTagState);
+                            this.coldLeadTagObserver.observe(form, {
+                                childList: true,
+                                subtree: true,
+                                attributes: true,
+                                attributeFilter: ['value'],
+                            });
+                        }
+
+                        document.addEventListener('input', (event) => {
+                            if (event.target.name === 'source_link') {
+                                this.handleLinkedInSourceLinkInput(event.target);
+                            }
+                        });
+
+                        document.getElementById('lead-create-form')?.addEventListener('submit', (event) => {
+                            const sourceLinkInput = document.querySelector('[name="source_link"]');
+                            const profileSelect = document.querySelector('[name="linkedin_profile_id"]');
+
+                            if (! sourceLinkInput) {
+                                return;
+                            }
+
+                            if (this.linkedInSourceLinkChecking) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                this.showLinkedInSourceLinkMessage('Please wait while we verify this LinkedIn profile URL.');
+
+                                return;
+                            }
+
+                            if (this.linkedInRequiresProfileSelection && profileSelect && ! profileSelect.value) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                this.showLinkedInProfileMessage('Please select a LinkedIn working profile.');
+
+                                return;
+                            }
+
+                            this.refreshColdLeadTagState();
+
+                            if (this.coldLeadSelected && ! this.coldLeadSdrUserId) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                this.showColdLeadSdrMessage('Please select an active SDR user to forward this cold lead.');
+                            }
+                        });
+
+                        this.$nextTick(() => {
+                            this.refreshColdLeadTagState();
+
+                            const sourceLinkInput = document.querySelector('[name="source_link"]');
+
+                            if (sourceLinkInput?.value?.trim()) {
+                                this.handleLinkedInSourceLinkInput(sourceLinkInput);
+                            }
+
+                            const prefilledTitle = @json(old('title', request('title', '')));
+
+                            if (prefilledTitle) {
+                                const titleInput = document.querySelector('[name="title"]');
+
+                                if (titleInput && ! titleInput.value) {
+                                    titleInput.value = prefilledTitle;
+                                    titleInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                }
+                            }
+                        });
+                    }
                 },
 
                 methods: {
+                    refreshColdLeadTagState() {
+                        if (! this.coldLeadTagId) {
+                            this.coldLeadSelected = false;
+
+                            return;
+                        }
+
+                        const expectedValue = String(this.coldLeadTagId);
+                        const tagFields = Array.from(document.querySelectorAll('[name="tags"], [name="tags[]"]'));
+                        const selected = tagFields.some((field) => {
+                            if (field.type === 'hidden' || field.type === 'text') {
+                                return String(field.value || '') === expectedValue;
+                            }
+
+                            if (field.tagName === 'SELECT') {
+                                if (field.multiple) {
+                                    return Array.from(field.selectedOptions).some((option) => option.value === expectedValue);
+                                }
+
+                                return field.value === expectedValue;
+                            }
+
+                            if (field.type === 'checkbox' || field.type === 'radio') {
+                                return field.checked && field.value === expectedValue;
+                            }
+
+                            return false;
+                        });
+
+                        this.coldLeadSelected = selected;
+
+                        if (! selected) {
+                            this.coldLeadSdrUserId = '';
+                            this.showColdLeadSdrMessage('');
+                        }
+                    },
+
+                    showColdLeadSdrMessage(message) {
+                        const select = document.querySelector('[name="cold_lead_sdr_user_id"]');
+
+                        if (! select) {
+                            return;
+                        }
+
+                        let messageElement = document.getElementById('lge-cold-lead-sdr-error');
+
+                        if (! messageElement) {
+                            messageElement = document.createElement('p');
+                            messageElement.id = 'lge-cold-lead-sdr-error';
+                            messageElement.className = 'mt-1 text-xs italic text-red-600 dark:text-red-400';
+                            select.insertAdjacentElement('afterend', messageElement);
+                        }
+
+                        messageElement.textContent = message || '';
+                        messageElement.classList.toggle('hidden', ! message);
+                    },
+
                     /**
                      * Scroll to the section.
                      *
@@ -456,6 +731,137 @@
                             this.showSubSourceDropdown = false;
                             this.selectedSubSource = '';
                         }
+                    },
+
+                    handleLinkedInSourceLinkInput(input) {
+                        clearTimeout(this.linkedInSourceLinkTimer);
+
+                        const value = input.value.trim();
+
+                        if (! value) {
+                            this.linkedInSourceLinkChecking = false;
+                            this.linkedInRequiresProfileSelection = true;
+                            this.linkedInProfileLocked = false;
+                            this.showLinkedInSourceLinkMessage('');
+                            this.resetLinkedInProfileField();
+
+                            return;
+                        }
+
+                        this.linkedInSourceLinkChecking = true;
+                        this.showLinkedInSourceLinkMessage('Checking LinkedIn profile URL...', false);
+
+                        const requestId = ++this.linkedInSourceLinkRequestId;
+
+                        this.linkedInSourceLinkTimer = setTimeout(() => {
+                            this.$axios.get(this.linkedInSourceLinkCheckUrl, {
+                                params: {
+                                    source_link: value,
+                                },
+                            }).then((response) => {
+                                if (requestId !== this.linkedInSourceLinkRequestId) {
+                                    return;
+                                }
+
+                                this.linkedInSourceLinkChecking = false;
+                                this.linkedInRequiresProfileSelection = Boolean(response.data?.requires_profile_selection);
+                                this.linkedInProfileLocked = Boolean(response.data?.linkedin_profile_id);
+
+                                if (response.data?.linkedin_profile_id) {
+                                    this.setLinkedInProfileValue(response.data.linkedin_profile_id, true);
+                                } else {
+                                    this.resetLinkedInProfileField(false);
+                                }
+
+                                this.showLinkedInSourceLinkMessage('');
+                            }).catch(() => {
+                                if (requestId !== this.linkedInSourceLinkRequestId) {
+                                    return;
+                                }
+
+                                this.linkedInSourceLinkChecking = false;
+                                this.linkedInRequiresProfileSelection = true;
+                                this.linkedInProfileLocked = false;
+                                this.showLinkedInSourceLinkMessage('Unable to verify this LinkedIn profile URL. Please try again.');
+                            });
+                        }, 600);
+                    },
+
+                    showLinkedInSourceLinkMessage(message, isError = true) {
+                        const input = document.querySelector('[name="source_link"]');
+
+                        if (! input) {
+                            return;
+                        }
+
+                        let messageElement = document.getElementById('lge-source-link-linkedin-error');
+
+                        if (! messageElement) {
+                            messageElement = document.createElement('p');
+                            messageElement.id = 'lge-source-link-linkedin-error';
+                            messageElement.className = 'mt-1 text-xs italic';
+                            input.insertAdjacentElement('afterend', messageElement);
+                        }
+
+                        messageElement.textContent = message || '';
+                        messageElement.classList.toggle('text-red-600', isError);
+                        messageElement.classList.toggle('dark:text-red-400', isError);
+                        messageElement.classList.toggle('text-gray-500', ! isError);
+                        messageElement.classList.toggle('dark:text-gray-400', ! isError);
+                        messageElement.classList.toggle('hidden', ! message);
+                    },
+
+                    showLinkedInProfileMessage(message) {
+                        const select = document.querySelector('[name="linkedin_profile_id"]');
+
+                        if (! select) {
+                            return;
+                        }
+
+                        let messageElement = document.getElementById('lge-linkedin-profile-error');
+
+                        if (! messageElement) {
+                            messageElement = document.createElement('p');
+                            messageElement.id = 'lge-linkedin-profile-error';
+                            messageElement.className = 'mt-1 text-xs italic text-red-600 dark:text-red-400';
+                            select.insertAdjacentElement('afterend', messageElement);
+                        }
+
+                        messageElement.textContent = message || '';
+                        messageElement.classList.toggle('hidden', ! message);
+                    },
+
+                    setLinkedInProfileValue(profileId, locked = false) {
+                        const select = document.querySelector('[name="linkedin_profile_id"]');
+                        const group = document.getElementById('lge-linkedin-profile-group');
+
+                        if (! select || ! group) {
+                            return;
+                        }
+
+                        group.classList.remove('hidden');
+                        select.value = String(profileId);
+                        select.disabled = locked;
+                        this.linkedInProfileLocked = locked;
+                        this.showLinkedInProfileMessage('');
+                    },
+
+                    resetLinkedInProfileField(clearValue = true) {
+                        const select = document.querySelector('[name="linkedin_profile_id"]');
+                        const group = document.getElementById('lge-linkedin-profile-group');
+
+                        if (! select || ! group) {
+                            return;
+                        }
+
+                        group.classList.remove('hidden');
+
+                        if (clearValue) {
+                            select.value = '';
+                        }
+
+                        select.disabled = false;
+                        this.showLinkedInProfileMessage('');
                     },
                 },
             });

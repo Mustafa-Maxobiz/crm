@@ -5,8 +5,10 @@ namespace Webkul\Admin\Http\Controllers;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 use Webkul\Admin\Helpers\Dashboard;
+use Webkul\Lead\Services\LeadForwardService;
 use Webkul\Lead\Services\SourceAccessService;
 use Webkul\Lead\Services\UsStateTimezoneService;
 
@@ -43,6 +45,10 @@ class DashboardController extends Controller
      */
     public function index()
     {
+        if (app(SourceAccessService::class)->isLeadCloserUser()) {
+            return redirect()->route('admin.dashboard.lead_clouser');
+        }
+
         return view('admin::dashboard.index')->with([
             'startDate' => $this->dashboardHelper->getStartDate(),
             'endDate'   => $this->dashboardHelper->getEndDate(),
@@ -59,6 +65,21 @@ class DashboardController extends Controller
             'dashboardTitle' => 'SDR Dashboard',
             'showUsFeatures' => true,
             'dashboardVariant' => 'sdr',
+            'showMeetings' => false,
+        ]);
+    }
+
+    /**
+     * Lead Clouser dashboard uses the SDR calling dashboard layout.
+     */
+    public function leadClouser(): View
+    {
+        return view('admin::dashboard.sdr.index')->with([
+            'stateTimezones' => $this->usStateTimezoneService->allStates(),
+            'dashboardTitle' => 'Lead Closer Dashboard',
+            'showUsFeatures' => true,
+            'dashboardVariant' => 'lead_clouser',
+            'showMeetings' => true,
         ]);
     }
 
@@ -98,6 +119,7 @@ class DashboardController extends Controller
         $this->ensureCallingDashboardAccess();
 
         $data = request()->validate([
+            'variant'    => ['nullable', 'in:sdr,lge,lead_clouser'],
             'period'     => ['nullable', 'in:day,week,month'],
             'start_date' => ['nullable', 'date'],
             'end_date'   => ['nullable', 'date'],
@@ -109,15 +131,36 @@ class DashboardController extends Controller
             $data['end_date'] ?? null,
         );
 
+        if (($data['variant'] ?? null) === 'lge') {
+            return response()->json($this->lgeLinkedInSummary($startDate, $endDate));
+        }
+
         $userId = auth()->guard('user')->id();
         $sourceAccessService = app(SourceAccessService::class);
+        $variant = $data['variant'] ?? 'sdr';
 
-        $activityQuery = DB::table('activities')
+        if ($variant === 'lead_clouser') {
+            return response()->json($this->leadCloserCallSummary($startDate, $endDate, $userId, $sourceAccessService));
+        }
+
+        return response()->json($this->sdrCallSummary($startDate, $endDate, $userId, $sourceAccessService));
+    }
+
+    /**
+     * SDR dashboard: calls performed by the SDR, meetings booked from originated leads, outcomes by lead_owner_id.
+     */
+    protected function sdrCallSummary(
+        Carbon $startDate,
+        Carbon $endDate,
+        int $userId,
+        SourceAccessService $sourceAccessService,
+    ): array {
+        $callQuery = DB::table('activities')
             ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
             ->leftJoin('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
             ->leftJoin('leads', 'lead_activities.lead_id', '=', 'leads.id')
             ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
-            ->whereIn('activities.type', ['call', 'meeting'])
+            ->where('activities.type', 'call')
             ->whereBetween('activities.schedule_from', [$startDate, $endDate])
             ->where(function ($query) use ($userId) {
                 $query
@@ -125,30 +168,47 @@ class DashboardController extends Controller
                     ->orWhere('activity_participants.user_id', $userId);
             });
 
-        $sourceAccessService->applyLeadTableScope($activityQuery);
+        $sourceAccessService->applyLeadTableScope($callQuery);
 
-        $activityStats = $activityQuery
-            ->selectRaw("COUNT(DISTINCT CASE WHEN activities.type = 'call' THEN activities.id END) as total_calls")
-            ->selectRaw("COUNT(DISTINCT CASE WHEN activities.type = 'call' AND (activities.call_status = 'done' OR (activities.call_status IS NULL AND activities.is_done = 1)) THEN activities.id END) as answered_calls")
-            ->selectRaw("COUNT(DISTINCT CASE WHEN activities.type = 'meeting' THEN activities.id END) as booked_meetings")
+        $callStats = $callQuery
+            ->selectRaw('COUNT(DISTINCT activities.id) as total_calls')
+            ->selectRaw("COUNT(DISTINCT CASE WHEN activities.call_status = 'done' OR (activities.call_status IS NULL AND activities.is_done = 1) THEN activities.id END) as answered_calls")
             ->first();
 
-        $totalCalls = (int) ($activityStats->total_calls ?? 0);
-        $answeredCalls = (int) ($activityStats->answered_calls ?? 0);
-        $bookedMeetings = (int) ($activityStats->booked_meetings ?? 0);
+        $totalCalls = (int) ($callStats->total_calls ?? 0);
+        $answeredCalls = (int) ($callStats->answered_calls ?? 0);
+
+        $meetingQuery = DB::table('activities')
+            ->join('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
+            ->join('leads', 'lead_activities.lead_id', '=', 'leads.id')
+            ->where('activities.type', 'meeting')
+            ->whereNull('leads.deleted_at')
+            ->whereBetween('activities.schedule_from', [$startDate, $endDate]);
+
+        $sourceAccessService->applyOriginatingCallingOwnerTableScope($meetingQuery, $userId);
+        $sourceAccessService->applyLeadTableScope($meetingQuery);
+
+        $meetingStats = $meetingQuery
+            ->selectRaw('COUNT(DISTINCT activities.id) as booked_meetings')
+            ->selectRaw("COUNT(DISTINCT CASE WHEN activities.call_status = 'done' OR activities.is_done = 1 THEN activities.id END) as attended_meetings")
+            ->first();
+
+        $bookedMeetings = (int) ($meetingStats->booked_meetings ?? 0);
+        $attendedMeetings = (int) ($meetingStats->attended_meetings ?? 0);
 
         $leadQuery = DB::table('leads')
-            ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
             ->leftJoin('lead_pipeline_stages', 'leads.lead_pipeline_stage_id', '=', 'lead_pipeline_stages.id')
             ->whereNull('leads.deleted_at')
-            ->where('leads.user_id', $userId)
-            ->whereBetween('leads.updated_at', [$startDate, $endDate]);
+            ->whereNotNull('leads.closed_at')
+            ->whereBetween('leads.closed_at', [$startDate, $endDate])
+            ->whereIn('lead_pipeline_stages.code', ['won', 'lost']);
 
+        $sourceAccessService->applyOriginatingCallingOwnerTableScope($leadQuery, $userId);
         $sourceAccessService->applyLeadTableScope($leadQuery);
 
         $leadStats = $leadQuery
-            ->selectRaw("SUM(CASE WHEN lead_pipeline_stages.code = 'won' THEN 1 ELSE 0 END) as won_leads")
-            ->selectRaw("SUM(CASE WHEN lead_pipeline_stages.code = 'lost' THEN 1 ELSE 0 END) as lost_leads")
+            ->selectRaw("COUNT(DISTINCT CASE WHEN lead_pipeline_stages.code = 'won' THEN leads.id END) as won_leads")
+            ->selectRaw("COUNT(DISTINCT CASE WHEN lead_pipeline_stages.code = 'lost' THEN leads.id END) as lost_leads")
             ->first();
 
         $wonLeads = (int) ($leadStats->won_leads ?? 0);
@@ -156,7 +216,7 @@ class DashboardController extends Controller
         $outcomeLeads = $wonLeads + $lostLeads;
         $days = max(1, $startDate->diffInDays($endDate) + 1);
 
-        return response()->json([
+        return [
             'period' => [
                 'start' => $startDate->toDateString(),
                 'end'   => $endDate->toDateString(),
@@ -174,9 +234,204 @@ class DashboardController extends Controller
                 'lost_percent'=> $outcomeLeads ? round(($lostLeads / $outcomeLeads) * 100, 1) : 0,
             ],
             'meetings' => [
-                'booked' => $bookedMeetings,
+                'booked'       => $bookedMeetings,
+                'assigned'     => $bookedMeetings,
+                'attended'     => $attendedMeetings,
+                'attend_rate'  => $bookedMeetings ? round(($attendedMeetings / $bookedMeetings) * 100, 1) : 0,
             ],
-        ]);
+        ];
+    }
+
+    /**
+     * Lead Closer dashboard: assigned meetings and current-assignee outcomes.
+     */
+    protected function leadCloserCallSummary(
+        Carbon $startDate,
+        Carbon $endDate,
+        int $userId,
+        SourceAccessService $sourceAccessService,
+    ): array {
+        $meetingQuery = DB::table('activities')
+            ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
+            ->leftJoin('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
+            ->leftJoin('leads', 'lead_activities.lead_id', '=', 'leads.id')
+            ->where('activities.type', 'meeting')
+            ->whereBetween('activities.schedule_from', [$startDate, $endDate])
+            ->where(function ($query) use ($userId) {
+                $query
+                    ->where('activities.user_id', $userId)
+                    ->orWhere('activity_participants.user_id', $userId);
+            });
+
+        $sourceAccessService->applyLeadTableScope($meetingQuery);
+
+        $meetingStats = $meetingQuery
+            ->selectRaw('COUNT(DISTINCT activities.id) as booked_meetings')
+            ->selectRaw("COUNT(DISTINCT CASE WHEN activities.call_status = 'done' OR activities.is_done = 1 THEN activities.id END) as attended_meetings")
+            ->first();
+
+        $bookedMeetings = (int) ($meetingStats->booked_meetings ?? 0);
+        $attendedMeetings = (int) ($meetingStats->attended_meetings ?? 0);
+
+        $leadQuery = DB::table('leads')
+            ->leftJoin('lead_pipeline_stages', 'leads.lead_pipeline_stage_id', '=', 'lead_pipeline_stages.id')
+            ->whereNull('leads.deleted_at')
+            ->whereNotNull('leads.closed_at')
+            ->whereBetween('leads.closed_at', [$startDate, $endDate])
+            ->whereIn('lead_pipeline_stages.code', ['won', 'lost']);
+
+        $sourceAccessService->applyCurrentAssigneeTableScope($leadQuery, $userId);
+        $sourceAccessService->applyLeadTableScope($leadQuery);
+
+        $leadStats = $leadQuery
+            ->selectRaw("COUNT(DISTINCT CASE WHEN lead_pipeline_stages.code = 'won' THEN leads.id END) as won_leads")
+            ->selectRaw("COUNT(DISTINCT CASE WHEN lead_pipeline_stages.code = 'lost' THEN leads.id END) as lost_leads")
+            ->first();
+
+        $wonLeads = (int) ($leadStats->won_leads ?? 0);
+        $lostLeads = (int) ($leadStats->lost_leads ?? 0);
+        $outcomeLeads = $wonLeads + $lostLeads;
+
+        return [
+            'period' => [
+                'start' => $startDate->toDateString(),
+                'end'   => $endDate->toDateString(),
+            ],
+            'calls' => [
+                'total'                    => 0,
+                'answered'                 => 0,
+                'answer_rate'              => 0,
+                'answered_average_per_day' => 0,
+            ],
+            'outcomes' => [
+                'won'         => $wonLeads,
+                'lost'        => $lostLeads,
+                'won_percent' => $outcomeLeads ? round(($wonLeads / $outcomeLeads) * 100, 1) : 0,
+                'lost_percent'=> $outcomeLeads ? round(($lostLeads / $outcomeLeads) * 100, 1) : 0,
+            ],
+            'meetings' => [
+                'booked'       => $bookedMeetings,
+                'assigned'     => $bookedMeetings,
+                'attended'     => $attendedMeetings,
+                'attend_rate'  => $bookedMeetings ? round(($attendedMeetings / $bookedMeetings) * 100, 1) : 0,
+            ],
+        ];
+    }
+
+    /**
+     * Returns LGE LinkedIn request funnel and lead outcomes.
+     */
+    protected function lgeLinkedInSummary(Carbon $startDate, Carbon $endDate): array
+    {
+        $userId = auth()->guard('user')->id();
+
+        $requestStats = DB::table('linkedin_entry')
+            ->where('user_id', $userId)
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->selectRaw('COUNT(*) as total_requests')
+            ->selectRaw("SUM(CASE WHEN status IN ('accepted', 'response') THEN 1 ELSE 0 END) as accepted_requests")
+            ->first();
+
+        $totalRequests = (int) ($requestStats->total_requests ?? 0);
+        $acceptedRequests = (int) ($requestStats->accepted_requests ?? 0);
+        $forwardedColdLeads = Schema::hasTable('lead_forwards')
+            ? (int) DB::table('lead_forwards')
+                ->where('from_user_id', $userId)
+                ->where('forward_type', LeadForwardService::TYPE_COLD_LEAD)
+                ->whereBetween('forwarded_at', [$startDate, $endDate])
+                ->count()
+            : 0;
+
+        $leadBase = DB::table('leads')
+            ->leftJoin('lead_pipeline_stages', 'leads.lead_pipeline_stage_id', '=', 'lead_pipeline_stages.id')
+            ->whereNull('leads.deleted_at')
+            ->where('leads.lead_owner_id', $userId)
+            ->whereBetween('leads.created_at', [$startDate, $endDate])
+            ->whereExists(function ($query) use ($userId) {
+                $query
+                    ->selectRaw('1')
+                    ->from('linkedin_entry')
+                    ->where('linkedin_entry.user_id', $userId)
+                    ->whereRaw(
+                        "TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(linkedin_entry.url), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', '')) = TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(leads.source_link), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', ''))"
+                    );
+            });
+
+        $leadStats = (clone $leadBase)
+            ->selectRaw('COUNT(DISTINCT leads.id) as responses')
+            ->first();
+
+        $responses = (int) ($leadStats->responses ?? 0);
+
+        $outcomeQuery = DB::table('leads')
+            ->leftJoin('lead_pipeline_stages', 'leads.lead_pipeline_stage_id', '=', 'lead_pipeline_stages.id')
+            ->whereNull('leads.deleted_at')
+            ->where('leads.lead_owner_id', $userId)
+            ->whereNotNull('leads.closed_at')
+            ->whereBetween('leads.closed_at', [$startDate, $endDate])
+            ->whereIn('lead_pipeline_stages.code', ['won', 'lost'])
+            ->whereExists(function ($query) use ($userId) {
+                $query
+                    ->selectRaw('1')
+                    ->from('linkedin_entry')
+                    ->where('linkedin_entry.user_id', $userId)
+                    ->whereRaw(
+                        "TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(linkedin_entry.url), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', '')) = TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(leads.source_link), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', ''))"
+                    );
+            });
+
+        $outcomeStats = $outcomeQuery
+            ->selectRaw("COUNT(DISTINCT CASE WHEN lead_pipeline_stages.code = 'won' THEN leads.id END) as won_leads")
+            ->selectRaw("COUNT(DISTINCT CASE WHEN lead_pipeline_stages.code = 'lost' THEN leads.id END) as lost_leads")
+            ->first();
+
+        $wonLeads = (int) ($outcomeStats->won_leads ?? 0);
+        $lostLeads = (int) ($outcomeStats->lost_leads ?? 0);
+
+        $meetingCount = DB::table('activities')
+            ->join('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
+            ->join('leads', 'lead_activities.lead_id', '=', 'leads.id')
+            ->where('activities.type', 'meeting')
+            ->whereNull('leads.deleted_at')
+            ->where('leads.lead_owner_id', $userId)
+            ->whereBetween('activities.schedule_from', [$startDate, $endDate])
+            ->whereExists(function ($query) use ($userId) {
+                $query
+                    ->selectRaw('1')
+                    ->from('linkedin_entry')
+                    ->where('linkedin_entry.user_id', $userId)
+                    ->whereRaw(
+                        "TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(linkedin_entry.url), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', '')) = TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(leads.source_link), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', ''))"
+                    );
+            })
+            ->distinct('activities.id')
+            ->count('activities.id');
+
+        return [
+            'type' => 'linkedin',
+            'period' => [
+                'start' => $startDate->toDateString(),
+                'end'   => $endDate->toDateString(),
+            ],
+            'linkedin' => [
+                'requests'        => $totalRequests,
+                'accepted'        => $acceptedRequests,
+                'responses'       => $responses,
+                'forwarded'        => $forwardedColdLeads,
+                'acceptance_rate' => $totalRequests ? round(($acceptedRequests / $totalRequests) * 100, 1) : 0,
+                'response_rate'   => $totalRequests ? round(($responses / $totalRequests) * 100, 1) : 0,
+            ],
+            'meetings' => [
+                'booked'  => (int) $meetingCount,
+                'percent' => $responses ? round(((int) $meetingCount / $responses) * 100, 1) : 0,
+            ],
+            'outcomes' => [
+                'won'          => $wonLeads,
+                'lost'         => $lostLeads,
+                'won_percent'  => $responses ? round(($wonLeads / $responses) * 100, 1) : 0,
+                'lost_percent' => $responses ? round(($lostLeads / $responses) * 100, 1) : 0,
+            ],
+        ];
     }
 
     /**
@@ -191,64 +446,72 @@ class DashboardController extends Controller
         $todayEnd = Carbon::now()->endOfDay();
         $sourceAccessService = app(SourceAccessService::class);
         $variant = request()->query('variant', 'sdr');
-        $showUsFeatures = $variant === 'sdr';
+        $showUsFeatures = in_array($variant, ['sdr', 'lead_clouser'], true);
+        $showMeetings = request()->has('show_meetings')
+            ? request()->boolean('show_meetings')
+            : $variant === 'lead_clouser';
 
-        $meetingsBase = DB::table('activities')
-            ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
-            ->leftJoin('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
-            ->leftJoin('leads', 'lead_activities.lead_id', '=', 'leads.id')
-            ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
-            ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
-            ->where('activities.type', 'meeting')
-            ->whereBetween('activities.schedule_from', [$todayStart, $todayEnd])
-            ->where(function ($query) use ($userId) {
-                $query
-                    ->where('activities.user_id', $userId)
-                    ->orWhere('activity_participants.user_id', $userId);
-            });
+        $meetingsCount = 0;
+        $todayMeetings = collect();
 
-        $this->applyVisibleLeadJoinScope($meetingsBase);
+        if ($showMeetings) {
+            $meetingsBase = DB::table('activities')
+                ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
+                ->leftJoin('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
+                ->leftJoin('leads', 'lead_activities.lead_id', '=', 'leads.id')
+                ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
+                ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
+                ->where('activities.type', 'meeting')
+                ->whereBetween('activities.schedule_from', [$todayStart, $todayEnd])
+                ->where(function ($query) use ($userId) {
+                    $query
+                        ->where('activities.user_id', $userId)
+                        ->orWhere('activity_participants.user_id', $userId);
+                });
 
-        $meetingsCount = (int) (clone $meetingsBase)
-            ->selectRaw('COUNT(DISTINCT activities.id) as aggregate')
-            ->value('aggregate');
+            $this->applyVisibleLeadJoinScope($meetingsBase);
 
-        $todayMeetings = (clone $meetingsBase)
-            ->select(
-                'activities.id',
-                'activities.title',
-                'activities.schedule_from',
-                'activities.schedule_to',
-                'activities.location',
-                'leads.id as lead_id',
-                'persons.name as person_name',
-                'persons.city as person_city',
-                'persons.state as person_state',
-                'persons.country as person_country',
-                'persons.timezone as person_timezone',
-                'lead_sources.name as source_name'
-            )
-            ->orderBy('activities.schedule_from')
-            ->get()
-            ->unique('id')
-            ->values()
-            ->map(function ($activity) use ($showUsFeatures) {
-                return $this->mapDashboardCalendarItem([
-                    'id'         => 'meeting-'.$activity->id,
-                    'type'       => 'Meeting',
-                    'source'     => $activity->source_name,
-                    'title'      => $activity->title ?: 'Meeting',
-                    'person'     => $activity->person_name,
-                    'city'       => $activity->person_city,
-                    'state'      => $activity->person_state,
-                    'country'    => $activity->person_country,
-                    'timezone'   => $activity->person_timezone,
-                    'fallback_meta' => $activity->location ?: 'Scheduled meeting',
-                    'at'         => $activity->schedule_from,
-                    'url'        => route('admin.activities.edit', $activity->id),
-                    'lead_url'   => $activity->lead_id ? route('admin.leads.view', $activity->lead_id) : null,
-                ], $showUsFeatures);
-            });
+            $meetingsCount = (int) (clone $meetingsBase)
+                ->selectRaw('COUNT(DISTINCT activities.id) as aggregate')
+                ->value('aggregate');
+
+            $todayMeetings = (clone $meetingsBase)
+                ->select(
+                    'activities.id',
+                    'activities.title',
+                    'activities.schedule_from',
+                    'activities.schedule_to',
+                    'activities.location',
+                    'leads.id as lead_id',
+                    'persons.name as person_name',
+                    'persons.city as person_city',
+                    'persons.state as person_state',
+                    'persons.country as person_country',
+                    'persons.timezone as person_timezone',
+                    'lead_sources.name as source_name'
+                )
+                ->orderBy('activities.schedule_from')
+                ->get()
+                ->unique('id')
+                ->values()
+                ->map(function ($activity) use ($showUsFeatures) {
+                    return $this->mapDashboardCalendarItem([
+                        'id'         => 'meeting-'.$activity->id,
+                        'type'       => 'Meeting',
+                        'source'     => $activity->source_name,
+                        'title'      => $activity->title ?: 'Meeting',
+                        'person'     => $activity->person_name,
+                        'city'       => $activity->person_city,
+                        'state'      => $activity->person_state,
+                        'country'    => $activity->person_country,
+                        'timezone'   => $activity->person_timezone,
+                        'fallback_meta' => $activity->location ?: 'Scheduled meeting',
+                        'at'         => $activity->schedule_from,
+                        'url'        => route('admin.activities.edit', $activity->id),
+                        'lead_url'   => $activity->lead_id ? route('admin.leads.view', $activity->lead_id) : null,
+                    ], $showUsFeatures);
+                });
+        }
 
         $followupsBase = DB::table('leads')
             ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
@@ -318,6 +581,7 @@ class DashboardController extends Controller
             ],
             'today_calendar' => $calendar->values(),
             'show_us_features' => $showUsFeatures,
+            'show_meetings' => $showMeetings,
         ]);
     }
 
@@ -326,7 +590,10 @@ class DashboardController extends Controller
      */
     public function usTimezones(): View
     {
-        if (! bouncer()->hasPermission('sdr_dashboard')) {
+        if (
+            ! bouncer()->hasPermission('sdr_dashboard')
+            && ! bouncer()->hasPermission('lead_clouser_dashboard')
+        ) {
             abort(401);
         }
 
@@ -342,6 +609,7 @@ class DashboardController extends Controller
     {
         if (
             bouncer()->hasPermission('sdr_dashboard')
+            || bouncer()->hasPermission('lead_clouser_dashboard')
             || bouncer()->hasPermission('lge_dashboard')
         ) {
             return;

@@ -12,25 +12,37 @@ if (! function_exists('bouncer')) {
 
 if (! function_exists('lead_variant')) {
     /**
-     * Current leads UI variant: main or sdr.
+     * Current leads UI variant: main, sdr, lge, or lead_clouser.
      */
     function lead_variant(?string $variant = null): string
     {
-        if (in_array($variant, ['main', 'sdr'], true)) {
+        if (in_array($variant, ['main', 'sdr', 'lge', 'lead_clouser'], true)) {
             return $variant;
         }
 
         if (app()->bound('view')) {
             $shared = view()->shared('leadVariant');
 
-            if (in_array($shared, ['main', 'sdr'], true)) {
+            if (in_array($shared, ['main', 'sdr', 'lge', 'lead_clouser'], true)) {
                 return $shared;
             }
         }
 
         $routeName = request()->route()?->getName() ?? '';
 
-        return str_starts_with($routeName, 'admin.leads.sdr') ? 'sdr' : 'main';
+        if (str_starts_with($routeName, 'admin.leads.sdr')) {
+            return 'sdr';
+        }
+
+        if (str_starts_with($routeName, 'admin.leads.lge')) {
+            return 'lge';
+        }
+
+        if (str_starts_with($routeName, 'admin.leads.lead_clouser')) {
+            return 'lead_clouser';
+        }
+
+        return 'main';
     }
 }
 
@@ -40,7 +52,13 @@ if (! function_exists('lead_permission')) {
      */
     function lead_permission(string $action = '', ?string $variant = null): string
     {
-        $prefix = lead_variant($variant) === 'sdr' ? 'sdr_leads' : 'leads';
+        $leadVariant = lead_variant($variant);
+        $prefix = match ($leadVariant) {
+            'sdr' => 'sdr_leads',
+            'lge' => 'lge_leads',
+            'lead_clouser' => 'lead_clouser_leads',
+            default => 'leads',
+        };
 
         return $action === '' ? $prefix : $prefix.'.'.$action;
     }
@@ -56,6 +74,14 @@ if (! function_exists('lead_route_name')) {
     {
         if (lead_variant($variant) === 'sdr') {
             return $action === 'index' ? 'admin.leads.sdr' : 'admin.leads.sdr.'.$action;
+        }
+
+        if (lead_variant($variant) === 'lge') {
+            return $action === 'index' ? 'admin.leads.lge' : 'admin.leads.lge.'.$action;
+        }
+
+        if (lead_variant($variant) === 'lead_clouser') {
+            return $action === 'index' ? 'admin.leads.lead_clouser' : 'admin.leads.lead_clouser.'.$action;
         }
 
         return 'admin.leads.'.$action;
@@ -80,9 +106,12 @@ if (! function_exists('lead_url')) {
      */
     function lead_url(?string $variant = null): string
     {
-        return lead_variant($variant) === 'sdr'
-            ? url('admin/leads/sdr')
-            : url('admin/leads');
+        return match (lead_variant($variant)) {
+            'sdr' => url('admin/leads/sdr'),
+            'lge' => url('admin/leads/lge'),
+            'lead_clouser' => url('admin/leads/lead-clouser'),
+            default => url('admin/leads'),
+        };
     }
 }
 
@@ -90,20 +119,39 @@ if (! function_exists('admin_menu_items')) {
     /**
      * Sidebar menu for the current user.
      * Full admins get one Dashboard + one Leads page (all leads) + Meta Leads;
-     * SDR/LGE dashboards and SDR Leads are hidden for them.
+     * SDR/LGE dashboards and calling-role lead pages are hidden for them.
      */
     function admin_menu_items(): \Illuminate\Support\Collection
     {
         $items = menu()->getItems('admin');
+        $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
 
-        if (! app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin()) {
+        if ($sourceAccessService->isLeadCloserUser()) {
+            $hidden = [
+                'dashboard',
+                'sdr_dashboard',
+                'lge_dashboard',
+                'leads',
+                'sdr_leads',
+                'lge_leads',
+            ];
+
+            return $items->reject(
+                fn ($item) => in_array($item->getKey(), $hidden, true)
+            )->values();
+        }
+
+        if (! $sourceAccessService->isAdmin()) {
             return $items;
         }
 
         $hidden = [
             'sdr_dashboard',
+            'lead_clouser_dashboard',
             'lge_dashboard',
             'sdr_leads',
+            'lead_clouser_leads',
+            'lge_leads',
         ];
 
         return $items->reject(

@@ -21,11 +21,18 @@
             ? app('Webkul\Attribute\Repositories\AttributeRepository')->getLookUpOptions($attribute->lookup_type)
             : $attribute->options()->orderBy('sort_order')->get();
     }
+
+    $valueLabel = null;
+
+    if ($attribute->code === 'user_id' && isset($entity)) {
+        $valueLabel = $entity->user?->name;
+    }
 @endphp
 
 <x-admin::form.control-group.controls.inline.select
     ::name="'{{ $attribute->code }}'"
     :value="$value"
+    value-label="{{ $valueLabel }}"
     :options="$options"
     rules="required"
     position="left"

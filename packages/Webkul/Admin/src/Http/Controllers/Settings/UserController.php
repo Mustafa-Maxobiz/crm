@@ -5,8 +5,10 @@ namespace Webkul\Admin\Http\Controllers\Settings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Prettus\Repository\Criteria\RequestCriteria;
 use Webkul\Admin\DataGrids\Settings\UserDataGrid;
@@ -76,13 +78,17 @@ class UserController extends Controller
             'name'             => 'required',
             'password'         => 'nullable',
             'confirm_password' => 'nullable|required_with:password|same:password',
-            'role_id'          => 'required',
+            'role_ids'         => 'required|array|min:1',
+            'role_ids.*'       => 'integer|exists:roles,id',
+            'role_id'          => 'nullable|integer|exists:roles,id',
             'status'           => 'boolean|in:0,1',
             'view_permission'  => 'string|in:global,group,individual',
         ]);
 
+        $roleIds = $this->normalizedRoleIds(request()->input('role_ids', []), request()->input('role_id'));
+
         $assignmentValidation = $this->validateUserAssignments(
-            (int) request('role_id'),
+            $roleIds[0],
             request()->input('source_ids', []),
             request()->input('organization_ids', [])
         );
@@ -92,6 +98,7 @@ class UserController extends Controller
         }
 
         $data = request()->all();
+        $data['role_id'] = $roleIds[0];
 
         if (
             isset($data['password'])
@@ -105,6 +112,7 @@ class UserController extends Controller
         $admin = $this->userRepository->create($data);
 
         $admin->groups()->sync($data['groups'] ?? []);
+        $admin->roles()->sync($roleIds);
 
         $admin->sources()->sync($assignmentValidation['source_ids']);
         $admin->organizations()->sync($assignmentValidation['organization_ids']);
@@ -118,7 +126,7 @@ class UserController extends Controller
         Event::dispatch('settings.user.create.after', $admin);
 
         return new JsonResponse([
-            'data'    => $admin,
+            'data'    => $admin->load(['role', 'roles', 'groups', 'sources', 'organizations']),
             'message' => trans('admin::app.settings.users.index.create-success'),
         ]);
     }
@@ -128,10 +136,17 @@ class UserController extends Controller
      */
     public function edit(int $id): View|JsonResponse
     {
-        $admin = $this->userRepository->with(['role', 'groups', 'sources', 'organizations'])->findOrFail($id);
+        $admin = $this->userRepository->with(['role', 'roles', 'groups', 'sources', 'organizations'])->findOrFail($id);
+
+        $payload = $admin->toArray();
+        $payload['role_ids'] = $admin->roles->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+
+        if (empty($payload['role_ids']) && $admin->role_id) {
+            $payload['role_ids'] = [(int) $admin->role_id];
+        }
 
         return new JsonResponse([
-            'data'   => $admin,
+            'data' => $payload,
         ]);
     }
 
@@ -145,13 +160,17 @@ class UserController extends Controller
             'name'             => 'required|string',
             'password'         => 'nullable|string|min:6',
             'confirm_password' => 'nullable|required_with:password|same:password',
-            'role_id'          => 'required|integer|exists:roles,id',
+            'role_ids'         => 'required|array|min:1',
+            'role_ids.*'       => 'integer|exists:roles,id',
+            'role_id'          => 'nullable|integer|exists:roles,id',
             'status'           => 'nullable|boolean|in:0,1',
             'view_permission'  => 'required|string|in:global,group,individual',
         ]);
 
+        $roleIds = $this->normalizedRoleIds(request()->input('role_ids', []), request()->input('role_id'));
+
         $assignmentValidation = $this->validateUserAssignments(
-            (int) request('role_id'),
+            $roleIds[0],
             request()->input('source_ids', []),
             request()->input('organization_ids', [])
         );
@@ -161,6 +180,7 @@ class UserController extends Controller
         }
 
         $data = request()->all();
+        $data['role_id'] = $roleIds[0];
 
         if (empty($data['password'])) {
             $data = Arr::except($data, ['password', 'confirm_password']);
@@ -179,6 +199,7 @@ class UserController extends Controller
         $admin = $this->userRepository->update($data, $id);
 
         $admin->groups()->sync($data['groups'] ?? []);
+        $admin->roles()->sync($roleIds);
 
         $admin->sources()->sync($assignmentValidation['source_ids']);
         $admin->organizations()->sync($assignmentValidation['organization_ids']);
@@ -186,7 +207,7 @@ class UserController extends Controller
         Event::dispatch('settings.user.update.after', $admin);
 
         return new JsonResponse([
-            'data'    => $admin,
+            'data'    => $admin->load(['role', 'roles', 'groups', 'sources', 'organizations']),
             'message' => trans('admin::app.settings.users.index.update-success'),
         ]);
     }
@@ -196,9 +217,58 @@ class UserController extends Controller
      */
     public function search(): JsonResource
     {
-        $users = $this->userRepository
-            ->pushCriteria(app(RequestCriteria::class))
-            ->all();
+        $repository = $this->userRepository
+            ->pushCriteria(app(RequestCriteria::class));
+
+        if (request()->boolean('active_only')) {
+            $query = $this->userRepository->getModel()
+                ->query()
+                ->where('status', 1);
+
+            if ($search = request()->input('search')) {
+                $searchTerm = Str::of($search)->after(':')->trim()->toString();
+
+                if ($searchTerm !== '') {
+                    $query->where('name', 'like', '%'.$searchTerm.'%');
+                }
+            }
+
+            if ($roleNames = request()->input('role_names')) {
+                $roleNames = collect(explode(',', $roleNames))
+                    ->map(fn ($roleName) => strtolower(trim($roleName)))
+                    ->filter()
+                    ->values()
+                    ->all();
+
+                if (! empty($roleNames)) {
+                    $query->where(function ($query) use ($roleNames) {
+                        $query->whereHas('roles', function ($query) use ($roleNames) {
+                            $query->where(function ($query) use ($roleNames) {
+                                if (in_array('administrator', $roleNames, true) || in_array('admin', $roleNames, true)) {
+                                    $query->orWhere('permission_type', 'all');
+                                }
+
+                                $query->orWhereIn(DB::raw('LOWER(name)'), $roleNames);
+                            });
+                        })->orWhereHas('role', function ($query) use ($roleNames) {
+                            $query->where(function ($query) use ($roleNames) {
+                                if (in_array('administrator', $roleNames, true) || in_array('admin', $roleNames, true)) {
+                                    $query->orWhere('permission_type', 'all');
+                                }
+
+                                $query->orWhereIn(DB::raw('LOWER(name)'), $roleNames);
+                            });
+                        });
+                    });
+                }
+            }
+
+            $repository = $query->orderBy('name')->get();
+
+            return UserResource::collection($repository);
+        }
+
+        $users = $repository->all();
 
         return UserResource::collection($users);
     }
@@ -331,5 +401,25 @@ class UserController extends Controller
             'source_ids'        => $this->sourceAccessService->filterUserSourceIdsForRole($roleId, $sourceIds),
             'organization_ids'  => $this->sourceAccessService->filterUserOrganizationIdsForRole($roleId, $organizationIds),
         ];
+    }
+
+    /**
+     * @param  array<int|string>  $roleIds
+     * @return array<int>
+     */
+    protected function normalizedRoleIds(array $roleIds, mixed $fallbackRoleId = null): array
+    {
+        $normalized = collect($roleIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($normalized) && (int) $fallbackRoleId > 0) {
+            $normalized = [(int) $fallbackRoleId];
+        }
+
+        return $normalized;
     }
 }

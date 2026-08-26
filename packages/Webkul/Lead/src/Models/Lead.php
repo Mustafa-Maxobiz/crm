@@ -45,6 +45,7 @@ class Lead extends Model implements LeadContract
         'lead_disqualified_at',
         'closed_at',
         'user_id',
+        'lead_owner_id',
         'person_id',
         'organization_id',
         'team_id',
@@ -52,6 +53,7 @@ class Lead extends Model implements LeadContract
         'lead_sub_source_id',
         'source_sub_type',
         'source_link',
+        'linkedin_profile_id',
         'lead_type_id',
         'lead_pipeline_id',
         'lead_pipeline_stage_id',
@@ -86,6 +88,14 @@ class Lead extends Model implements LeadContract
     public function user(): BelongsTo
     {
         return $this->belongsTo(UserProxy::modelClass());
+    }
+
+    /**
+     * Get the original lead owner that should retain visibility after handoff.
+     */
+    public function leadOwner(): BelongsTo
+    {
+        return $this->belongsTo(UserProxy::modelClass(), 'lead_owner_id');
     }
 
     /**
@@ -134,6 +144,14 @@ class Lead extends Model implements LeadContract
     public function subSource(): BelongsTo
     {
         return $this->belongsTo(SourceProxy::modelClass(), 'lead_sub_source_id');
+    }
+
+    /**
+     * Get the LinkedIn working profile used for this lead.
+     */
+    public function linkedinProfile(): BelongsTo
+    {
+        return $this->belongsTo(LinkedInProfile::class, 'linkedin_profile_id');
     }
 
     /**

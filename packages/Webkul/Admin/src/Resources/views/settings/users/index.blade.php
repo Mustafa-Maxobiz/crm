@@ -368,29 +368,48 @@
                             {!! view_render_event('admin.settings.users.index.form.role_id.before') !!}
 
                             <div class="flex gap-4">
-                                <!-- Role -->
+                                <!-- Roles (multi) -->
                                 <x-admin::form.control-group class="flex-1">
                                     <x-admin::form.control-group.label class="required">
                                         @lang('admin::app.settings.users.index.create.role')
                                     </x-admin::form.control-group.label>
 
-                                    <x-admin::form.control-group.control
-                                        type="select"
-                                        name="role_id"
-                                        rules="required"
-                                        v-model="user.role_id"
-                                        :label="trans('admin::app.settings.users.index.create.role')"
-                                    >
-                                        <option
+                                    <div class="flex max-h-40 flex-col gap-2 overflow-y-auto rounded-md border border-gray-200 p-3 dark:border-gray-700">
+                                        <label
                                             v-for="role in roles"
                                             :key="role.id"
-                                            :value="role.id"
+                                            class="flex cursor-pointer items-center gap-2 text-sm text-gray-800 dark:text-gray-200"
                                         >
-                                            @{{ role.name }}
-                                        </option>
-                                    </x-admin::form.control-group.control>
+                                            <input
+                                                type="checkbox"
+                                                :value="role.id"
+                                                v-model="user.role_ids"
+                                                class="rounded border-gray-300 text-brandColor"
+                                            />
+                                            <span>@{{ role.name }}</span>
+                                        </label>
+                                    </div>
 
-                                    <x-admin::form.control-group.error control-name="role_id" />
+                                    <input
+                                        type="hidden"
+                                        name="role_id"
+                                        :value="user.role_ids?.[0] || ''"
+                                    />
+
+                                    <template v-for="(roleId, index) in user.role_ids" :key="'role-hidden-' + roleId">
+                                        <input
+                                            type="hidden"
+                                            :name="'role_ids[' + index + ']'"
+                                            :value="roleId"
+                                        />
+                                    </template>
+
+                                    <p
+                                        v-if="! user.role_ids?.length"
+                                        class="mt-1 text-xs text-red-600"
+                                    >
+                                        Select at least one role.
+                                    </p>
                                 </x-admin::form.control-group>
 
                                 <!-- Permission -->
@@ -610,6 +629,7 @@
 
                         user: {
                             view_permission: 'global',
+                            role_ids: [],
                             source_ids: [],
                             organization_ids: [],
                         },
@@ -636,7 +656,9 @@
                     },
 
                     selectedRole() {
-                        return this.roles.find(role => role.id == this.user.role_id);
+                        const roleId = this.user.role_ids?.[0] || this.user.role_id;
+
+                        return this.roles.find(role => role.id == roleId);
                     },
 
                     selectedRoleHasSources() {
@@ -669,8 +691,12 @@
                 },
 
                 watch: {
-                    'user.role_id'() {
-                        this.pruneUserAssignments();
+                    'user.role_ids': {
+                        deep: true,
+                        handler() {
+                            this.user.role_id = this.user.role_ids?.[0] || null;
+                            this.pruneUserAssignments();
+                        },
                     },
                 },
 
@@ -738,6 +764,8 @@
                     openModal() {
                         this.user = {
                             view_permission: 'global',
+                            role_ids: [],
+                            role_id: null,
                             groups: [],
                             source_ids: [],
                             organization_ids: [],
@@ -789,6 +817,12 @@
 
                                 this.user.source_ids = (this.user.sources || []).map(source => source.id);
                                 this.user.organization_ids = (this.user.organizations || []).map(organization => organization.id);
+
+                                this.user.role_ids = (this.user.role_ids || []).map(id => Number(id));
+
+                                if (! this.user.role_ids.length && this.user.role_id) {
+                                    this.user.role_ids = [Number(this.user.role_id)];
+                                }
 
                                 this.pruneUserAssignments();
 

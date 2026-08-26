@@ -71,6 +71,8 @@ class LeadDataGrid extends DataGrid
                 'organizations.name as company_name',
                 'leads.description',
                 'leads.source_link',
+                'leads.linkedin_profile_id',
+                'linkedin_profiles.name as linkedin_profile_name',
                 'leads.status',
                 'leads.lead_value',
                 'leads.next_followup_date',
@@ -84,7 +86,10 @@ class LeadDataGrid extends DataGrid
                 'leads.lead_source_id',
                 'leads.lead_type_id',
                 'leads.lead_pipeline_stage_id',
+                'leads.lead_owner_id',
                 'lead_pipeline_stages.name as stage',
+                'lead_pipeline_stages.code as stage_code',
+                'lead_pipeline_stages.sort_order as stage_sort_order',
                 'lead_tags.tag_id as tag_id',
                 'users.id as user_id',
                 'users.name as user_name',
@@ -126,6 +131,7 @@ class LeadDataGrid extends DataGrid
             ->leftJoin('lead_types', 'leads.lead_type_id', '=', 'lead_types.id')
             ->leftJoin('lead_pipeline_stages', 'leads.lead_pipeline_stage_id', '=', 'lead_pipeline_stages.id')
             ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
+            ->leftJoin('linkedin_profiles', 'leads.linkedin_profile_id', '=', 'linkedin_profiles.id')
             ->leftJoin('lead_pipelines', 'leads.lead_pipeline_id', '=', 'lead_pipelines.id')
             ->leftJoin('lead_tags', 'leads.id', '=', 'lead_tags.lead_id')
             ->leftJoin('tags', 'tags.id', '=', 'lead_tags.tag_id')
@@ -171,6 +177,7 @@ class LeadDataGrid extends DataGrid
 
         if (! app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin()) {
             app(\Webkul\Lead\Services\SourceAccessService::class)->applyLeadOwnerVisibilityTableScope($queryBuilder);
+            app(\Webkul\Lead\Services\SourceAccessService::class)->applyNonTransferredOwnerTableScope($queryBuilder);
         }
 
         app(\Webkul\Lead\Services\SourceAccessService::class)->applyLeadTableScope($queryBuilder);
@@ -181,6 +188,7 @@ class LeadDataGrid extends DataGrid
         $this->addFilter('organization_id', 'leads.organization_id');
         $this->addFilter('description', 'leads.description');
         $this->addFilter('source_link', 'leads.source_link');
+        $this->addFilter('linkedin_profile_id', 'leads.linkedin_profile_id');
         $this->addFilter('user', 'leads.user_id');
         $this->addFilter('lead_source_name', 'lead_sources.id');
         $this->addFilter('lead_source_search', 'lead_sources.name');
@@ -196,7 +204,6 @@ class LeadDataGrid extends DataGrid
         $this->addFilter('followup_count', 'leads.followup_count');
         $this->addFilter('last_followup_date', 'leads.last_followup_date');
         $this->addFilter('lead_disqualification_reason', 'leads.lead_disqualification_reason');
-        $this->addFilter('created_at', 'leads.created_at');
 
         return $queryBuilder;
     }
@@ -226,6 +233,42 @@ class LeadDataGrid extends DataGrid
             }
         }
 
+        if (! empty($requestedFilters['all'])) {
+            $this->queryBuilder->where(function ($scopeQueryBuilder) use ($requestedFilters) {
+                foreach ((array) $requestedFilters['all'] as $value) {
+                    $value = trim((string) $value);
+
+                    if ($value === '') {
+                        continue;
+                    }
+
+                    $like = '%'.\Webkul\Contact\Support\ContactPhoneCollection::escapeLike($value).'%';
+                    $digits = \Webkul\Contact\Support\ContactPhoneCollection::compareKey($value);
+
+                    $scopeQueryBuilder->orWhere(function ($inner) use ($value, $like, $digits) {
+                        collect($this->columns)
+                            ->filter(fn ($column) => $column->getSearchable() && ! in_array($column->getType(), [
+                                \Webkul\DataGrid\Enums\ColumnTypeEnum::BOOLEAN->value,
+                                \Webkul\DataGrid\Enums\ColumnTypeEnum::AGGREGATE->value,
+                            ]))
+                            ->each(fn ($column) => $inner->orWhere($column->getColumnName(), 'LIKE', $like));
+
+                        $inner->orWhere('persons.contact_numbers', 'like', $like);
+
+                        if ($digits && strlen($digits) >= 7 && $digits !== $value) {
+                            $inner->orWhere(
+                                'persons.contact_numbers',
+                                'like',
+                                '%'.\Webkul\Contact\Support\ContactPhoneCollection::escapeLike($digits).'%'
+                            );
+                        }
+                    });
+                }
+            });
+
+            unset($requestedFilters['all']);
+        }
+
         return parent::processRequestedFilters($requestedFilters);
     }
 
@@ -243,7 +286,7 @@ class LeadDataGrid extends DataGrid
             'filterable' => true,
         ]);
 
-        if (lead_variant() === 'sdr') {
+        if (lead_variant() !== 'main') {
             $this->addColumn([
                 'index'      => 'title',
                 'label'      => trans('admin::app.leads.index.datagrid.subject'),
@@ -325,6 +368,20 @@ class LeadDataGrid extends DataGrid
             'filterable_options' => $this->sourceRepository->getRootDropdownOptions(),
         ]);
 
+        if (lead_variant() === 'lge') {
+            $this->addColumn([
+                'index'              => 'linkedin_profile_id',
+                'label'              => 'LinkedIn Profile',
+                'type'               => 'string',
+                'searchable'         => false,
+                'sortable'           => true,
+                'filterable'         => true,
+                'filterable_type'    => 'dropdown',
+                'filterable_options' => app(\Webkul\Lead\Services\LinkedInProfileAccessService::class)->getFilterOptionsWithHistoricalLeads(),
+                'closure'            => fn ($row) => $row->linkedin_profile_name ?: '--',
+            ]);
+        }
+
         $this->addColumn([
             'index'              => 'lead_type_name',
             'label'              => trans('admin::app.leads.index.datagrid.lead-type'),
@@ -343,7 +400,7 @@ class LeadDataGrid extends DataGrid
             'searchable' => false,
             'sortable'   => true,
             'filterable' => true,
-            'visibility' => lead_variant() !== 'sdr',
+            'visibility' => lead_variant() === 'main',
         ]);
 
         $this->addColumn([
@@ -393,7 +450,9 @@ class LeadDataGrid extends DataGrid
 
         $this->addColumn([
             'index'      => 'product_names',
-            'label'      => trans('admin::app.leads.index.datagrid.products'),
+            'label'      => lead_variant() === 'sdr'
+                ? trans('admin::app.leads.index.datagrid.packages')
+                : trans('admin::app.leads.index.datagrid.products'),
             'type'       => 'string',
             'searchable' => false,
             'sortable'   => false,
@@ -455,29 +514,32 @@ class LeadDataGrid extends DataGrid
             'sortable'   => false,
             'filterable' => false,
             'closure'    => function ($row) {
-                $numbers = collect(json_decode($row->contact_numbers ?? '[]', true) ?? [])
-                    ->pluck('value')
-                    ->filter()
-                    ->values();
+                $numbers = collect(\Webkul\Contact\Support\ContactPhoneCollection::values($row->contact_numbers ?? []));
 
                 if ($numbers->isEmpty()) {
                     return '--';
                 }
 
-                $phone = e($numbers->first());
-                $allPhones = e($numbers->join(', '));
+                $copyTitle = e(trans('admin::app.leads.index.datagrid.copy-phone'));
 
-                return '<span class="inline-flex items-center gap-1.5 whitespace-nowrap">'
-                    .'<span title="'.$allPhones.'">'.$phone.'</span>'
-                    .'<button '
-                    .'type="button" '
-                    .'class="inline-flex h-6 shrink-0 items-center justify-center rounded border border-gray-200 px-1.5 text-xs font-semibold text-gray-600 transition-all hover:border-brandColor hover:text-brandColor dark:border-gray-700 dark:text-gray-300" '
-                    .'title="'.e(trans('admin::app.leads.index.datagrid.copy-phone')).'" '
-                    .'onclick="event.stopPropagation(); (window.copyLeadPhone || function () {})(this, \''.$phone.'\')"'
-                    .'>'
-                    .'Copy'
-                    .'</button>'
-                    .'</span>';
+                $rows = $numbers->map(function ($phone) use ($copyTitle) {
+                    $safePhone = e($phone);
+                    $jsPhone = json_encode($phone, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_UNESCAPED_SLASHES);
+
+                    return '<div class="flex items-center gap-1.5">'
+                        .'<span class="min-w-0 break-all">'.$safePhone.'</span>'
+                        .'<button '
+                        .'type="button" '
+                        .'class="inline-flex h-6 shrink-0 items-center justify-center rounded border border-gray-200 px-1.5 text-xs font-semibold text-gray-600 transition-all hover:border-brandColor hover:text-brandColor dark:border-gray-700 dark:text-gray-300" '
+                        .'title="'.$copyTitle.'" '
+                        ."onclick='event.stopPropagation(); (window.copyLeadPhone || function () {})(this, {$jsPhone})'"
+                        .'>'
+                        .'Copy'
+                        .'</button>'
+                        .'</div>';
+                })->implode('');
+
+                return '<div class="flex flex-col gap-1">'.$rows.'</div>';
             },
         ]);
 
@@ -542,22 +604,6 @@ class LeadDataGrid extends DataGrid
             },
         ]);
 
-        $this->addColumn([
-            'index'           => 'created_at',
-            'label'           => trans('admin::app.leads.index.datagrid.created-at'),
-            'type'            => 'date',
-            'searchable'      => false,
-            'sortable'        => true,
-            'filterable'      => true,
-            'filterable_type' => 'date_range',
-            'closure'         => function ($row) {
-                if (! $row->created_at) {
-                    return '--';
-                }
-
-                return core()->formatDate($row->created_at);
-            },
-        ]);
     }
 
     /**
@@ -610,22 +656,26 @@ class LeadDataGrid extends DataGrid
      */
     public function prepareMassActions(): void
     {
-        $this->addMassAction([
-            'icon'   => 'icon-delete',
-            'title'  => trans('admin::app.leads.index.datagrid.mass-delete'),
-            'method' => 'POST',
-            'url'    => lead_route('mass_delete'),
-        ]);
+        if (bouncer()->hasPermission(lead_permission('delete'))) {
+            $this->addMassAction([
+                'icon'   => 'icon-delete',
+                'title'  => trans('admin::app.leads.index.datagrid.mass-delete'),
+                'method' => 'POST',
+                'url'    => lead_route('mass_delete'),
+            ]);
+        }
 
-        $this->addMassAction([
-            'title'   => trans('admin::app.leads.index.datagrid.mass-update'),
-            'url'     => lead_route('mass_update'),
-            'method'  => 'POST',
-            'options' => $this->getAccessiblePipelineStages()->map(fn ($stage) => [
-                'label' => $stage->name,
-                'value' => $stage->id,
-            ])->values()->all(),
-        ]);
+        if (bouncer()->hasPermission(lead_permission('edit'))) {
+            $this->addMassAction([
+                'title'   => trans('admin::app.leads.index.datagrid.mass-update'),
+                'url'     => lead_route('mass_update'),
+                'method'  => 'POST',
+                'options' => $this->getAccessiblePipelineStages()->map(fn ($stage) => [
+                    'label' => $stage->name,
+                    'value' => $stage->id,
+                ])->values()->all(),
+            ]);
+        }
     }
 
     /**
@@ -633,8 +683,22 @@ class LeadDataGrid extends DataGrid
      */
     protected function getAccessiblePipelineStages()
     {
-        return app(\Webkul\Lead\Services\SourceAccessService::class)
+        $stages = app(\Webkul\Lead\Services\SourceAccessService::class)
             ->filterAccessibleStages($this->pipeline->stages);
+
+        if (! in_array(lead_variant(), ['sdr', 'lge'], true)) {
+            return $stages;
+        }
+
+        $meetingStage = $this->pipeline->stages->firstWhere('code', 'meeting');
+
+        if (! $meetingStage) {
+            return $stages;
+        }
+
+        return $stages
+            ->filter(fn ($stage) => (int) $stage->sort_order <= (int) $meetingStage->sort_order)
+            ->values();
     }
 
     /**

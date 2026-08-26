@@ -69,7 +69,8 @@
                         applied,
                         selectAll,
                         sort,
-                        performAction
+                        performAction,
+                        gridRowStyle
                     }">
                         <slot
                             name="body"
@@ -79,6 +80,7 @@
                             :select-all="selectAll"
                             :sort="sort"
                             :perform-action="performAction"
+                            :grid-row-style="gridRowStyle"
                         >
                         </slot>
                     </template>
@@ -276,6 +278,14 @@
                                 records,
                                 meta
                             } = response.data;
+
+                            if (meta?.current_page) {
+                                this.applied.pagination.page = meta.current_page;
+                            }
+
+                            if (meta?.per_page) {
+                                this.applied.pagination.perPage = meta.per_page;
+                            }
 
                             this.available.id = id;
 

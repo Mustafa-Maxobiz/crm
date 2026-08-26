@@ -17,6 +17,8 @@
         || bouncer()->hasPermission('leads.edit')
         || bouncer()->hasPermission('sdr_leads.create')
         || bouncer()->hasPermission('sdr_leads.edit')
+        || bouncer()->hasPermission('lge_leads.create')
+        || bouncer()->hasPermission('lge_leads.edit')
         || app(\Webkul\Lead\Services\SourceAccessService::class)->isSdrUser();
 @endphp
 

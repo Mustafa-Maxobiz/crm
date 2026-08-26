@@ -55,6 +55,53 @@
             </div>
         </v-dark>
 
+        @php
+            $headerUser = auth()->guard('user')->user();
+            $activeRoleService = app(\Webkul\User\Services\ActiveRoleService::class);
+            $activeRole = $activeRoleService->getActiveRole($headerUser);
+            $assignedRoles = $activeRoleService->assignedRoles($headerUser);
+        @endphp
+
+        @if ($headerUser && $assignedRoles->count() > 1)
+            <x-admin::dropdown position="bottom-{{ in_array(app()->getLocale(), ['fa', 'ar']) ? 'left' : 'right' }}">
+                <x-slot:toggle>
+                    <button
+                        type="button"
+                        class="flex max-w-[220px] items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1.5 text-sm text-gray-800 transition-all hover:bg-gray-100 dark:border-gray-700 dark:text-white dark:hover:bg-gray-950"
+                    >
+                        <span class="truncate">
+                            {{ $headerUser->name }} — {{ $activeRole?->name ?? 'Role' }}
+                        </span>
+                        <span class="icon-down-arrow text-lg"></span>
+                    </button>
+                </x-slot:toggle>
+
+                <x-slot:content class="mt-2 !p-0">
+                    <div class="grid gap-1 py-2">
+                        @foreach ($assignedRoles as $roleOption)
+                            <form
+                                method="POST"
+                                action="{{ route('admin.session.role.switch') }}"
+                            >
+                                @csrf
+                                <input type="hidden" name="role_id" value="{{ $roleOption->id }}" />
+                                <button
+                                    type="submit"
+                                    class="block w-full px-5 py-2 text-left text-sm {{ (int) $activeRole?->id === (int) $roleOption->id ? 'bg-gray-100 font-semibold dark:bg-gray-950' : 'hover:bg-gray-100 dark:hover:bg-gray-950' }} text-gray-800 dark:text-white"
+                                >
+                                    {{ $headerUser->name }} — {{ $roleOption->name }}
+                                </button>
+                            </form>
+                        @endforeach
+                    </div>
+                </x-slot:content>
+            </x-admin::dropdown>
+        @elseif ($headerUser && $activeRole)
+            <div class="hidden max-w-[220px] truncate rounded-md px-2.5 py-1.5 text-sm text-gray-700 dark:text-gray-200 md:block">
+                {{ $headerUser->name }} — {{ $activeRole->name }}
+            </div>
+        @endif
+
         <div class="md:hidden">
             <!-- Quick Creation Bar -->
             @include('admin::components.layouts.header.quick-creation')
@@ -209,11 +256,19 @@
 
                             <div class="min-w-0 flex-1">
                                 <a
+                                    v-if="notification.edit_url"
                                     class="block truncate text-sm font-semibold text-gray-800 hover:text-brandColor dark:text-white"
                                     :href="notification.edit_url"
                                 >
                                     @{{ notification.title || capitalize(notification.type) }}
                                 </a>
+
+                                <span
+                                    v-else
+                                    class="block truncate text-sm font-semibold text-gray-800 dark:text-white"
+                                >
+                                    @{{ notification.title || capitalize(notification.type) }}
+                                </span>
 
                                 <p
                                     class="mt-1 truncate text-xs text-gray-600 dark:text-gray-300"

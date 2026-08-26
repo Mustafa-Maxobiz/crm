@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Webkul\Admin\Traits\ProvideDropdownOptions;
 use Webkul\DataGrid\DataGrid;
 use Webkul\Lead\Repositories\LeadRepository;
+use Webkul\Lead\Services\SourceAccessService;
 use Webkul\User\Repositories\UserRepository;
 
 class ActivityDataGrid extends DataGrid
@@ -132,9 +133,23 @@ class ActivityDataGrid extends DataGrid
                     return "<span class='text-gray-800 dark:text-gray-300'>N/A</span>";
                 }
 
+                static $leadAccessCache = [];
+
+                if (! array_key_exists($row->lead_id, $leadAccessCache)) {
+                    $lead = app(LeadRepository::class)->find($row->lead_id);
+
+                    $leadAccessCache[$row->lead_id] = $lead
+                        ? app(SourceAccessService::class)->canAccessLead($lead)
+                        : false;
+                }
+
+                if (! $leadAccessCache[$row->lead_id]) {
+                    return "<span class='text-gray-800 dark:text-gray-300'>".e($row->lead_title).'</span>';
+                }
+
                 $route = urldecode(route('admin.leads.view', $row->lead_id));
 
-                return "<a class='text-brandColor hover:underline' target='_blank' href='".$route."'>".$row->lead_title.'</a>';
+                return "<a class='text-brandColor hover:underline' target='_blank' href='".$route."'>".e($row->lead_title).'</a>';
             },
         ]);
 

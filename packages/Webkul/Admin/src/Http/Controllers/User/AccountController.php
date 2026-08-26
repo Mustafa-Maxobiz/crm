@@ -63,7 +63,7 @@ class AccountController extends Controller
 
         $isPasswordChanged = false;
 
-        if (! $data['password']) {
+        if (empty($data['password'])) {
             unset($data['password']);
         } else {
             $isPasswordChanged = true;

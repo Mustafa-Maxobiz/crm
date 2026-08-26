@@ -8,6 +8,7 @@ use Webkul\Admin\Http\Controllers\Settings\EmailTemplateController;
 use Webkul\Admin\Http\Controllers\Settings\FollowupScheduleController;
 use Webkul\Admin\Http\Controllers\Settings\GroupController;
 use Webkul\Admin\Http\Controllers\Settings\LeadAttributeOptionController;
+use Webkul\Admin\Http\Controllers\Settings\LinkedInProfileController;
 use Webkul\Admin\Http\Controllers\Settings\LocationController;
 use Webkul\Admin\Http\Controllers\Settings\Marketing\CampaignsController;
 use Webkul\Admin\Http\Controllers\Settings\Marketing\EventController;
@@ -96,6 +97,8 @@ Route::prefix('settings')->group(function () {
         Route::put('edit/{id}', 'update')->name('admin.settings.services_offered.update');
 
         Route::delete('{id}', 'destroy')->name('admin.settings.services_offered.delete');
+
+        Route::post('{id}/toggle-visibility', 'toggleVisibility')->name('admin.settings.services_offered.toggle_visibility');
     });
 
     /**
@@ -186,6 +189,18 @@ Route::prefix('settings')->group(function () {
         Route::put('edit/{id}', 'update')->name('admin.settings.webhooks.update');
 
         Route::delete('{id}', 'destroy')->name('admin.settings.webhooks.delete');
+    });
+
+    Route::controller(LinkedInProfileController::class)->prefix('linkedin-profiles')->group(function () {
+        Route::get('', 'index')->name('admin.settings.linkedin_profiles.index');
+
+        Route::post('create', 'store')->name('admin.settings.linkedin_profiles.store');
+
+        Route::get('edit/{id}', 'edit')->name('admin.settings.linkedin_profiles.edit');
+
+        Route::put('edit/{id}', 'update')->name('admin.settings.linkedin_profiles.update');
+
+        Route::delete('{id}', 'destroy')->name('admin.settings.linkedin_profiles.delete');
     });
 
     /**

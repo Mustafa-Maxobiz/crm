@@ -36,6 +36,13 @@ class ServiceDataGrid extends DataGrid
                 'services.id',
                 'services.name',
                 'services.sort_order',
+                'services.is_show',
+                DB::raw('(
+                    SELECT GROUP_CONCAT(users.name ORDER BY users.name SEPARATOR ", ")
+                    FROM service_user
+                    INNER JOIN users ON users.id = service_user.user_id
+                    WHERE service_user.service_id = services.id
+                ) as eligible_owners'),
             )
             ->orderBy('services.sort_order')
             ->orderBy('services.id');
@@ -74,6 +81,24 @@ class ServiceDataGrid extends DataGrid
             'type'       => 'string',
             'filterable' => false,
             'sortable'   => true,
+        ]);
+
+        $this->addColumn([
+            'index'      => 'is_show',
+            'label'      => 'Visible',
+            'type'       => 'string',
+            'filterable' => false,
+            'sortable'   => true,
+        ]);
+
+        $this->addColumn([
+            'index'      => 'eligible_owners',
+            'label'      => 'Eligible Owners',
+            'type'       => 'string',
+            'filterable' => false,
+            'sortable'   => false,
+            'visibility' => true,
+            'closure'    => fn ($row) => $row->eligible_owners ?: '--',
         ]);
     }
 

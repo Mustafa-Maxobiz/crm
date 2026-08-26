@@ -13,6 +13,7 @@ use Webkul\Admin\Http\Controllers\Controller;
 use Webkul\Attribute\Repositories\AttributeOptionRepository;
 use Webkul\Attribute\Repositories\AttributeRepository;
 use Webkul\Lead\Repositories\ServiceRepository;
+use Webkul\Lead\Services\MeetingHandoffService;
 
 class LeadAttributeOptionController extends Controller
 {
@@ -40,6 +41,7 @@ class LeadAttributeOptionController extends Controller
         protected AttributeRepository $attributeRepository,
         protected AttributeOptionRepository $attributeOptionRepository,
         protected ServiceRepository $serviceRepository,
+        protected MeetingHandoffService $meetingHandoffService,
     ) {}
 
     /**
@@ -80,6 +82,10 @@ class LeadAttributeOptionController extends Controller
                 '__ID__',
                 route($this->routePrefix().'.update', ['id' => 999999999])
             ),
+            'assignableMeetingOwners' => $this->usesServicesTable()
+                ? $this->meetingHandoffService->getAllActiveMeetingOwners()
+                : [],
+            'showServiceOwnerAssignment' => $this->usesServicesTable(),
         ]);
     }
 
@@ -139,8 +145,20 @@ class LeadAttributeOptionController extends Controller
     public function edit(int $id): JsonResponse
     {
         if ($this->usesServicesTable()) {
+            $service = $this->serviceRepository
+                ->getModel()
+                ->newQuery()
+                ->with('users')
+                ->findOrFail($id);
+
             return new JsonResponse([
-                'data' => $this->serviceRepository->findOrFail($id),
+                'data' => [
+                    'id'         => $service->id,
+                    'name'       => $service->name,
+                    'sort_order' => $service->sort_order,
+                    'is_show'    => (bool) $service->is_show,
+                    'user_ids'   => $service->users->pluck('id')->map(fn ($uid) => (int) $uid)->values(),
+                ],
             ]);
         }
 
@@ -262,7 +280,12 @@ class LeadAttributeOptionController extends Controller
                 Rule::unique('services', 'name'),
             ],
             'sort_order' => ['nullable', 'integer', 'min:1'],
+            'is_show'    => ['nullable', 'boolean'],
+            'user_ids'   => ['nullable', 'array'],
+            'user_ids.*' => ['integer', 'distinct', 'exists:users,id'],
         ]);
+
+        $userIds = $this->validatedServiceUserIds();
 
         Event::dispatch('settings.'.$this->resourceKey().'.create.before');
 
@@ -270,13 +293,20 @@ class LeadAttributeOptionController extends Controller
             ? (int) request('sort_order')
             : ((int) DB::table('services')->max('sort_order') + 1);
 
-        $service = DB::transaction(function () use ($sortOrder) {
+        $isShow = (bool) request('is_show', false);
+
+        $service = DB::transaction(function () use ($sortOrder, $userIds, $isShow) {
             $this->swapServiceSortOrder($sortOrder);
 
-            return $this->serviceRepository->create([
+            $service = $this->serviceRepository->create([
                 'name'       => request('name'),
                 'sort_order' => $sortOrder,
+                'is_show'    => $isShow,
             ]);
+
+            $service->users()->sync($userIds);
+
+            return $service;
         });
 
         Event::dispatch('settings.'.$this->resourceKey().'.create.after', $service);
@@ -298,7 +328,12 @@ class LeadAttributeOptionController extends Controller
                 Rule::unique('services', 'name')->ignore($service->id),
             ],
             'sort_order' => ['nullable', 'integer', 'min:1'],
+            'is_show'    => ['nullable', 'boolean'],
+            'user_ids'   => ['nullable', 'array'],
+            'user_ids.*' => ['integer', 'distinct', 'exists:users,id'],
         ]);
+
+        $userIds = $this->validatedServiceUserIds();
 
         Event::dispatch('settings.'.$this->resourceKey().'.update.before', $id);
 
@@ -307,8 +342,9 @@ class LeadAttributeOptionController extends Controller
             : (int) $service->sort_order;
 
         $oldSortOrder = (int) $service->sort_order;
+        $isShow = (bool) request('is_show', $service->is_show);
 
-        DB::transaction(function () use ($service, $id, $newSortOrder, $oldSortOrder) {
+        DB::transaction(function () use ($service, $id, $newSortOrder, $oldSortOrder, $userIds, $isShow) {
             if ($newSortOrder !== $oldSortOrder) {
                 $this->swapServiceSortOrder($newSortOrder, $id, $oldSortOrder);
             }
@@ -316,7 +352,10 @@ class LeadAttributeOptionController extends Controller
             $this->serviceRepository->update([
                 'name'       => request('name'),
                 'sort_order' => $newSortOrder,
+                'is_show'    => $isShow,
             ], $id);
+
+            $this->serviceRepository->find($id)->users()->sync($userIds);
         });
 
         $service = $this->serviceRepository->find($id);
@@ -326,6 +365,41 @@ class LeadAttributeOptionController extends Controller
         return new JsonResponse([
             'data'    => $service,
             'message' => trans($resource['lang'].'.index.update-success'),
+        ]);
+    }
+
+    /**
+     * @return array<int>
+     */
+    protected function validatedServiceUserIds(): array
+    {
+        $userIds = collect(request('user_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        foreach ($userIds as $userId) {
+            if (! $this->meetingHandoffService->isActiveMeetingOwnerId($userId)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'user_ids' => ['Each selected user must be an active Admin or Lead Closer user.'],
+                ]);
+            }
+        }
+
+        return $userIds;
+    }
+
+    public function toggleVisibility(int $id): JsonResponse
+    {
+        $service = $this->serviceRepository->findOrFail($id);
+
+        $service->update(['is_show' => ! $service->is_show]);
+
+        return new JsonResponse([
+            'is_show' => (bool) $service->is_show,
+            'message' => $service->is_show ? 'Service is now visible in dropdowns.' : 'Service is now hidden from dropdowns.',
         ]);
     }
 

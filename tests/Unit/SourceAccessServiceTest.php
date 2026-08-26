@@ -5,17 +5,37 @@ use Webkul\Lead\Services\SourceAccessService;
 
 function mockNoChildSources(): void
 {
+    $parentBuilder = \Mockery::mock();
+
+    $parentBuilder->shouldReceive('whereIn')
+        ->with(\Mockery::anyOf('parent_source_id', 'source_id'), \Mockery::type('array'))
+        ->andReturnSelf();
+
+    $parentBuilder->shouldReceive('pluck')
+        ->with(\Mockery::anyOf('source_id', 'parent_source_id'))
+        ->andReturn(collect());
+
+    $legacyBuilder = \Mockery::mock();
+
+    $legacyBuilder->shouldReceive('whereIn')
+        ->with(\Mockery::anyOf('parent_id', 'id'), \Mockery::type('array'))
+        ->andReturnSelf();
+
+    $legacyBuilder->shouldReceive('whereNotNull')
+        ->with('parent_id')
+        ->andReturnSelf();
+
+    $legacyBuilder->shouldReceive('pluck')
+        ->with(\Mockery::anyOf('id', 'parent_id'))
+        ->andReturn(collect());
+
     \Illuminate\Support\Facades\DB::shouldReceive('table')
         ->with('lead_source_parents')
-        ->andReturnSelf();
+        ->andReturn($parentBuilder);
 
-    \Illuminate\Support\Facades\DB::shouldReceive('whereIn')
-        ->with('parent_source_id', \Mockery::type('array'))
-        ->andReturnSelf();
-
-    \Illuminate\Support\Facades\DB::shouldReceive('pluck')
-        ->with('source_id')
-        ->andReturn(collect());
+    \Illuminate\Support\Facades\DB::shouldReceive('table')
+        ->with('lead_sources')
+        ->andReturn($legacyBuilder);
 }
 
 beforeEach(function () {

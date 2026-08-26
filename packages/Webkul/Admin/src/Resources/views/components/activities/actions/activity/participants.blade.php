@@ -8,13 +8,16 @@
 @pushOnce('scripts')
     <script type="text/x-template" id="v-activity-participants-template">
         <!-- Search Button -->
-        <div class="relative">
+        <div
+            class="relative"
+            ref="participantPicker"
+        >
             <div 
                 class="relative rounded border border-gray-200 px-2 py-1 hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:hover:border-gray-400" 
                 role="button"
             >
                 <ul class="flex flex-wrap items-center gap-1">
-                    <template v-for="userType in ['users', 'persons']">
+                    <template v-for="userType in participantTypes">
                         {!! view_render_event('admin.components.activities.actions.activity.participants.user_type.before') !!}
 
                         <li
@@ -53,6 +56,7 @@
                             v-model="searchTerm"
                             @input="queueSearch"
                             @keyup.enter="searchNow"
+                            @focus="openDefaultResults"
                         />
 
                         {!! view_render_event('admin.components.activities.actions.activity.participants.search_term.after') !!}
@@ -70,7 +74,8 @@
                     <template v-else>
                         <span
                             class="absolute right-1.5 top-1.5 text-2xl"
-                            :class="[searchTerm.length >= 2 ? 'icon-up-arrow' : 'icon-down-arrow']"
+                            :class="[dropdownOpen ? 'icon-up-arrow' : 'icon-down-arrow']"
+                            @click.stop="toggleDropdown"
                         ></span>
                     </template>
                 </div>
@@ -80,14 +85,15 @@
 
             <!-- Search Dropdown -->
             <div
-                class="absolute z-10 w-full rounded bg-white shadow-[0px_10px_20px_0px_#0000001F] dark:bg-gray-900"
-                v-if="searchTerm.length >= 2"
+                class="w-full rounded bg-white shadow-[0px_10px_20px_0px_#0000001F] dark:bg-gray-900"
+                :class="showAllUsers ? 'relative mt-1 max-h-52 overflow-y-auto border border-gray-200 dark:border-gray-800' : 'absolute z-10'"
+                v-if="dropdownOpen"
             >
                 <ul class="flex flex-col gap-1 p-2">
                     <!-- Users -->
                     <li
                         class="flex flex-col gap-2"
-                        v-for="userType in ['users', 'persons']"
+                        v-for="userType in participantTypes"
                     >
                         {!! view_render_event('admin.components.activities.actions.activity.participants.dropdown.user_type.before') !!}
 
@@ -120,7 +126,10 @@
                                 v-for="user in searchedParticipants[userType]"
                                 @click="add(userType, user)"
                             >
-                                @{{ user.name }}
+                                <div class="flex items-center justify-between gap-3">
+                                    <span>@{{ user.name }}</span>
+                                    <span class="text-xs text-gray-500" v-if="user.email">@{{ user.email }}</span>
+                                </div>
                             </li>
                         </ul>
 
@@ -145,7 +154,22 @@
 
                         persons: [],
                     })
-                }
+                },
+
+                showAllUsers: {
+                    type: Boolean,
+                    default: false,
+                },
+
+                usersOnly: {
+                    type: Boolean,
+                    default: false,
+                },
+
+                userRoleNames: {
+                    type: Array,
+                    default: () => [],
+                },
             },
 
             data: function () {
@@ -159,6 +183,8 @@
                     searchTerm: '',
 
                     isPending: false,
+
+                    dropdownOpen: false,
 
                     debounceTimer: null,
 
@@ -184,44 +210,110 @@
                 }
             },
 
+            computed: {
+                participantTypes() {
+                    return this.usersOnly ? ['users'] : ['users', 'persons'];
+                },
+            },
+
             mounted() {
-                this.addedParticipants = this.participants;
+                this.addedParticipants = {
+                    users: [...(this.participants.users || [])],
+                    persons: this.usersOnly ? [] : [...(this.participants.persons || [])],
+                };
+
+                document.addEventListener('click', this.handleOutsideClick);
+
+                if (this.showAllUsers) {
+                    this.$nextTick(() => this.openDefaultResults());
+                }
             },
 
             beforeUnmount() {
                 clearTimeout(this.debounceTimer);
+                document.removeEventListener('click', this.handleOutsideClick);
             },
 
             methods: {
+                handleOutsideClick(event) {
+                    if (! this.dropdownOpen) {
+                        return;
+                    }
+
+                    if (this.$refs.participantPicker?.contains(event.target)) {
+                        return;
+                    }
+
+                    this.closeDropdown();
+                },
+
+                toggleDropdown() {
+                    if (this.dropdownOpen) {
+                        this.closeDropdown();
+
+                        return;
+                    }
+
+                    this.openDefaultResults();
+                },
+
+                closeDropdown() {
+                    this.dropdownOpen = false;
+                    this.searchTerm = '';
+                    this.isPending = false;
+                    clearTimeout(this.debounceTimer);
+                    this.searchedParticipants = {
+                        users: [],
+                        persons: [],
+                    };
+                },
+
                 queueSearch() {
                     clearTimeout(this.debounceTimer);
 
                     if (! (this.searchTerm || '').trim()) {
                         this.isPending = false;
-                        this.search('users');
-                        this.search('persons');
+                        this.openDefaultResults();
 
                         return;
                     }
 
+                    this.dropdownOpen = true;
                     this.isPending = true;
 
                     this.debounceTimer = setTimeout(() => {
                         this.isPending = false;
-                        this.search('users');
-                        this.search('persons');
+                        this.participantTypes.forEach(userType => this.search(userType));
                     }, this.debounceMs);
                 },
 
                 searchNow() {
                     clearTimeout(this.debounceTimer);
                     this.isPending = false;
-                    this.search('users');
-                    this.search('persons');
+                    this.dropdownOpen = true;
+                    this.participantTypes.forEach(userType => this.search(userType));
                 },
 
-                search(userType) {
-                    if (this.searchTerm.length <= 1) {
+                openDefaultResults() {
+                    this.dropdownOpen = true;
+
+                    if (this.showAllUsers && ! (this.searchTerm || '').trim()) {
+                        this.search('users', true);
+
+                        if (! this.usersOnly) {
+                            this.searchedParticipants.persons = [];
+                        }
+
+                        return;
+                    }
+
+                    if ((this.searchTerm || '').length >= 2) {
+                        this.participantTypes.forEach(userType => this.search(userType));
+                    }
+                },
+
+                search(userType, showAll = false) {
+                    if (! showAll && this.searchTerm.length <= 1) {
                         this.searchedParticipants[userType] = [];
 
                         this.isSearching[userType] = false;
@@ -235,8 +327,16 @@
                     
                     this.$axios.get(this.searchEnpoints[userType], {
                             params: {
-                                search: 'name:' + this.searchTerm,
-                                searchFields: 'name:like',
+                                ...(showAll ? {} : {
+                                    search: 'name:' + this.searchTerm,
+                                    searchFields: 'name:like',
+                                }),
+                                ...(userType === 'users' && this.showAllUsers ? {
+                                    active_only: 1,
+                                } : {}),
+                                ...(userType === 'users' && this.userRoleNames.length ? {
+                                    role_names: this.userRoleNames.join(','),
+                                } : {}),
                             }
                         })
                         .then (function(response) {
@@ -258,13 +358,14 @@
                 add(userType, participant) {
                     this.addedParticipants[userType].push(participant);
 
-                    this.searchTerm = '';
+                    if (this.showAllUsers) {
+                        this.searchTerm = '';
+                        this.openDefaultResults();
 
-                    this.searchedParticipants = {
-                        users: [],
-                        
-                        persons: [],
-                    };
+                        return;
+                    }
+
+                    this.closeDropdown();
                 },
 
                 remove(userType, participant) {
