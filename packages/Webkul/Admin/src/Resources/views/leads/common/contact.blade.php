@@ -41,6 +41,7 @@
                     :placeholder="trans('admin::app.leads.common.contact.name')"
                     @on-selected="addPerson"
                     :can-add-new="true"
+                    :create-url="'{{ route('admin.contacts.persons.store') }}'"
                 />
 
                 <x-admin::form.control-group.control
@@ -119,6 +120,7 @@
                 :value="person.organization"
                 :is-disabled="isCompanyDisabled"
                 :can-add-new="! isCompanyDisabled"
+                :create-url="'{{ route('admin.contacts.organizations.store') }}'"
                 @lookup-added="onCompanySelected"
                 @lookup-removed="onCompanyRemoved"
             ></v-lookup-component>

@@ -157,7 +157,12 @@
                 preload: {
                     type: Boolean,
                     default: false,
-                }
+                },
+
+                createUrl: {
+                    type: String,
+                    default: '',
+                },
             },
 
             emits: ['on-selected'],
@@ -261,7 +266,7 @@
                  */
                 selectItem(item) {
                     // If this is an "Add as New" item (empty ID with a name), create it via AJAX
-                    if (this.canAddNew && item.name && !item.id) {
+                    if (this.canAddNew && item.name && !item.id && this.createUrl) {
                         this.createNewItem(item.name);
                         return;
                     }
@@ -283,16 +288,19 @@
                  * @return {void}
                  */
                 createNewItem(name) {
+                    if (!this.createUrl) {
+                        console.error('No create URL provided for Add as New functionality');
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: 'Cannot create new item: No create URL configured'
+                        });
+                        return;
+                    }
+
                     this.isSearching = true;
 
-                    // Determine the create endpoint based on src URL
-                    // src is like "/admin/contacts/persons/search"
-                    // We need "/admin/contacts/persons" for POST
-                    const createUrl = this.src.replace('/search', '');
-
-                    this.$axios.post(createUrl, {
+                    this.$axios.post(this.createUrl, {
                             name: name,
-                            entity_type: this.src.includes('persons') ? 'persons' : 'organizations',
                         })
                         .then(response => {
                             const createdItem = response.data.data;

@@ -8,6 +8,7 @@
         :validations="'{{ $validations }}'"
         :value="{{ json_encode($lookUpEntityData)}}"
         can-add-new="{{ $canAddNew ?? false }}"
+        create-url="{{ $createUrl ?? '' }}"
         @lookup-added="handleLookupAdded"
         @lookup-removed="handleLookupRemoved"
     >
@@ -158,7 +159,7 @@
         app.component('v-lookup-component', {
             template: '#v-lookup-component-template',
 
-            props: ['validations', 'isDisabled', 'attribute', 'value', 'canAddNew'],
+            props: ['validations', 'isDisabled', 'attribute', 'value', 'canAddNew', 'createUrl'],
 
             emits: ['lookup-added', 'lookup-removed'],
 
@@ -317,7 +318,7 @@
 
                 handleResult(result) {
                     // If this is an "Add as New" result (empty ID with a name), create it via AJAX
-                    if (this.canAddNew && result.name && !result.id) {
+                    if (this.canAddNew && result.name && !result.id && this.createUrl) {
                         this.createNewEntity(result.name);
                         return;
                     }
@@ -339,27 +340,19 @@
                  * @return {void}
                  */
                 createNewEntity(name) {
-                    this.isSearching = true;
-
-                    // Determine the create endpoint
-                    // For persons: /admin/contacts/persons
-                    // For organizations: /admin/contacts/organizations
-                    const entityType = this.attribute.lookup_type;
-                    let createUrl = '';
-                    
-                    if (entityType === 'persons') {
-                        createUrl = '{{ route("admin.contacts.persons.store") }}';
-                    } else if (entityType === 'organizations') {
-                        createUrl = '{{ route("admin.contacts.organizations.store") }}';
-                    } else {
-                        console.error('Unknown lookup type:', entityType);
-                        this.isSearching = false;
+                    if (!this.createUrl) {
+                        console.error('No create URL provided for Add as New functionality');
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: 'Cannot create new entity: No create URL configured'
+                        });
                         return;
                     }
 
-                    this.$axios.post(createUrl, {
+                    this.isSearching = true;
+
+                    this.$axios.post(this.createUrl, {
                             name: name,
-                            entity_type: entityType,
                         })
                         .then(response => {
                             const createdItem = response.data.data;
