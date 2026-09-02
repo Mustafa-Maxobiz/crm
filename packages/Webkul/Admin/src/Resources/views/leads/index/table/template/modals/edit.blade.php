@@ -110,7 +110,7 @@
                                             :key="owner.id"
                                             :value="String(owner.id)"
                                         >
-                                            @{{ owner.name }}
+                                            @{{ owner.label || owner.name }}
                                         </option>
                                     </x-admin::form.control-group.control>
                                 </x-admin::form.control-group>

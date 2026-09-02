@@ -74,22 +74,37 @@
                                     {{-- Inline-editable single dropdown columns --}}
                                     <div
                                         v-else-if="inlineOptions[column.index]"
-                                        class="min-w-0"
-                                    >
-	                                        <select
-	                                            class="w-full cursor-pointer truncate rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-gray-800 outline-none transition-all hover:border-gray-300 focus:border-brandColor focus:ring-1 focus:ring-brandColor dark:text-gray-300 dark:hover:border-gray-600 dark:focus:border-brandColor"
-	                                            :value="record[inlineOptions[column.index].field]"
-	                                            :disabled="isStageEditingLocked(record, inlineOptions.stage?.items || [])"
-	                                            @change="inlineUpdate(record, column.index, $event.target.value)"
-	                                        >
-                                            <option value="">--</option>
-                                            <option
-                                                v-for="opt in inlineOptions[column.index].items"
-                                                :key="opt.value"
-                                                :value="opt.value"
-                                                v-text="opt.label"
-                                            ></option>
-                                        </select>
+	                                        class="min-w-0"
+	                                            :class="column.index === 'user' ? 'overflow-visible' : ''"
+	                                    >
+                                            <template v-if="column.index === 'user'">
+                                                <button
+                                                    type="button"
+                                                    class="flex w-full cursor-pointer items-center justify-between gap-1 truncate rounded border border-transparent bg-transparent px-1 py-0.5 text-left text-sm text-gray-800 outline-none transition-all hover:border-gray-300 focus:border-brandColor focus:ring-1 focus:ring-brandColor disabled:cursor-not-allowed disabled:opacity-70 dark:text-gray-300 dark:hover:border-gray-600 dark:focus:border-brandColor"
+                                                    :disabled="isStageEditingLocked(record, inlineOptions.stage?.items || []) || ! canChangeSalesOwner(record)"
+                                                    :ref="el => setSalesOwnerTriggerRef(record.id, el)"
+                                                    @click="toggleSalesOwnerDropdown(record, $event)"
+                                                >
+                                                    <span class="truncate">@{{ salesOwnerLabel(record) }}</span>
+                                                    <i class="icon-down-arrow shrink-0 text-lg"></i>
+                                                </button>
+                                            </template>
+
+		                                        <select
+                                                    v-else
+				                                            class="w-full cursor-pointer truncate rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-gray-800 outline-none transition-all hover:border-gray-300 focus:border-brandColor focus:ring-1 focus:ring-brandColor dark:text-gray-300 dark:hover:border-gray-600 dark:focus:border-brandColor"
+			                                            :value="record[inlineOptions[column.index].field]"
+		                                            :disabled="isStageEditingLocked(record, inlineOptions.stage?.items || [])"
+		                                            @change="inlineUpdate(record, column.index, $event.target.value)"
+		                                        >
+	                                            <option value="">--</option>
+	                                            <option
+	                                                v-for="opt in inlineOptions[column.index].items"
+		                                                :key="opt.value || opt.id"
+		                                                :value="opt.value || opt.id"
+		                                                v-text="opt.label || opt.name"
+	                                            ></option>
+	                                        </select>
                                     </div>
 
                                     {{-- Inline-editable Lead Value (main leads only) --}}
@@ -170,3 +185,38 @@
                     </template>
                 </template>
             </x-admin::datagrid>
+
+            <Teleport to="body">
+                <template v-if="openSalesOwnerRecord">
+                    <div
+                        class="fixed inset-0 z-[9998]"
+                        @mousedown.prevent="closeSalesOwnerDropdown"
+                    ></div>
+
+                    <div
+                        class="fixed z-[9999] overflow-hidden rounded-md border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
+                        :style="salesOwnerDropdownStyle"
+                        @mousedown.stop
+                        @click.stop
+                    >
+                        <ul class="max-h-[280px] overflow-y-auto py-1">
+                            <li
+                                v-if="salesOwnerOptionsLoading[openSalesOwnerRecord.id]"
+                                class="px-3 py-2 text-sm text-gray-500"
+                            >
+                                @lang('admin::app.leads.index.modals.loading')
+                            </li>
+
+                            <li
+                                v-for="owner in salesOwnerSelectOptions(openSalesOwnerRecord)"
+                                :key="owner.value || owner.id"
+                                class="cursor-pointer px-3 py-2 text-sm text-gray-800 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                                :class="Number(owner.value || owner.id) === Number(openSalesOwnerRecord.user_id || 0) ? 'font-semibold text-brandColor' : ''"
+                                @click="selectSalesOwner(openSalesOwnerRecord, owner.value || owner.id)"
+                            >
+                                @{{ owner.label || owner.name }}
+                            </li>
+                        </ul>
+                    </div>
+                </template>
+            </Teleport>

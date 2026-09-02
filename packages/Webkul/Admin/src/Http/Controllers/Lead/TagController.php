@@ -39,6 +39,13 @@ class TagController extends Controller
         Event::dispatch('leads.tag.create.before', $id);
 
         $lead = $this->leadRepository->findOrFail($id);
+
+        if (! $this->sourceAccessService->canEditLead($lead)) {
+            return response()->json([
+                'message' => trans('admin::app.leads.source-access-denied'),
+            ], 403);
+        }
+
         $tag = $this->tagRepository->findOrFail((int) request()->input('tag_id'));
 
         if ($response = $this->prepareNotAnsweredCallActivity($lead, $tag)) {
@@ -81,6 +88,13 @@ class TagController extends Controller
         Event::dispatch('leads.tag.create.before', $id);
 
         $lead = $this->leadRepository->findOrFail($id);
+
+        if (! $this->sourceAccessService->canEditLead($lead)) {
+            return response()->json([
+                'message' => trans('admin::app.leads.source-access-denied'),
+            ], 403);
+        }
+
         $newTagId = (int) request()->input('tag_id');
         $oldTagId = request()->filled('old_tag_id')
             ? (int) request()->input('old_tag_id')
@@ -138,6 +152,12 @@ class TagController extends Controller
 
         $lead = $this->leadRepository->find($leadId);
 
+        if (! $lead || ! $this->sourceAccessService->canEditLead($lead)) {
+            return response()->json([
+                'message' => trans('admin::app.leads.source-access-denied'),
+            ], 403);
+        }
+
         $oldTags = $lead->tags->pluck('name')->sort()->values()->implode(', ');
 
         $lead->tags()->detach(request()->input('tag_id'));
@@ -186,40 +206,22 @@ class TagController extends Controller
             return null;
         }
 
-        if (! request()->filled('schedule_from')) {
-            return response()->json([
-                'message'                => 'Please add call attempt details before marking this lead as Not Answered.',
-                'requires_call_activity' => true,
-            ], 409);
-        }
-
-        request()->validate([
-            'schedule_from' => ['required'],
-            'schedule_to'   => ['required'],
-            'comment'       => ['required', 'string', 'max:500'],
-            'participants'  => ['required', 'array'],
-        ]);
-
-        if (! $this->hasParticipants(request('participants', []))) {
-            return response()->json([
-                'message' => 'Please select at least one participant.',
-                'errors'  => [
-                    'participants' => ['Please select at least one participant.'],
-                ],
-            ], 422);
-        }
+        $participantUserId = auth()->guard('user')->id() ?: $lead->user_id;
 
         $activity = $this->activityRepository->create([
             'title'                  => 'No Answer - '.$lead->title,
             'type'                   => 'call',
-            'comment'                => request('comment'),
-            'schedule_from'          => request('schedule_from'),
-            'schedule_to'            => request('schedule_to'),
+            'comment'                => 'Call attempted, no answer.',
+            'schedule_from'          => $now,
+            'schedule_to'            => $now,
             'is_done'                => 0,
             'call_status'            => 'not_answered',
             'call_status_updated_at' => $now,
-            'user_id'                => $lead->user_id ?: auth()->guard('user')->id(),
-            'participants'           => request('participants', []),
+            'user_id'                => $participantUserId,
+            'participants'           => [
+                'users'   => array_values(array_filter([$participantUserId])),
+                'persons' => [],
+            ],
         ]);
 
         $activity->leads()->syncWithoutDetaching([$lead->id]);

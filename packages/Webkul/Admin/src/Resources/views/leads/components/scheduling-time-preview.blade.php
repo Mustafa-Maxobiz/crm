@@ -14,7 +14,7 @@
     <div class="grid gap-2 sm:grid-cols-2">
         <div>
             <div class="text-gray-500 dark:text-gray-400">
-                Customer Time
+                US Time
             </div>
 
             <div class="font-semibold text-gray-800 dark:text-white" v-text="timezonePreview({{ $value }}).customer"></div>
@@ -24,7 +24,7 @@
 
         <div>
             <div class="text-gray-500 dark:text-gray-400">
-                Pakistan Time
+                Pakistan Time (PKT)
             </div>
 
             <div class="font-semibold text-gray-800 dark:text-white" v-text="timezonePreview({{ $value }}).pakistan"></div>

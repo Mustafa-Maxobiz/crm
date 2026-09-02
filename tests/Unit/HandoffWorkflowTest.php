@@ -8,7 +8,7 @@ describe('SourceAccessService view vs edit separation', function () {
         $this->service = new SourceAccessService;
     });
 
-    it('blocks SDR from opening handed-off leads even when they remain the originator', function () {
+    it('allows SDR to view handed-off leads when they remain the originator', function () {
         $sdr = AccessTestHelpers::user([
             'id'                      => 2,
             'role_name'               => 'sdr',
@@ -21,7 +21,26 @@ describe('SourceAccessService view vs edit separation', function () {
             'lead_pipeline_stage_id' => 9,
         ]);
 
-        expect($this->service->canViewLead($lead, $sdr))->toBeFalse()
+        expect($this->service->canViewLead($lead, $sdr))->toBeTrue()
+            ->and($this->service->canEditLead($lead, $sdr))->toBeFalse();
+    });
+
+    it('allows previous forwarded sales owner to view but not edit', function () {
+        $sdr = AccessTestHelpers::user([
+            'id'                      => 2,
+            'role_name'               => 'sdr',
+            'role_pipeline_stage_ids' => [1, 2, 3],
+        ]);
+
+        $lead = AccessTestHelpers::lead([
+            'user_id'                => 8,
+            'lead_owner_id'          => 8,
+            'lead_pipeline_stage_id' => 9,
+        ]);
+
+        $lead->forceFill(['forwarded_from_current_user' => true]);
+
+        expect($this->service->canViewLead($lead, $sdr))->toBeTrue()
             ->and($this->service->canEditLead($lead, $sdr))->toBeFalse();
     });
 
@@ -131,7 +150,7 @@ describe('SourceAccessService kanban visible stages', function () {
             ->toEqual([1, 4, 9, 10]);
     });
 
-    it('blocks LGE from opening handed-off leads after sales ownership transfer', function () {
+    it('allows LGE to view handed-off leads after sales ownership transfer', function () {
         $lge = AccessTestHelpers::user([
             'id'                      => 5,
             'role_name'               => 'lge',
@@ -146,7 +165,33 @@ describe('SourceAccessService kanban visible stages', function () {
 
         $service = new SourceAccessService;
 
-        expect($service->canViewLead($lead, $lge))->toBeFalse()
+        expect($service->canViewLead($lead, $lge))->toBeTrue()
             ->and($service->canEditLead($lead, $lge))->toBeFalse();
+    });
+});
+
+describe('SourceAccessService previous owner visibility scopes', function () {
+    beforeEach(function () {
+        $this->service = new SourceAccessService;
+    });
+
+    it('uses a grouped lead_forwards exists clause in table owner visibility', function () {
+        $user = AccessTestHelpers::user([
+            'id'        => 2,
+            'role_name' => 'sdr',
+        ]);
+
+        $this->actingAs($user, 'user');
+
+        $query = \Illuminate\Support\Facades\DB::table('leads');
+
+        $this->service->applyLeadOwnerVisibilityTableScope($query);
+
+        $sql = preg_replace('/\s+/', ' ', $query->toSql());
+
+        expect($sql)->toContain('where (`leads`.`user_id` = ? or `leads`.`lead_owner_id` = ? or exists')
+            ->and($sql)->toContain('from `lead_forwards`')
+            ->and($sql)->toContain('`lead_forwards`.`lead_id` = `leads`.`id`')
+            ->and($sql)->toContain('`lead_forwards`.`from_user_id` = ?');
     });
 });

@@ -366,8 +366,8 @@ class DashboardController extends Controller
         $outcomeQuery = DB::table('leads')
             ->leftJoin('lead_pipeline_stages', 'leads.lead_pipeline_stage_id', '=', 'lead_pipeline_stages.id')
             ->whereNull('leads.deleted_at')
-            ->where('leads.lead_owner_id', $userId)
             ->whereNotNull('leads.closed_at')
+            ->where('leads.lead_owner_id', $userId)
             ->whereBetween('leads.closed_at', [$startDate, $endDate])
             ->whereIn('lead_pipeline_stages.code', ['won', 'lost'])
             ->whereExists(function ($query) use ($userId) {

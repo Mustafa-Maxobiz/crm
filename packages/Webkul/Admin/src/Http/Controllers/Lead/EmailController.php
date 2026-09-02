@@ -5,6 +5,7 @@ namespace Webkul\Admin\Http\Controllers\Lead;
 use Illuminate\Support\Facades\Event;
 use Webkul\Admin\Http\Controllers\Mail\EmailController as BaseEmailController;
 use Webkul\Admin\Http\Resources\ActivityResource;
+use Webkul\Lead\Services\SourceAccessService;
 
 class EmailController extends BaseEmailController
 {
@@ -15,14 +16,22 @@ class EmailController extends BaseEmailController
      */
     public function store()
     {
+        $leadId = request('lead_id') ?: request()->route('id');
+
+        if (! $this->canEditLead($leadId)) {
+            return response()->json([
+                'message' => trans('admin::app.leads.source-access-denied'),
+            ], 403);
+        }
+
+        request()->merge(['lead_id' => $leadId]);
+
         $response = json_decode(parent::store()->getContent(), true);
 
         return response()->json([
             'data'    => $this->transformToActivity($response['data']),
             'message' => $response['message'],
         ]);
-
-        return $response;
     }
 
     /**
@@ -33,6 +42,12 @@ class EmailController extends BaseEmailController
      */
     public function detach($id)
     {
+        if (! $this->canEditLead($id)) {
+            return response()->json([
+                'message' => trans('admin::app.leads.source-access-denied'),
+            ], 403);
+        }
+
         Event::dispatch('email.update.before', request()->input('email_id'));
 
         $email = $this->emailRepository->update([
@@ -79,5 +94,16 @@ class EmailController extends BaseEmailController
             'created_at'    => $data['created_at'],
             'updated_at'    => $data['updated_at'],
         ]);
+    }
+
+    protected function canEditLead($leadId): bool
+    {
+        if (! filled($leadId)) {
+            return false;
+        }
+
+        $lead = $this->leadRepository->find((int) $leadId);
+
+        return $lead && app(SourceAccessService::class)->canEditLead($lead);
     }
 }

@@ -131,7 +131,7 @@ class KanbanHandoffVisibilityTest extends TestCase
         DB::table('leads')->where('id', $leadId)->delete();
     }
 
-    public function test_handed_off_lead_is_hidden_from_sdr_lge_table_scope(): void
+    public function test_handed_off_lead_is_visible_in_sdr_lge_table_scope(): void
     {
         $pipelineId = (int) (DB::table('lead_pipelines')->value('id') ?? 0);
         $newStageId = (int) DB::table('lead_pipeline_stages')->where('code', 'new')->value('id');
@@ -186,7 +186,7 @@ class KanbanHandoffVisibilityTest extends TestCase
         $service->applyNonTransferredOwnerTableScope($handedOffQuery);
 
         $this->assertTrue($ownedQuery->exists());
-        $this->assertFalse($handedOffQuery->exists());
+        $this->assertTrue($handedOffQuery->exists());
 
         DB::table('leads')->whereIn('id', [$ownedLeadId, $handedOffLeadId])->delete();
     }

@@ -90,15 +90,43 @@ class LeadDataGrid extends DataGrid
                 'lead_pipeline_stages.name as stage',
                 'lead_pipeline_stages.code as stage_code',
                 'lead_pipeline_stages.sort_order as stage_sort_order',
-                'lead_tags.tag_id as tag_id',
                 'users.id as user_id',
                 'users.name as user_name',
                 'persons.id as person_id',
                 'persons.name as person_name',
                 'persons.contact_numbers',
-                'tags.name as tag_name',
                 'industry_options.name as industry',
                 'industry_values.integer_value as industry_option_id',
+                DB::raw('(
+                    SELECT lead_tags.tag_id
+                    FROM lead_tags
+                    INNER JOIN tags ON tags.id = lead_tags.tag_id
+                    WHERE lead_tags.lead_id = leads.id
+                    ORDER BY CASE LOWER(tags.name)
+                        WHEN "warm lead" THEN 0
+                        WHEN "cold lead" THEN 1
+                        WHEN "do not call" THEN 2
+                        WHEN "incorrect info" THEN 3
+                        WHEN "not answered" THEN 4
+                        ELSE 5
+                    END, tags.name
+                    LIMIT 1
+                ) as tag_id'),
+                DB::raw('(
+                    SELECT tags.name
+                    FROM lead_tags
+                    INNER JOIN tags ON tags.id = lead_tags.tag_id
+                    WHERE lead_tags.lead_id = leads.id
+                    ORDER BY CASE LOWER(tags.name)
+                        WHEN "warm lead" THEN 0
+                        WHEN "cold lead" THEN 1
+                        WHEN "do not call" THEN 2
+                        WHEN "incorrect info" THEN 3
+                        WHEN "not answered" THEN 4
+                        ELSE 5
+                    END, tags.name
+                    LIMIT 1
+                ) as tag_name'),
                 DB::raw('(
                     SELECT GROUP_CONCAT(services.name ORDER BY services.sort_order SEPARATOR ", ")
                     FROM lead_service
@@ -209,7 +237,7 @@ class LeadDataGrid extends DataGrid
     }
 
     /**
-     * Process filters with special handling for services offered.
+     * Process filters with special handling for services offered and global text search.
      */
     protected function processRequestedFilters(array $requestedFilters)
     {
@@ -233,6 +261,7 @@ class LeadDataGrid extends DataGrid
             }
         }
 
+        // Handle global text search across all fields and relationships
         if (! empty($requestedFilters['all'])) {
             $this->queryBuilder->where(function ($scopeQueryBuilder) use ($requestedFilters) {
                 foreach ((array) $requestedFilters['all'] as $value) {
@@ -242,26 +271,82 @@ class LeadDataGrid extends DataGrid
                         continue;
                     }
 
-                    $like = '%'.\Webkul\Contact\Support\ContactPhoneCollection::escapeLike($value).'%';
+                    // Escape special LIKE characters
+                    $escapedValue = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
+                    $like = "%{$escapedValue}%";
+
+                    // For phone number search
                     $digits = \Webkul\Contact\Support\ContactPhoneCollection::compareKey($value);
 
-                    $scopeQueryBuilder->orWhere(function ($inner) use ($value, $like, $digits) {
-                        collect($this->columns)
-                            ->filter(fn ($column) => $column->getSearchable() && ! in_array($column->getType(), [
-                                \Webkul\DataGrid\Enums\ColumnTypeEnum::BOOLEAN->value,
-                                \Webkul\DataGrid\Enums\ColumnTypeEnum::AGGREGATE->value,
-                            ]))
-                            ->each(fn ($column) => $inner->orWhere($column->getColumnName(), 'LIKE', $like));
+                    $scopeQueryBuilder->where(function ($inner) use ($value, $like, $digits) {
+                        // Direct lead fields (already in SELECT)
+                        $inner->orWhere('leads.title', 'LIKE', $like)
+                              ->orWhere('leads.description', 'LIKE', $like)
+                              ->orWhere('leads.source_link', 'LIKE', $like);
 
-                        $inner->orWhere('persons.contact_numbers', 'like', $like);
+                        // Person fields (already joined)
+                        $inner->orWhere('persons.name', 'LIKE', $like)
+                              ->orWhere('persons.emails', 'LIKE', $like)
+                              ->orWhere('persons.contact_numbers', 'LIKE', $like);
 
+                        // Phone number digits search
                         if ($digits && strlen($digits) >= 7 && $digits !== $value) {
-                            $inner->orWhere(
-                                'persons.contact_numbers',
-                                'like',
-                                '%'.\Webkul\Contact\Support\ContactPhoneCollection::escapeLike($digits).'%'
-                            );
+                            $inner->orWhere('persons.contact_numbers', 'LIKE', '%'.\Webkul\Contact\Support\ContactPhoneCollection::escapeLike($digits).'%');
                         }
+
+                        // Organization/Company name (already joined)
+                        $inner->orWhere('organizations.name', 'LIKE', $like);
+
+                        // Lead Source name (already joined)
+                        $inner->orWhere('lead_sources.name', 'LIKE', $like);
+
+                        // Lead Type name (already joined)
+                        $inner->orWhere('lead_types.name', 'LIKE', $like);
+
+                        // Sales Owner name (already joined as users)
+                        $inner->orWhere('users.name', 'LIKE', $like);
+
+                        // Industry (already joined)
+                        $inner->orWhere('industry_options.name', 'LIKE', $like);
+
+                        // Services Offered (check via subquery to avoid duplicate rows)
+                        $inner->orWhereExists(function ($servicesQuery) use ($like) {
+                            $servicesQuery->select(DB::raw(1))
+                                ->from('lead_service')
+                                ->join('services', 'services.id', '=', 'lead_service.service_id')
+                                ->whereColumn('lead_service.lead_id', 'leads.id')
+                                ->where('services.name', 'LIKE', $like);
+                        });
+
+                        // Sales Owner Role (check via subquery)
+                        $inner->orWhereExists(function ($roleQuery) use ($like) {
+                            $roleQuery->select(DB::raw(1))
+                                ->from('users as u2')
+                                ->join('roles', 'roles.id', '=', 'u2.role_id')
+                                ->whereColumn('u2.id', 'leads.user_id')
+                                ->where('roles.name', 'LIKE', $like);
+                        });
+
+                        // Sub Source (check via subquery)
+                        $inner->orWhereExists(function ($subSourceQuery) use ($like) {
+                            $subSourceQuery->select(DB::raw(1))
+                                ->from('lead_sources as sub_sources')
+                                ->whereColumn('sub_sources.id', 'leads.lead_sub_source_id')
+                                ->where('sub_sources.name', 'LIKE', $like);
+                        });
+
+                        // Pricing Type attribute option
+                        $inner->orWhereExists(function ($pricingQuery) use ($like) {
+                            $pricingQuery->select(DB::raw(1))
+                                ->from('attribute_values')
+                                ->join('attributes', 'attributes.id', '=', 'attribute_values.attribute_id')
+                                ->join('attribute_options', 'attribute_options.id', '=', 'attribute_values.integer_value')
+                                ->whereColumn('attribute_values.entity_id', 'leads.id')
+                                ->where('attribute_values.entity_type', 'leads')
+                                ->where('attributes.code', 'pricing_type')
+                                ->where('attributes.entity_type', 'leads')
+                                ->where('attribute_options.name', 'LIKE', $like);
+                        });
                     });
                 }
             });

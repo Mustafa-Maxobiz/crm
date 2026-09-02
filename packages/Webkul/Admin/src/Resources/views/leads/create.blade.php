@@ -706,23 +706,15 @@
                      */
                     handleSourceChange(event) {
                         const sourceId = parseInt(event.target.value);
-                        
-                        console.log('Source changed to:', sourceId);
-                        
+
                         if (sourceId) {
-                            // Fetch sub-sources for the selected source
-                            console.log('Fetching sub-sources from:', `/admin/settings/api/sources/${sourceId}/sub-sources`);
-                            
                             this.$axios.get(`/admin/settings/api/sources/${sourceId}/sub-sources`)
                                 .then(response => {
-                                    console.log('Sub-sources response:', response.data);
                                     this.availableSubSources = response.data.sub_sources || [];
                                     this.showSubSourceDropdown = this.availableSubSources.length > 0;
                                     this.selectedSubSource = '';
-                                    console.log('Show dropdown:', this.showSubSourceDropdown, 'Available:', this.availableSubSources);
                                 })
                                 .catch(error => {
-                                    console.error('Error fetching sub-sources:', error);
                                     this.availableSubSources = [];
                                     this.showSubSourceDropdown = false;
                                 });

@@ -9,6 +9,7 @@
                     canAddServiceOffered: @json($canAddServiceOffered),
                     canEditLeadValue: @json($canEditLeadValue),
                     currentUserId: @json($currentUserId),
+                    canManageAllLeadOwners: @json($canManageAllLeadOwners),
                     isCallingRoleLeadVariant: @json($isCallingRoleLeadVariant),
                     openServiceLeadId: null,
                     openServiceRecord: null,
@@ -16,6 +17,8 @@
                     serviceListMaxHeight: '220px',
                     serviceTriggerRefs: {},
                     serviceSearchTerm: '',
+                    newServiceName: '',
+                    addingOtherServiceLeadId: null,
                     serviceDraftIds: {},
                     isCreatingService: false,
                     serviceAddLabel: @json(__('admin::app.leads.services-offered.add-option')),
@@ -27,6 +30,12 @@
                     editStages: [],
                     leadTypeOptions: @json($leadTypeOptions),
                     salesOwnerOptions: @json($salesOwnerOptions),
+                    salesOwnerOptionsByLead: {},
+                    salesOwnerOptionsLoading: {},
+                    openSalesOwnerLeadId: null,
+                    openSalesOwnerRecord: null,
+                    salesOwnerDropdownStyle: {},
+                    salesOwnerTriggerRefs: {},
                     pipelineOptions: @json($pipelineOptions),
                     isEditLoading: false,
                     isEditSaving: false,
@@ -72,15 +81,22 @@
                     const items = this.inlineOptions.service_offered?.items || [];
                     const term = this.serviceSearchTerm.trim().toLowerCase();
 
+                    if (this.isOtherServiceSelected(this.openServiceRecord) && ! term) {
+                        const otherId = this.otherServiceId();
+                        const otherOption = items.find(opt => Number(opt.value) === Number(otherId));
+
+                        return otherOption ? [otherOption] : [];
+                    }
+
                     if (! term) {
-                        return items;
+                        return items.filter(opt => opt.is_show !== false);
                     }
 
                     return items.filter(opt => String(opt.label).toLowerCase().includes(term));
                 },
 
                 serviceSearchableNewLabel() {
-                    const term = this.serviceSearchTerm.trim();
+                    const term = this.newServiceName.trim();
 
                     if (! term) {
                         return '';
@@ -153,14 +169,23 @@
                 serviceOfferedLabel(record) {
                     const ids = this.serviceDraftIds[record.id] ?? this.parseServiceIds(record);
                     const items = this.inlineOptions.service_offered?.items || [];
+                    const otherId = this.otherServiceId();
                     const labels = items
-                        .filter(opt => ids.includes(Number(opt.value)))
+                        .filter(opt => ids.includes(Number(opt.value)) && Number(opt.value) !== Number(otherId))
                         .map(opt => opt.label);
 
-                    return labels.length ? labels.join(', ') : '--';
+                    if (ids.length) {
+                        return labels.length ? labels.join(', ') : '--';
+                    }
+
+                    return record.service_offered || '--';
                 },
 
                 isServiceSelected(record, optionId) {
+                    if (this.isOtherServiceId(optionId)) {
+                        return this.isOtherServiceSelected(record);
+                    }
+
                     const ids = this.serviceDraftIds[record.id] ?? this.parseServiceIds(record);
 
                     return ids.includes(Number(optionId));
@@ -185,7 +210,7 @@
 
                     const rect = trigger.getBoundingClientRect();
                     const dropdownWidth = 288;
-                    const chromeHeight = 110; // search + footer approx
+                    const chromeHeight = 58; // search area approx
                     const spaceBelow = window.innerHeight - rect.bottom - 12;
                     const spaceAbove = rect.top - 12;
                     const openUp = spaceBelow < 260 && spaceAbove > spaceBelow;
@@ -224,6 +249,8 @@
                     this.openServiceLeadId = null;
                     this.openServiceRecord = null;
                     this.serviceSearchTerm = '';
+                    this.newServiceName = '';
+                    this.addingOtherServiceLeadId = null;
                     this.serviceDropdownStyle = {};
                     this.serviceListMaxHeight = '220px';
                 },
@@ -232,11 +259,38 @@
                     if (event.key === 'Escape' && this.openServiceLeadId) {
                         this.closeServiceDropdown();
                     }
+
+                    if (event.key === 'Escape' && this.openSalesOwnerLeadId) {
+                        this.closeSalesOwnerDropdown();
+                    }
                 },
 
                 toggleServiceOption(record, optionId) {
                     const id = Number(optionId);
-                    const current = [...(this.serviceDraftIds[record.id] ?? this.parseServiceIds(record))];
+                    const otherId = this.otherServiceId();
+
+                    if (this.isOtherServiceId(id)) {
+                        this.addingOtherServiceLeadId = record.id;
+                        this.serviceSearchTerm = '';
+                        this.serviceDraftIds = {
+                            ...this.serviceDraftIds,
+                            [record.id]: [...(this.serviceDraftIds[record.id] ?? this.parseServiceIds(record))]
+                                .filter(existingId => Number(existingId) !== Number(otherId)),
+                        };
+
+                        this.$nextTick(() => {
+                            const input = Array.isArray(this.$refs.newServiceInput)
+                                ? this.$refs.newServiceInput[0]
+                                : this.$refs.newServiceInput;
+
+                            input?.focus();
+                        });
+
+                        return;
+                    }
+
+                    const current = [...(this.serviceDraftIds[record.id] ?? this.parseServiceIds(record))]
+                        .filter(existingId => Number(existingId) !== Number(otherId));
                     const index = current.indexOf(id);
 
                     if (index >= 0) {
@@ -249,21 +303,17 @@
                         ...this.serviceDraftIds,
                         [record.id]: current,
                     };
+
+                    this.persistServiceOffered(record, current);
                 },
 
                 handleServiceEnter(record) {
                     if (this.filteredServiceOptions.length === 1) {
                         this.toggleServiceOption(record, this.filteredServiceOptions[0].value);
-
-                        return;
-                    }
-
-                    if (this.canAddServiceOffered && this.serviceSearchableNewLabel) {
-                        this.createServiceOption(record);
                     }
                 },
 
-                createServiceOption(record) {
+                createOtherServiceOption(record) {
                     if (! this.canAddServiceOffered || ! this.serviceSearchableNewLabel || this.isCreatingService) {
                         return;
                     }
@@ -279,15 +329,52 @@
                         items.push({
                             value: Number(option.id),
                             label: option.name,
+                            is_show: option.is_show ?? false,
                         });
 
                         this.inlineOptions.service_offered.items = items;
-                        this.toggleServiceOption(record, option.id);
-                        this.serviceSearchTerm = '';
 
-                        this.$emitter.emit('add-flash', {
-                            type: 'success',
-                            message: response.data.message,
+                        // Add the new service to the current selections
+                        const currentIds = [...(this.serviceDraftIds[record.id] ?? this.parseServiceIds(record))]
+                            .filter(id => Number(id) !== Number(this.otherServiceId()));
+                        currentIds.push(Number(option.id));
+
+                        // Remove "Other" option if it's selected
+                        const otherId = this.otherServiceId();
+                        const finalIds = currentIds.filter(id => Number(id) !== Number(otherId));
+
+                        // Save immediately to the database
+                        this.$axios.put(`{{ lead_url() . '/attributes/edit' }}/${record.id}`, {
+                            entity_type: 'leads',
+                            services: finalIds,
+                            service_offered: finalIds,
+                        }).then(saveResponse => {
+                            // Update the record display
+                            record.service_option_ids = finalIds.join(',');
+                            record.service_offered = this.serviceNamesForIds(finalIds).join(', ');
+
+                            // Clear draft state
+                            if (this.serviceDraftIds[record.id]) {
+                                delete this.serviceDraftIds[record.id];
+                            }
+
+                            // Clear the input field
+                            this.newServiceName = '';
+                            this.addingOtherServiceLeadId = null;
+
+                            // Show success notification
+                            this.$emitter.emit('add-flash', {
+                                type: 'success',
+                                message: `${option.name} added successfully`,
+                            });
+
+                            // Close the dropdown
+                            this.closeServiceDropdown();
+                        }).catch(saveError => {
+                            this.$emitter.emit('add-flash', {
+                                type: 'error',
+                                message: saveError.response?.data?.message || 'Failed to save service',
+                            });
                         });
                     }).catch(error => {
                         this.$emitter.emit('add-flash', {
@@ -301,28 +388,98 @@
                     });
                 },
 
-                saveServiceOffered(record) {
+                isOtherServiceId(optionId) {
+                    const option = (this.inlineOptions.service_offered?.items || [])
+                        .find(item => Number(item.value) === Number(optionId));
+
+                    return this.isOtherServiceOption(option);
+                },
+
+                isOtherServiceOption(option) {
+                    return String(option?.label || '').trim().toLowerCase() === 'other';
+                },
+
+                otherServiceId() {
+                    return (this.inlineOptions.service_offered?.items || [])
+                        .find(item => String(item.label || '').trim().toLowerCase() === 'other')?.value;
+                },
+
+                isOtherServiceSelected(record) {
+                    const otherId = this.otherServiceId();
+
+                    if (! otherId || ! record) {
+                        return false;
+                    }
+
                     const ids = this.serviceDraftIds[record.id] ?? this.parseServiceIds(record);
+
+                    return this.addingOtherServiceLeadId === record.id || ids.includes(Number(otherId));
+                },
+
+                unselectOtherService(record) {
+                    const otherId = this.otherServiceId();
+
+                    if (! otherId || ! record) {
+                        return;
+                    }
+
+                    const current = [...(this.serviceDraftIds[record.id] ?? this.parseServiceIds(record))]
+                        .filter(id => Number(id) !== Number(otherId));
+
+                    this.serviceDraftIds = {
+                        ...this.serviceDraftIds,
+                        [record.id]: current,
+                    };
+                },
+
+                saveServiceOffered(record) {
+                    const otherId = this.otherServiceId();
+                    const ids = (this.serviceDraftIds[record.id] ?? this.parseServiceIds(record))
+                        .filter(id => Number(id) !== Number(otherId));
+
+                    this.persistServiceOffered(record, ids, null, true);
+                },
+
+                persistServiceOffered(record, ids, successMessage = null, closeAfterSave = false) {
+                    const otherId = this.otherServiceId();
+                    const serviceIds = ids.filter(id => Number(id) !== Number(otherId));
 
                     this.$axios.put(`{{ lead_url() . '/attributes/edit' }}/${record.id}`, {
                         entity_type: 'leads',
-                        services: ids,
-                        service_offered: ids,
+                        services: serviceIds,
+                        service_offered: serviceIds,
                     }).then(response => {
                         this.$emitter.emit('add-flash', {
                             type: 'success',
-                            message: response.data.message,
+                            message: successMessage || response.data.message,
                         });
 
-                        record.service_option_ids = ids.join(',');
-                        this.closeServiceDropdown();
-                        this.$refs.datagrid.get();
+                        record.service_option_ids = serviceIds.join(',');
+                        record.service_offered = this.serviceNamesForIds(serviceIds).join(', ');
+
+                        if (closeAfterSave) {
+                            this.closeServiceDropdown();
+                        }
                     }).catch(error => {
+                        this.serviceDraftIds = {
+                            ...this.serviceDraftIds,
+                            [record.id]: this.parseServiceIds(record),
+                        };
+
                         this.$emitter.emit('add-flash', {
                             type: 'error',
                             message: error.response?.data?.message || 'Update failed.',
                         });
                     });
+                },
+
+                serviceNamesForIds(ids) {
+                    const selectedIds = ids.map(Number);
+                    const otherId = this.otherServiceId();
+
+                    return (this.inlineOptions.service_offered?.items || [])
+                        .filter(opt => selectedIds.includes(Number(opt.value)) && Number(opt.value) !== Number(otherId))
+                        .map(opt => opt.label);
                 },
 
                 updateLeadValue(record, rawValue) {
@@ -386,6 +543,12 @@
                     const leadId = record.id;
                     const field = config.field;
                     const value = newValue ? parseInt(newValue) : null;
+
+                    if (field === 'user_id') {
+                        this.changeSalesOwner(record, value);
+
+                        return;
+                    }
 
                     const fieldMap = {
                         lead_source_id: 'lead_source_id',
@@ -532,6 +695,163 @@
                         });
                 },
 
+                canChangeSalesOwner(record) {
+                    return this.canManageAllLeadOwners
+                        || Number(record.user_id || 0) === Number(this.currentUserId || 0);
+                },
+
+                setSalesOwnerTriggerRef(leadId, el) {
+                    if (el) {
+                        this.salesOwnerTriggerRefs[leadId] = el;
+                    } else {
+                        delete this.salesOwnerTriggerRefs[leadId];
+                    }
+                },
+
+                salesOwnerLabel(record) {
+                    return record.user || record.user_name || '--';
+                },
+
+                salesOwnerSelectOptions(record) {
+                    const cached = this.salesOwnerOptionsByLead[record.id] || [];
+                    const currentOption = {
+                        id: Number(record.user_id || 0),
+                        value: Number(record.user_id || 0),
+                        label: record.user || record.user_name || '--',
+                    };
+
+                    const options = currentOption.id ? [currentOption, ...cached] : cached;
+                    const seen = new Set();
+
+                    return options.filter(option => {
+                        const id = Number(option.id ?? option.value ?? 0);
+
+                        if (! id || seen.has(id)) {
+                            return false;
+                        }
+
+                        seen.add(id);
+
+                        return true;
+                    });
+                },
+
+                loadSalesOwnerOptions(record) {
+                    if (! this.canChangeSalesOwner(record) || this.salesOwnerOptionsByLead[record.id] || this.salesOwnerOptionsLoading[record.id]) {
+                        return Promise.resolve();
+                    }
+
+                    this.salesOwnerOptionsLoading = {
+                        ...this.salesOwnerOptionsLoading,
+                        [record.id]: true,
+                    };
+
+                    return this.$axios.get(`{{ lead_url() }}/${record.id}/eligible-sales-owners`)
+                        .then(response => {
+                            this.salesOwnerOptionsByLead = {
+                                ...this.salesOwnerOptionsByLead,
+                                [record.id]: response.data.users || [],
+                            };
+                        })
+                        .catch(error => {
+                            this.$emitter.emit('add-flash', {
+                                type: 'error',
+                                message: error.response?.data?.message || 'Unable to load sales owners.',
+                            });
+                        })
+                        .finally(() => {
+                            this.salesOwnerOptionsLoading = {
+                                ...this.salesOwnerOptionsLoading,
+                                [record.id]: false,
+                            };
+                        });
+                },
+
+                toggleSalesOwnerDropdown(record, event) {
+                    if (! this.canChangeSalesOwner(record) || this.isStageEditingLocked(record, this.inlineOptions.stage?.items || [])) {
+                        return;
+                    }
+
+                    if (this.openSalesOwnerLeadId === record.id) {
+                        this.closeSalesOwnerDropdown();
+
+                        return;
+                    }
+
+                    const trigger = event?.currentTarget || this.salesOwnerTriggerRefs[record.id];
+
+                    if (! trigger) {
+                        return;
+                    }
+
+                    const rect = trigger.getBoundingClientRect();
+                    const dropdownWidth = 320;
+                    const panelMax = 280;
+                    const spaceBelow = window.innerHeight - rect.bottom - 12;
+                    const spaceAbove = rect.top - 12;
+                    const openUp = spaceBelow < 180 && spaceAbove > spaceBelow;
+                    const left = Math.min(
+                        Math.max(8, rect.left),
+                        window.innerWidth - dropdownWidth - 8
+                    );
+                    const top = openUp
+                        ? Math.max(8, rect.top - Math.min(panelMax, spaceAbove) - 4)
+                        : rect.bottom + 4;
+
+                    this.openSalesOwnerLeadId = record.id;
+                    this.openSalesOwnerRecord = record;
+                    this.salesOwnerDropdownStyle = {
+                        top: `${top}px`,
+                        left: `${left}px`,
+                        width: `${dropdownWidth}px`,
+                        maxHeight: `${panelMax}px`,
+                    };
+
+                    this.loadSalesOwnerOptions(record);
+                },
+
+                closeSalesOwnerDropdown() {
+                    this.openSalesOwnerLeadId = null;
+                    this.openSalesOwnerRecord = null;
+                    this.salesOwnerDropdownStyle = {};
+                },
+
+                selectSalesOwner(record, ownerId) {
+                    this.closeSalesOwnerDropdown();
+                    this.changeSalesOwner(record, Number(ownerId));
+                },
+
+                changeSalesOwner(record, ownerId) {
+                    const previousOwnerId = Number(record.user_id || 0);
+
+                    if (! ownerId || Number(ownerId) === previousOwnerId) {
+                        return;
+                    }
+
+                    this.$axios.post(`{{ lead_url() }}/${record.id}/change-sales-owner`, {
+                        user_id: ownerId,
+                    }, {
+                        headers: {
+                            Accept: 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    }).then(response => {
+                        this.$emitter.emit('add-flash', {
+                            type: 'success',
+                            message: response.data.message || 'Sales owner changed successfully.',
+                        });
+
+                        this.$refs.datagrid.get();
+                    }).catch(error => {
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: error.response?.data?.message || error.response?.data?.errors?.user_id?.[0] || 'Unable to change sales owner.',
+                        });
+
+                        this.$refs.datagrid.get();
+                    });
+                },
+
                 gridRowStyle(available) {
                     const dataColumnMin = 160;
                     const tracks = [];
@@ -597,6 +917,7 @@
                             this.editPerson = data.person || { name: '' };
                             this.editTags = data.tags || [];
                             this.editStages = data.stages || [];
+                            this.salesOwnerOptions = data.sales_owner_options || this.salesOwnerOptions;
                             this.isEditLoading = false;
 
                             this.$nextTick(() => {
@@ -853,14 +1174,14 @@
                         return null;
                     }
 
-                    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
+                    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(A\.?M\.?|P\.?M\.?))?$/i);
 
                     if (! match) {
                         return null;
                     }
 
                     let hour = Number(match[4]);
-                    const meridian = match[7]?.toUpperCase();
+                    const meridian = match[7]?.replace(/\./g, '').toUpperCase();
 
                     if (meridian === 'PM' && hour < 12) {
                         hour += 12;
@@ -934,6 +1255,53 @@
                     }
                 },
 
+                formatBackendDateTimeInTimeZone(date, timeZone) {
+                    const parts = new Intl.DateTimeFormat('en-US', {
+                        timeZone,
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hourCycle: 'h23',
+                    }).formatToParts(date).reduce((carry, part) => {
+                        if (part.type !== 'literal') {
+                            carry[part.type] = part.value;
+                        }
+
+                        return carry;
+                    }, {});
+
+                    return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+                },
+
+                scheduleValueToPakistan(value) {
+                    const parts = this.parseScheduleValue(value);
+                    const context = {
+                        ...this.defaultSchedulingContext(),
+                        ...(this.schedulingContext || {}),
+                    };
+                    const pakistanTimezone = context.pakistan_timezone || 'Asia/Karachi';
+                    const inputTimezone = context.customer_timezone || pakistanTimezone;
+
+                    if (! parts) {
+                        return value;
+                    }
+
+                    const instant = this.dateFromPartsInTimeZone(parts, inputTimezone);
+
+                    return this.formatBackendDateTimeInTimeZone(instant, pakistanTimezone);
+                },
+
+                convertMeetingScheduleToPakistan(params) {
+                    return {
+                        ...params,
+                        schedule_from: this.scheduleValueToPakistan(params.schedule_from),
+                        schedule_to: this.scheduleValueToPakistan(params.schedule_to),
+                    };
+                },
+
                 timezonePreview(value) {
                     const parts = this.parseScheduleValue(value);
                     const context = {
@@ -941,7 +1309,7 @@
                         ...(this.schedulingContext || {}),
                     };
                     const pakistanTimezone = context.pakistan_timezone || 'Asia/Karachi';
-                    const appTimezone = context.app_timezone || pakistanTimezone;
+                    const inputTimezone = context.customer_timezone || pakistanTimezone;
 
                     if (! parts) {
                         return { hasValue: false };
@@ -950,15 +1318,13 @@
                     let instant = null;
 
                     try {
-                        instant = this.dateFromPartsInTimeZone(parts, appTimezone);
+                        instant = this.dateFromPartsInTimeZone(parts, inputTimezone);
                     } catch (error) {
                         instant = this.dateFromPartsInTimeZone(parts, pakistanTimezone);
                     }
 
                     const location = [context.customer_city, context.customer_state, context.customer_country].filter(Boolean).join(', ');
-                    const customer = context.customer_timezone
-                        ? this.formatInTimeZone(instant, context.customer_timezone)
-                        : null;
+                    const customer = this.formatInTimeZone(instant, inputTimezone);
 
                     return {
                         hasValue: true,
@@ -999,9 +1365,10 @@
                     this.meetingErrors = {};
 
                     this.isMeetingSaving = true;
+                    const payload = this.convertMeetingScheduleToPakistan(params);
 
                     this.$axios.post("{{ route('admin.activities.store') }}", {
-                        ...params,
+                        ...payload,
                         type: 'meeting',
                         activity_status: 'scheduled',
                         stage_meeting: 1,
@@ -1024,10 +1391,18 @@
                         this.isMeetingSaving = false;
 
                         if (error.response?.status === 422) {
-                            setErrors(error.response.data.errors || {});
+                            const errors = error.response.data.errors || {};
+                            const validationMessage = Object.values(errors)?.[0]?.[0] || error.response.data.message || 'Meeting could not be saved.';
+
+                            setErrors(errors);
                             this.meetingErrors = {
-                                participants: error.response.data.errors?.participants?.[0],
+                                participants: errors?.participants?.[0],
                             };
+
+                            this.$emitter.emit('add-flash', {
+                                type: 'error',
+                                message: validationMessage,
+                            });
 
                             return;
                         }

@@ -25,6 +25,7 @@ use Webkul\Lead\Repositories\LeadRepository;
 use Webkul\Lead\Models\Lead;
 use Webkul\Lead\Services\FollowupScheduleService;
 use Webkul\Lead\Services\MeetingHandoffService;
+use Webkul\Lead\Services\SourceAccessService;
 
 class ActivityController extends Controller
 {
@@ -41,6 +42,7 @@ class ActivityController extends Controller
         protected EmailRepository $emailRepository,
         protected FollowupScheduleService $followupScheduleService,
         protected MeetingHandoffService $meetingHandoffService,
+        protected SourceAccessService $sourceAccessService,
     ) {}
 
     /**
@@ -221,13 +223,15 @@ class ActivityController extends Controller
         ]);
 
         if (request('type') === 'meeting') {
+            $this->validateMeetingDuration();
+
             /**
              * Check if meeting is overlapping with other meetings.
              */
             $isOverlapping = $this->activityRepository->isDurationOverlapping(
                 request()->input('schedule_from'),
                 request()->input('schedule_to'),
-                request()->input('participants'),
+                $this->meetingConflictParticipants(),
                 request()->input('id')
             );
 
@@ -247,6 +251,10 @@ class ActivityController extends Controller
         Event::dispatch('activity.create.before');
 
         $data = $this->normalizeActivityStatusData(request()->all());
+
+        if (! $this->canModifyRequestedLead($data['lead_id'] ?? null)) {
+            abort(403);
+        }
 
         $data = $this->prepareMeetingActivityData($data);
 
@@ -556,6 +564,10 @@ class ActivityController extends Controller
 
         $data = $this->normalizeActivityStatusData(request()->all());
 
+        if (! $this->canModifyRequestedLead($data['lead_id'] ?? null)) {
+            abort(403);
+        }
+
         $activity = $this->activityRepository->update($data, $id);
 
         /**
@@ -729,6 +741,8 @@ class ActivityController extends Controller
         $activity->loadMissing(['leads.pipeline.stages', 'leads.stage']);
 
         foreach ($activity->leads as $lead) {
+            abort_unless($this->sourceAccessService->canEditLead($lead), 403);
+
             $meetingStage = $lead->pipeline?->stages
                 ->firstWhere('code', 'meeting');
 
@@ -762,6 +776,8 @@ class ActivityController extends Controller
         $activity->loadMissing('leads');
 
         foreach ($activity->leads as $lead) {
+            abort_unless($this->sourceAccessService->canEditLead($lead), 403);
+
             Event::dispatch('lead.update.before', $lead->id);
 
             $updatedLead = $this->leadRepository->update([
@@ -809,6 +825,50 @@ class ActivityController extends Controller
         }
 
         return false;
+    }
+
+    protected function meetingConflictParticipants(): array
+    {
+        $participants = (array) request('participants', []);
+
+        $userIds = collect($participants['users'] ?? [])
+            ->filter(fn ($id) => filled($id))
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->values();
+
+        if (request()->filled('assigned_user_id')) {
+            $userIds->push((int) request('assigned_user_id'));
+        }
+
+        $personIds = collect($participants['persons'] ?? [])
+            ->filter(fn ($id) => filled($id))
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->values();
+
+        return [
+            'users'   => $userIds->unique()->values()->all(),
+            'persons' => $personIds->unique()->values()->all(),
+        ];
+    }
+
+    protected function validateMeetingDuration(): void
+    {
+        if (! request()->filled('schedule_from') || ! request()->filled('schedule_to')) {
+            return;
+        }
+
+        $scheduleFrom = Carbon::parse(request('schedule_from'));
+        $scheduleTo = Carbon::parse(request('schedule_to'));
+
+        if ($scheduleFrom->diffInMinutes($scheduleTo) <= 1440) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'schedule_to' => ['Meeting duration cannot exceed 24 hours.'],
+        ]);
     }
 
     /**
@@ -867,11 +927,22 @@ class ActivityController extends Controller
             return false;
         }
 
-        if (app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin($user)) {
+        if ($this->sourceAccessService->isAdmin($user)) {
             return true;
         }
 
         return (int) $activity->user_id === (int) $user->id;
+    }
+
+    protected function canModifyRequestedLead(mixed $leadId): bool
+    {
+        if (! filled($leadId)) {
+            return true;
+        }
+
+        $lead = $this->leadRepository->find((int) $leadId);
+
+        return $lead && $this->sourceAccessService->canEditLead($lead);
     }
 
     /**
@@ -881,6 +952,10 @@ class ActivityController extends Controller
     {
         try {
             $file = $this->fileRepository->findOrFail($id);
+
+            $file->loadMissing('activity');
+
+            abort_unless($file->activity && $this->canModifyActivity($file->activity), 403);
 
             return Storage::download($file->path);
         } catch (\Exception $exception) {

@@ -241,9 +241,7 @@
 
                             return response;
                         })
-                        .catch(error => {
-                            console.log(error);
-
+                        .catch(() => {
                             this.isLoading = false;
 
                             return { data: this.stageLeads || {} };
@@ -645,14 +643,14 @@
                         return null;
                     }
 
-                    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
+                    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(A\.?M\.?|P\.?M\.?))?$/i);
 
                     if (! match) {
                         return null;
                     }
 
                     let hour = Number(match[4]);
-                    const meridian = match[7]?.toUpperCase();
+                    const meridian = match[7]?.replace(/\./g, '').toUpperCase();
 
                     if (meridian === 'PM' && hour < 12) {
                         hour += 12;
@@ -726,6 +724,53 @@
                     }
                 },
 
+                formatBackendDateTimeInTimeZone(date, timeZone) {
+                    const parts = new Intl.DateTimeFormat('en-US', {
+                        timeZone,
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hourCycle: 'h23',
+                    }).formatToParts(date).reduce((carry, part) => {
+                        if (part.type !== 'literal') {
+                            carry[part.type] = part.value;
+                        }
+
+                        return carry;
+                    }, {});
+
+                    return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+                },
+
+                scheduleValueToPakistan(value) {
+                    const parts = this.parseScheduleValue(value);
+                    const context = {
+                        ...this.defaultSchedulingContext(),
+                        ...(this.schedulingContext || {}),
+                    };
+                    const pakistanTimezone = context.pakistan_timezone || 'Asia/Karachi';
+                    const inputTimezone = context.customer_timezone || pakistanTimezone;
+
+                    if (! parts) {
+                        return value;
+                    }
+
+                    const instant = this.dateFromPartsInTimeZone(parts, inputTimezone);
+
+                    return this.formatBackendDateTimeInTimeZone(instant, pakistanTimezone);
+                },
+
+                convertMeetingScheduleToPakistan(params) {
+                    return {
+                        ...params,
+                        schedule_from: this.scheduleValueToPakistan(params.schedule_from),
+                        schedule_to: this.scheduleValueToPakistan(params.schedule_to),
+                    };
+                },
+
                 timezonePreview(value) {
                     const parts = this.parseScheduleValue(value);
                     const context = {
@@ -733,7 +778,7 @@
                         ...(this.schedulingContext || {}),
                     };
                     const pakistanTimezone = context.pakistan_timezone || 'Asia/Karachi';
-                    const appTimezone = context.app_timezone || pakistanTimezone;
+                    const inputTimezone = context.customer_timezone || pakistanTimezone;
 
                     if (! parts) {
                         return { hasValue: false };
@@ -742,15 +787,13 @@
                     let instant = null;
 
                     try {
-                        instant = this.dateFromPartsInTimeZone(parts, appTimezone);
+                        instant = this.dateFromPartsInTimeZone(parts, inputTimezone);
                     } catch (error) {
                         instant = this.dateFromPartsInTimeZone(parts, pakistanTimezone);
                     }
 
                     const location = [context.customer_city, context.customer_state, context.customer_country].filter(Boolean).join(', ');
-                    const customer = context.customer_timezone
-                        ? this.formatInTimeZone(instant, context.customer_timezone)
-                        : null;
+                    const customer = this.formatInTimeZone(instant, inputTimezone);
 
                     return {
                         hasValue: true,
@@ -791,9 +834,10 @@
                     this.meetingErrors = {};
 
                     this.isMeetingSaving = true;
+                    const payload = this.convertMeetingScheduleToPakistan(params);
 
                     this.$axios.post("{{ route('admin.activities.store') }}", {
-                        ...params,
+                        ...payload,
                         type: 'meeting',
                         activity_status: 'scheduled',
                         stage_meeting: 1,
@@ -816,10 +860,18 @@
                         this.isMeetingSaving = false;
 
                         if (error.response?.status === 422) {
-                            setErrors(error.response.data.errors || {});
+                            const errors = error.response.data.errors || {};
+                            const validationMessage = Object.values(errors)?.[0]?.[0] || error.response.data.message || 'Meeting could not be saved.';
+
+                            setErrors(errors);
                             this.meetingErrors = {
-                                participants: error.response.data.errors?.participants?.[0],
+                                participants: errors?.participants?.[0],
                             };
+
+                            this.$emitter.emit('add-flash', {
+                                type: 'error',
+                                message: validationMessage,
+                            });
 
                             return;
                         }

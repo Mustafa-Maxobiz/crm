@@ -95,7 +95,11 @@
         'service_offered' => [
             'field'    => 'services',
             'multiple' => true,
-            'items'    => app(\Webkul\Lead\Repositories\ServiceRepository::class)->getDropdownOptions(),
+            'items'    => app(\Webkul\Lead\Repositories\ServiceRepository::class)->getDropdownOptions(true),
+        ],
+        'user' => [
+            'field' => 'user_id',
+            'items' => [],
         ],
     ];
 
@@ -104,6 +108,7 @@
     $isLgeUser = $sourceAccessService->isLgeUser();
     $isCallingRoleLeadVariant = in_array($leadVariant ?? 'main', ['sdr', 'lge'], true);
     $currentUserId = auth()->guard('user')->id();
+    $canManageAllLeadOwners = $sourceAccessService->isAdmin();
     $activeSdrUsers = $isLgeUser
         ? $leadForwardService->activeSdrUsers()
             ->map(fn ($user) => [
