@@ -316,6 +316,12 @@
                 },
 
                 handleResult(result) {
+                    // If this is an "Add as New" result (empty ID with a name), create it via AJAX
+                    if (this.canAddNew && result.name && !result.id) {
+                        this.createNewEntity(result.name);
+                        return;
+                    }
+
                     this.showPopup = false;
 
                     this.selectedItem = result;
@@ -323,6 +329,72 @@
                     this.searchTerm = '';
 
                     this.$emit('lookup-added', this.selectedItem);
+                },
+
+                /**
+                 * Create a new lookup entity via AJAX
+                 *
+                 * @param {string} name
+                 *
+                 * @return {void}
+                 */
+                createNewEntity(name) {
+                    this.isSearching = true;
+
+                    // Determine the create endpoint
+                    // For persons: /admin/contacts/persons
+                    // For organizations: /admin/contacts/organizations
+                    const entityType = this.attribute.lookup_type;
+                    let createUrl = '';
+                    
+                    if (entityType === 'persons') {
+                        createUrl = '{{ route("admin.contacts.persons.store") }}';
+                    } else if (entityType === 'organizations') {
+                        createUrl = '{{ route("admin.contacts.organizations.store") }}';
+                    } else {
+                        console.error('Unknown lookup type:', entityType);
+                        this.isSearching = false;
+                        return;
+                    }
+
+                    this.$axios.post(createUrl, {
+                            name: name,
+                            entity_type: entityType,
+                        })
+                        .then(response => {
+                            const createdItem = response.data.data;
+                            
+                            // Add to search results so it appears in future searches
+                            this.searchedResults.unshift(createdItem);
+                            
+                            // Select the newly created item
+                            this.selectedItem = {
+                                id: createdItem.id,
+                                name: createdItem.name
+                            };
+                            
+                            this.showPopup = false;
+                            this.searchTerm = '';
+                            
+                            this.$emit('lookup-added', this.selectedItem);
+                            
+                            // Show success message
+                            this.$emitter.emit('add-flash', {
+                                type: 'success',
+                                message: response.data.message || 'Created successfully'
+                            });
+                        })
+                        .catch(error => {
+                            console.error("Failed to create new entity:", error);
+                            
+                            this.$emitter.emit('add-flash', {
+                                type: 'error',
+                                message: error.response?.data?.message || 'Failed to create. Please try again.'
+                            });
+                        })
+                        .finally(() => {
+                            this.isSearching = false;
+                        });
                 },
 
                 handleFocusOut(e) {

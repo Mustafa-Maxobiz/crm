@@ -260,6 +260,12 @@
                  * @return {void}
                  */
                 selectItem(item) {
+                    // If this is an "Add as New" item (empty ID with a name), create it via AJAX
+                    if (this.canAddNew && item.name && !item.id) {
+                        this.createNewItem(item.name);
+                        return;
+                    }
+
                     this.showPopup = false;
 
                     this.searchTerm = '';
@@ -267,6 +273,61 @@
                     this.selectedItem = item;
 
                     this.$emit('on-selected', item);
+                },
+
+                /**
+                 * Create a new lookup entity via AJAX
+                 *
+                 * @param {string} name
+                 *
+                 * @return {void}
+                 */
+                createNewItem(name) {
+                    this.isSearching = true;
+
+                    // Determine the create endpoint based on src URL
+                    // src is like "/admin/contacts/persons/search"
+                    // We need "/admin/contacts/persons" for POST
+                    const createUrl = this.src.replace('/search', '');
+
+                    this.$axios.post(createUrl, {
+                            name: name,
+                            entity_type: this.src.includes('persons') ? 'persons' : 'organizations',
+                        })
+                        .then(response => {
+                            const createdItem = response.data.data;
+                            
+                            // Add to search results so it appears in future searches
+                            this.searchedResults.unshift(createdItem);
+                            
+                            // Select the newly created item
+                            this.selectedItem = {
+                                id: createdItem.id,
+                                name: createdItem.name
+                            };
+                            
+                            this.showPopup = false;
+                            this.searchTerm = '';
+                            
+                            this.$emit('on-selected', this.selectedItem);
+                            
+                            // Show success message
+                            this.$emitter.emit('add-flash', {
+                                type: 'success',
+                                message: response.data.message || 'Created successfully'
+                            });
+                        })
+                        .catch(error => {
+                            console.error("Failed to create new item:", error);
+                            
+                            this.$emitter.emit('add-flash', {
+                                type: 'error',
+                                message: error.response?.data?.message || 'Failed to create. Please try again.'
+                            });
+                        })
+                        .finally(() => {
+                            this.isSearching = false;
+                        });
                 },
 
                 /**

@@ -393,6 +393,9 @@
                                                 'after:' .  \Carbon\Carbon::yesterday()->format('Y-m-d')
                                             ],
                                         ]"
+                                        :entity="[
+                                            'user_id' => old('user_id', auth()->guard('user')->id()),
+                                        ]"
                                     />
 
                                     <input
