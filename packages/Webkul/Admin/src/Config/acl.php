@@ -96,6 +96,8 @@ return [
             'admin.leads.bde.form_data',
             'admin.leads.bde.update',
             'admin.leads.bde.mass_update',
+            'admin.leads.bde.eligible_sales_owners',
+            'admin.leads.bde.change_sales_owner',
             'admin.leads.bde.tags.attach',
             'admin.leads.bde.tags.replace',
             'admin.leads.bde.tags.detach',

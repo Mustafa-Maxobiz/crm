@@ -160,6 +160,10 @@ class SalesOwnerTransferService
             return ['lge', 'lead closer', 'lead clouser', 'lead closure', 'lead'];
         }
 
+        if (in_array($roleName, ['bd', 'bde', 'bd executive', 'bde executive', 'business development executive'], true)) {
+            return ['bd', 'bde', 'bd executive', 'bde executive', 'business development executive'];
+        }
+
         return [];
     }
 
