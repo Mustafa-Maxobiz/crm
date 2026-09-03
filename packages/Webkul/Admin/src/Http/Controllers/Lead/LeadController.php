@@ -3925,13 +3925,10 @@ class LeadController extends Controller
             ->get();
 
         foreach ($candidates as $candidate) {
-            $emails = is_string($candidate->emails)
-                ? (json_decode($candidate->emails, true) ?: [])
-                : (array) $candidate->emails;
+            $emails = $this->decodePersonContactArray($candidate->emails);
+
             $candidatePhones = ContactPhoneCollection::compareKeys(
-                is_string($candidate->contact_numbers)
-                    ? (json_decode($candidate->contact_numbers, true) ?: [])
-                    : (array) $candidate->contact_numbers
+                $this->decodePersonContactArray($candidate->contact_numbers)
             );
 
             $candidateEmail = $this->normalizeImportEmail($emails[0]['value'] ?? null);
@@ -3942,6 +3939,21 @@ class LeadController extends Controller
         }
 
         return false;
+    }
+
+    protected function decodePersonContactArray($value): array
+    {
+        if (is_array($value)) {
+            return $value;
+        }
+
+        if (is_string($value) && $value !== '') {
+            $decoded = json_decode($value, true);
+
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return [];
     }
 
     /**
