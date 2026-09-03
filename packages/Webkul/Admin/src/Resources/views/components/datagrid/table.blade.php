@@ -37,9 +37,9 @@
             <!-- Table view for larger screens, Card view for mobile -->
             <div
                 ref="tableScroll"
-                class="table-responsive box-shadow relative z-0 rounded-t-0 grid w-full border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
+                class="table-responsive box-shadow relative z-0 rounded-t-0 grid w-full auto-rows-auto content-start border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
                 :class="fixedHeight ? 'overflow-auto' : 'overflow-x-auto'"
-                :style="fixedHeight ? { height: 'calc(100vh - 280px)', maxHeight: 'calc(100vh - 280px)' } : null"
+                :style="fixedHeight ? { maxHeight: 'calc(100vh - 280px)' } : null"
                 @scroll="syncScrollFromTable"
             >
                 <!-- Table Header - Always visible on all screens -->
