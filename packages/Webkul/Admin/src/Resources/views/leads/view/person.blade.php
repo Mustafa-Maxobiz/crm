@@ -4,22 +4,8 @@
     @php
         $person = $lead->person;
 
-        $decodeArrayValue = function ($value) {
-            if (is_array($value)) {
-                return $value;
-            }
-
-            if (is_string($value) && $value !== '') {
-                $decoded = json_decode($value, true);
-
-                return is_array($decoded) ? $decoded : [];
-            }
-
-            return [];
-        };
-
-        $emails = $decodeArrayValue($person->getAttributes()['emails'] ?? null);
-        $contactNumbers = $decodeArrayValue($person->getAttributes()['contact_numbers'] ?? null);
+        $emails = is_array($person->emails) ? $person->emails : [];
+        $contactNumbers = is_array($person->contact_numbers) ? $person->contact_numbers : [];
 
         $hasName = ! empty($person->name);
         $hasEmails = collect($emails)->filter(fn ($email) => ! empty($email['value']))->isNotEmpty();

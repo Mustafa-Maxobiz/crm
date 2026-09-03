@@ -38,7 +38,7 @@ class PersonResource extends JsonResource
      */
     protected function safeArrayCast(string $key): array
     {
-        $rawValue = $this->resource->getAttributes()[$key] ?? null;
+        $rawValue = $this->{$key};
 
         if (is_array($rawValue)) {
             return $rawValue;

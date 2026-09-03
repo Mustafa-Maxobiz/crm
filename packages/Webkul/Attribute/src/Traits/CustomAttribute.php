@@ -54,11 +54,23 @@ trait CustomAttribute
 
                 $attribute = app(AttributeRepository::class)->getAttributeByCode($key);
 
-                $this->attributes[$key] = $this->getCustomAttributeValue($attribute);
+                $value = $this->getCustomAttributeValue($attribute);
+
+                if ($this->customAttributeUsesJsonValue($attribute)) {
+                    $this->attributes[$key] = $this->isJsonCastAttribute($key) && is_array($value)
+                        ? json_encode($value)
+                        : $value;
+
+                    return $value;
+                }
+
+                $this->attributes[$key] = $value;
 
                 return $this->getAttributeValue($key);
             }
         }
+
+        $this->normalizeJsonCastAttribute($key);
 
         return parent::getAttribute($key);
     }
@@ -68,6 +80,8 @@ trait CustomAttribute
      */
     public function attributesToArray()
     {
+        $this->normalizeJsonCastAttributes();
+
         $attributes = parent::attributesToArray();
 
         $hiddenAttributes = $this->getHidden();
@@ -77,6 +91,12 @@ trait CustomAttribute
 
             foreach ($customAttributes as $attribute) {
                 if (in_array($attribute->code, $hiddenAttributes) && isset($this->attributes[$attribute->code])) {
+                    continue;
+                }
+
+                if (array_key_exists($attribute->code, $attributes)
+                    && ! $this->isEmptyCustomAttributeValue($attributes[$attribute->code])
+                ) {
                     continue;
                 }
 
@@ -116,7 +136,108 @@ trait CustomAttribute
 
         $attributeValue = $this->attribute_values->where('attribute_id', $attribute->id)->first();
 
-        return $attributeValue[self::$attributeTypeFields[$attribute->type]] ?? null;
+        if (! $attributeValue) {
+            return $this->customAttributeUsesJsonValue($attribute)
+                ? $this->defaultJsonAttributeValue($attribute)
+                : null;
+        }
+
+        $value = $attributeValue[self::$attributeTypeFields[$attribute->type]] ?? null;
+
+        if ($this->customAttributeUsesJsonValue($attribute)) {
+            return $this->decodeJsonAttributeValue($value, $this->defaultJsonAttributeValue($attribute));
+        }
+
+        return $value;
+    }
+
+    /**
+     * Decode JSON attribute values without assuming their raw storage type.
+     */
+    protected function decodeJsonAttributeValue($value, $default = [])
+    {
+        if (is_array($value)) {
+            return $value;
+        }
+
+        if (is_string($value) && $value !== '') {
+            $decodedValue = json_decode($value, true);
+
+            return is_array($decodedValue) ? $decodedValue : $default;
+        }
+
+        return $default;
+    }
+
+    /**
+     * Get the empty value expected by JSON-backed custom attribute types.
+     */
+    protected function defaultJsonAttributeValue($attribute)
+    {
+        return $attribute?->type === 'address' ? null : [];
+    }
+
+    /**
+     * Determine if the custom attribute stores its value in json_value.
+     */
+    protected function customAttributeUsesJsonValue($attribute): bool
+    {
+        return $attribute && (self::$attributeTypeFields[$attribute->type] ?? null) === 'json_value';
+    }
+
+    /**
+     * Convert raw array values back to JSON before Laravel's cast layer decodes them.
+     */
+    protected function normalizeJsonCastAttribute(string $key): void
+    {
+        if (! array_key_exists($key, $this->attributes)
+            || ! is_array($this->attributes[$key])
+            || ! $this->isJsonCastAttribute($key)
+        ) {
+            return;
+        }
+
+        $this->attributes[$key] = json_encode($this->attributes[$key]);
+    }
+
+    /**
+     * Normalize all JSON-cast raw attributes before array serialization.
+     */
+    protected function normalizeJsonCastAttributes(): void
+    {
+        foreach (array_keys($this->attributes) as $key) {
+            $this->normalizeJsonCastAttribute($key);
+        }
+    }
+
+    /**
+     * Determine if a model attribute is handled by Laravel's JSON cast layer.
+     */
+    protected function isJsonCastAttribute(string $key): bool
+    {
+        $cast = $this->getCasts()[$key] ?? null;
+
+        if (! is_string($cast)) {
+            return false;
+        }
+
+        $cast = strtolower($cast);
+        $baseCast = explode(':', $cast, 2)[0];
+
+        return in_array($baseCast, ['array', 'json', 'object', 'collection'], true)
+            || in_array($cast, ['encrypted:array', 'encrypted:json', 'encrypted:object', 'encrypted:collection'], true);
+    }
+
+    /**
+     * Determine if a model value is empty enough to fall back to EAV storage.
+     */
+    protected function isEmptyCustomAttributeValue($value): bool
+    {
+        if (is_array($value)) {
+            return empty($value);
+        }
+
+        return $value === null || $value === '';
     }
 
     /**
