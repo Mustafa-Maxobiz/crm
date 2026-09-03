@@ -170,7 +170,8 @@ class SalesOwnerTransferService
         }
 
         if (
-            $this->sourceAccessService->isSdrUser($actor)
+            $this->sourceAccessService->isBdeUser($actor)
+            || $this->sourceAccessService->isSdrUser($actor)
             || $this->sourceAccessService->isLgeUser($actor)
             || $this->sourceAccessService->isLeadCloserUser($actor)
         ) {

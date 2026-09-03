@@ -3,6 +3,7 @@
 return [
     'acl' => [
         'leads'            => 'Leads',
+        'leads-bde'        => 'BD Executive Leads',
         'leads-sdr'        => 'SDR Leads',
         'leads-lge'        => 'LGE Leads',
         'leads-lead-clouser' => 'Lead Closer Leads',
@@ -2673,6 +2674,7 @@ return [
         'app-version'          => 'Version: :version',
         'dashboard'            => 'Dashboard',
         'leads'                => 'Leads',
+        'leads-bde'            => 'BD Executive Leads',
         'leads-sdr'            => 'SDR Leads',
         'leads-lge'            => 'LGE Leads',
         'leads-lead-clouser'   => 'Lead Closer Leads',

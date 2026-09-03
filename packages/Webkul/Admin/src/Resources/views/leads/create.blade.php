@@ -6,7 +6,9 @@
     {!! view_render_event('admin.leads.create.form.before') !!}
 
     @php
-        $valueAndPricingAttributeCodes = lead_variant() !== 'main'
+        $usesMainLeadFields = in_array(lead_variant(), ['main', 'bde'], true);
+
+        $valueAndPricingAttributeCodes = ! $usesMainLeadFields
             ? ['pricing_type']
             : ['lead_value', 'pricing_type'];
 
@@ -29,8 +31,8 @@
             'organization_id',
         ];
 
-        // Main create uses Title; company stays under Contact Person for both variants.
-        if (lead_variant() === 'main') {
+        // Main and BDE create use Title; company stays under Contact Person for all variants.
+        if ($usesMainLeadFields) {
             $detailsExcludedAttributeCodes[] = 'title';
         }
 
@@ -192,7 +194,7 @@
                         <div class="w-1/2 max-md:w-full">
                             {!! view_render_event('admin.leads.create.details.attributes.before') !!}
 
-                            @if (lead_variant() === 'main')
+                            @if ($usesMainLeadFields)
                                 <x-admin::form.control-group>
                                     <x-admin::form.control-group.label class="required">
                                         @lang('admin::app.leads.create.title-field')

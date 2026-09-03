@@ -203,12 +203,18 @@ class LeadDataGrid extends DataGrid
             ['Warm Lead', 'Cold Lead', $coldCallSourceId ?: 0]
         );
 
-        if (! app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin()) {
-            app(\Webkul\Lead\Services\SourceAccessService::class)->applyLeadOwnerVisibilityTableScope($queryBuilder);
-            app(\Webkul\Lead\Services\SourceAccessService::class)->applyNonTransferredOwnerTableScope($queryBuilder);
+        $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
+
+        if (! $sourceAccessService->isAdmin()) {
+            if (lead_variant() === 'bde') {
+                $sourceAccessService->applyCurrentAssigneeTableScope($queryBuilder, (int) auth()->guard('user')->id());
+            } else {
+                $sourceAccessService->applyLeadOwnerVisibilityTableScope($queryBuilder);
+                $sourceAccessService->applyNonTransferredOwnerTableScope($queryBuilder);
+            }
         }
 
-        app(\Webkul\Lead\Services\SourceAccessService::class)->applyLeadTableScope($queryBuilder);
+        $sourceAccessService->applyLeadTableScope($queryBuilder);
 
         $this->addFilter('id', 'leads.id');
         $this->addFilter('title', 'leads.title');
@@ -371,7 +377,7 @@ class LeadDataGrid extends DataGrid
             'filterable' => true,
         ]);
 
-        if (lead_variant() !== 'main') {
+        if (in_array(lead_variant(), ['sdr', 'lge', 'lead_clouser'], true)) {
             $this->addColumn([
                 'index'      => 'title',
                 'label'      => trans('admin::app.leads.index.datagrid.subject'),
@@ -485,7 +491,7 @@ class LeadDataGrid extends DataGrid
             'searchable' => false,
             'sortable'   => true,
             'filterable' => true,
-            'visibility' => lead_variant() === 'main',
+            'visibility' => in_array(lead_variant(), ['main', 'bde'], true),
         ]);
 
         $this->addColumn([

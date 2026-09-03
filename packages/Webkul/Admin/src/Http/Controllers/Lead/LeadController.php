@@ -95,7 +95,19 @@ class LeadController extends Controller
      */
     public function index()
     {
+        if (! $this->sourceAccessService->isAdmin() && $this->sourceAccessService->isBdeUser()) {
+            return redirect()->route('admin.leads.bde', request()->query());
+        }
+
         return $this->listIndex('main');
+    }
+
+    /**
+     * BD Executive leads list.
+     */
+    public function bde()
+    {
+        return $this->listIndex('bde');
     }
 
     /**
@@ -184,6 +196,7 @@ class LeadController extends Controller
         }
 
         $allowed = match ($leadVariant) {
+            'bde'          => $this->sourceAccessService->isBdeUser(),
             'sdr'          => $this->sourceAccessService->isSdrUser(),
             'lge'          => $this->sourceAccessService->isLgeUser(),
             'lead_clouser' => $this->sourceAccessService->isLeadCloserUser(),
@@ -849,7 +862,12 @@ class LeadController extends Controller
                     'lead_pipeline_stage_id' => $stage->id,
                 ]);
 
-            $this->sourceAccessService->applyLeadOwnerVisibilityScope($query);
+            if (! $this->sourceAccessService->isAdmin() && lead_variant() === 'bde') {
+                $query->where('leads.user_id', auth()->guard('user')->id());
+            } else {
+                $this->sourceAccessService->applyLeadOwnerVisibilityScope($query);
+            }
+
             $this->sourceAccessService->applyLeadQueryScope($query);
 
             $this->addForwardedOriginFlagForKanban($query);
@@ -1101,7 +1119,7 @@ class LeadController extends Controller
             $data['next_followup_date'] = null;
         }
 
-        $isMainCreate = lead_variant() === 'main';
+        $isMainCreate = in_array(lead_variant(), ['main', 'bde'], true);
         $isLgeCreate = lead_variant() === 'lge';
         $isCallingRoleCreate = in_array(lead_variant(), ['lge', 'sdr'], true);
 
@@ -2551,7 +2569,12 @@ class LeadController extends Controller
 
         $results = $repository
             ->scopeQuery(function ($query) use ($limit, $queryTerm) {
-                $this->sourceAccessService->applyLeadOwnerVisibilityScope($query);
+                if (! $this->sourceAccessService->isAdmin() && lead_variant() === 'bde') {
+                    $query->where('leads.user_id', auth()->guard('user')->id());
+                } else {
+                    $this->sourceAccessService->applyLeadOwnerVisibilityScope($query);
+                }
+
                 $this->sourceAccessService->applyLeadQueryScope($query);
 
                 if ($queryTerm !== '') {

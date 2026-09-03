@@ -1,7 +1,9 @@
 @php
     $leadsIndexRoute = $leadsIndexRoute ?? 'admin.leads.index';
 
-    $canEditLeadValue = lead_variant() === 'main'
+    $usesMainLeadFields = in_array(lead_variant(), ['main', 'bde'], true);
+
+    $canEditLeadValue = $usesMainLeadFields
         && bouncer()->hasPermission(lead_permission('edit'));
 
     $lockedLeadAttributeCodes = [
@@ -24,7 +26,7 @@
         'title',
     ];
 
-    $showTitleInEditModal = lead_variant() === 'main';
+    $showTitleInEditModal = $usesMainLeadFields;
 
     if (! $canEditLeadValue) {
         $modalExcludedAttributeCodes[] = 'lead_value';

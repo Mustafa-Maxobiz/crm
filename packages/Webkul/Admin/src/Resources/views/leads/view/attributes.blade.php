@@ -20,7 +20,9 @@
         'user_id', // Hide user_id from attributes - we'll show it with custom edit button
     ];
 
-    if (lead_variant() !== 'main') {
+    $usesMainLeadFields = in_array(lead_variant(), ['main', 'bde'], true);
+
+    if (! $usesMainLeadFields) {
         $hiddenAttributeCodes[] = 'lead_value';
     }
 
@@ -58,7 +60,7 @@
                 <form @submit="handleSubmit($event, () => {})">
                     {!! view_render_event('admin.leads.view.attributes.form_controls.attributes.view.before', ['lead' => $lead]) !!}
 
-                    @if (lead_variant() === 'main')
+                    @if ($usesMainLeadFields)
                         <div class="mb-1 flex flex-col gap-1">
                             <div class="grid grid-cols-[1fr_2fr] items-center gap-1">
                                 <div class="label dark:text-white">

@@ -101,6 +101,103 @@ Route::controller(LeadController::class)->prefix('leads')->group(function () {
     });
 
     /**
+     * BD Executive leads — currently assigned sales-owner leads.
+     */
+    Route::prefix('bde')->group(function () {
+        Route::get('', 'bde')->name('admin.leads.bde');
+
+        Route::get('create', 'create')->name('admin.leads.bde.create');
+
+        Route::post('create', 'store')->name('admin.leads.bde.store');
+
+        Route::post('create-by-ai', 'createByAI')->name('admin.leads.bde.create_by_ai');
+
+        Route::get('import/template', 'importTemplate')->name('admin.leads.bde.import.template');
+
+        Route::post('import', 'import')->name('admin.leads.bde.import');
+
+        Route::post('import/start', 'importStart')->name('admin.leads.bde.import.start');
+
+        Route::post('import/process', 'importProcess')->name('admin.leads.bde.import.process');
+
+        Route::post('import/retry', 'importRetry')->name('admin.leads.bde.import.retry');
+
+        Route::get('disqualified', 'disqualified')->name('admin.leads.bde.disqualified');
+
+        Route::get('view/{id}', 'view')->name('admin.leads.bde.view');
+
+        Route::get('{id}/eligible-sales-owners', 'getEligibleSalesOwners')->name('admin.leads.bde.eligible_sales_owners');
+
+        Route::post('{id}/change-sales-owner', 'changeSalesOwner')->name('admin.leads.bde.change_sales_owner');
+
+        Route::get('{id}/eligible-meeting-owners', 'eligibleMeetingOwners')->name('admin.leads.bde.eligible_meeting_owners');
+
+        Route::get('{id}/scheduling-context', 'schedulingContext')->name('admin.leads.bde.scheduling_context');
+
+        Route::get('edit/{id}', 'edit')->name('admin.leads.bde.edit');
+
+        Route::get('edit/{id}/form-data', 'formData')->name('admin.leads.bde.form_data');
+
+        Route::put('edit/{id}', 'update')->name('admin.leads.bde.update');
+
+        Route::put('attributes/edit/{id}', 'updateAttributes')->name('admin.leads.bde.attributes.update');
+
+        Route::post('services-offered', 'storeServiceOfferedOption')->name('admin.leads.bde.services_offered.store');
+
+        Route::put('stage/edit/{id}', 'updateStage')->name('admin.leads.bde.stage.update');
+
+        Route::post('disqualify/{id}', 'disqualify')->name('admin.leads.bde.disqualify');
+
+        Route::post('restore/{id}', 'restoreDisqualified')->name('admin.leads.bde.restore_disqualified');
+
+        Route::post('incorrect-info/{id}/reassign', 'reassignIncorrectInfo')->name('admin.leads.bde.incorrect_info.reassign');
+
+        Route::post('ended/{id}/reassign', 'reassignEndedLead')->name('admin.leads.bde.ended.reassign');
+
+        Route::get('search', 'search')->name('admin.leads.bde.search');
+
+        Route::delete('{id}', 'destroy')->name('admin.leads.bde.delete');
+
+        Route::post('mass-update', 'massUpdate')->name('admin.leads.bde.mass_update');
+
+        Route::post('mass-destroy', 'massDestroy')->name('admin.leads.bde.mass_delete');
+
+        Route::get('get/{pipeline_id?}', 'get')->name('admin.leads.bde.get');
+
+        Route::delete('product/{lead_id}', 'removeProduct')->name('admin.leads.bde.product.remove');
+
+        Route::put('product/{lead_id}', 'addProduct')->name('admin.leads.bde.product.add');
+
+        Route::post('followup/complete/{id}', 'followupComplete')->name('admin.leads.bde.followup.complete');
+
+        Route::post('duplicate/{id}', 'duplicateToCompanies')->name('admin.leads.bde.duplicate_to_companies');
+
+        Route::get('kanban/look-up', [LeadController::class, 'kanbanLookup'])->name('admin.leads.bde.kanban.look_up');
+
+        Route::controller(ActivityController::class)->prefix('{id}/activities')->group(function () {
+            Route::get('', 'index')->name('admin.leads.bde.activities.index');
+        });
+
+        Route::controller(TagController::class)->prefix('{id}/tags')->group(function () {
+            Route::post('', 'attach')->name('admin.leads.bde.tags.attach');
+
+            Route::patch('', 'replace')->name('admin.leads.bde.tags.replace');
+
+            Route::delete('', 'detach')->name('admin.leads.bde.tags.detach');
+        });
+
+        Route::controller(EmailController::class)->prefix('{id}/emails')->group(function () {
+            Route::post('', 'store')->name('admin.leads.bde.emails.store');
+
+            Route::delete('', 'detach')->name('admin.leads.bde.emails.detach');
+        });
+
+        Route::controller(QuoteController::class)->prefix('{id}/quotes')->group(function () {
+            Route::delete('{quote_id?}', 'delete')->name('admin.leads.bde.quotes.delete');
+        });
+    });
+
+    /**
      * Lead Clouser leads — assigned leads for closure users.
      */
     Route::prefix('lead-clouser')->group(function () {

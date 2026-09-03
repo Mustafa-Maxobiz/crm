@@ -1,6 +1,8 @@
 <x-admin::layouts>
     <x-slot:title>
-        @if (($leadVariant ?? 'main') === 'sdr')
+        @if (($leadVariant ?? 'main') === 'bde')
+            @lang('admin::app.layouts.leads-bde')
+        @elseif (($leadVariant ?? 'main') === 'sdr')
             @lang('admin::app.layouts.leads-sdr')
         @elseif (($leadVariant ?? 'main') === 'lge')
             @lang('admin::app.layouts.leads-lge')

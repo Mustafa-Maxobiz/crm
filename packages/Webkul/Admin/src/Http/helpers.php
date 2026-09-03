@@ -12,23 +12,27 @@ if (! function_exists('bouncer')) {
 
 if (! function_exists('lead_variant')) {
     /**
-     * Current leads UI variant: main, sdr, lge, or lead_clouser.
+     * Current leads UI variant: main, bde, sdr, lge, or lead_clouser.
      */
     function lead_variant(?string $variant = null): string
     {
-        if (in_array($variant, ['main', 'sdr', 'lge', 'lead_clouser'], true)) {
+        if (in_array($variant, ['main', 'bde', 'sdr', 'lge', 'lead_clouser'], true)) {
             return $variant;
         }
 
         if (app()->bound('view')) {
             $shared = view()->shared('leadVariant');
 
-            if (in_array($shared, ['main', 'sdr', 'lge', 'lead_clouser'], true)) {
+            if (in_array($shared, ['main', 'bde', 'sdr', 'lge', 'lead_clouser'], true)) {
                 return $shared;
             }
         }
 
         $routeName = request()->route()?->getName() ?? '';
+
+        if (str_starts_with($routeName, 'admin.leads.bde')) {
+            return 'bde';
+        }
 
         if (str_starts_with($routeName, 'admin.leads.sdr')) {
             return 'sdr';
@@ -54,6 +58,7 @@ if (! function_exists('lead_permission')) {
     {
         $leadVariant = lead_variant($variant);
         $prefix = match ($leadVariant) {
+            'bde' => 'bde_leads',
             'sdr' => 'sdr_leads',
             'lge' => 'lge_leads',
             'lead_clouser' => 'lead_clouser_leads',
@@ -72,6 +77,10 @@ if (! function_exists('lead_route_name')) {
      */
     function lead_route_name(string $action = 'index', ?string $variant = null): string
     {
+        if (lead_variant($variant) === 'bde') {
+            return $action === 'index' ? 'admin.leads.bde' : 'admin.leads.bde.'.$action;
+        }
+
         if (lead_variant($variant) === 'sdr') {
             return $action === 'index' ? 'admin.leads.sdr' : 'admin.leads.sdr.'.$action;
         }
@@ -107,6 +116,7 @@ if (! function_exists('lead_url')) {
     function lead_url(?string $variant = null): string
     {
         return match (lead_variant($variant)) {
+            'bde' => url('admin/leads/bde'),
             'sdr' => url('admin/leads/sdr'),
             'lge' => url('admin/leads/lge'),
             'lead_clouser' => url('admin/leads/lead-clouser'),
@@ -126,10 +136,28 @@ if (! function_exists('admin_menu_items')) {
         $items = menu()->getItems('admin');
         $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
 
+        if ($sourceAccessService->isBdeUser()) {
+            $hidden = [
+                'dashboard',
+                'sdr_dashboard',
+                'lead_clouser_dashboard',
+                'lge_dashboard',
+                'leads',
+                'sdr_leads',
+                'lead_clouser_leads',
+                'lge_leads',
+            ];
+
+            return $items->reject(
+                fn ($item) => in_array($item->getKey(), $hidden, true)
+            )->values();
+        }
+
         if ($sourceAccessService->isLeadCloserUser()) {
             $hidden = [
                 'dashboard',
                 'sdr_dashboard',
+                'bde_leads',
                 'lge_dashboard',
                 'leads',
                 'sdr_leads',
@@ -149,6 +177,7 @@ if (! function_exists('admin_menu_items')) {
             'sdr_dashboard',
             'lead_clouser_dashboard',
             'lge_dashboard',
+            'bde_leads',
             'sdr_leads',
             'lead_clouser_leads',
             'lge_leads',

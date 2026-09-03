@@ -228,6 +228,20 @@ class SourceAccessService
         return strtolower(trim((string) $this->activeRole($user)?->name)) === 'sdr';
     }
 
+    public function isBdeUser(?UserContract $user = null): bool
+    {
+        $user = $this->resolveUser($user);
+        $roleName = strtolower(trim((string) $this->activeRole($user)?->name));
+
+        return in_array($roleName, [
+            'bd',
+            'bde',
+            'bd executive',
+            'bde executive',
+            'business development executive',
+        ], true);
+    }
+
     public function isLgeUser(?UserContract $user = null): bool
     {
         $user = $this->resolveUser($user);
