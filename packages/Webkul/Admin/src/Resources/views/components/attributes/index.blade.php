@@ -5,7 +5,7 @@
 @foreach ($customAttributes as $attribute)
     @php
         $validations = [];
-        $value = isset($entity) ? $entity[$attribute->code] : null;
+        $value = isset($entity) ? ($entity[$attribute->code] ?? null) : null;
         $isDisabled = in_array($attribute->code, $disabledAttributeCodes, true);
 
         if ($attribute->is_required && ! $isDisabled) {

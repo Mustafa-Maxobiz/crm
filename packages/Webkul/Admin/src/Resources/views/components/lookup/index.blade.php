@@ -311,7 +311,14 @@
                             // Select the newly created item
                             this.selectedItem = {
                                 id: createdItem.id,
-                                name: createdItem.name
+                                name: createdItem.name,
+                                is_newly_created: true,
+                                emails: Array.isArray(createdItem.emails) && createdItem.emails.length
+                                    ? createdItem.emails
+                                    : [{ value: '', label: 'work' }],
+                                contact_numbers: Array.isArray(createdItem.contact_numbers) && createdItem.contact_numbers.length
+                                    ? createdItem.contact_numbers
+                                    : [{ value: '', label: 'work' }],
                             };
                             
                             this.showPopup = false;
