@@ -103,7 +103,7 @@ class ActivityController extends Controller
                     'schedule_to'   => null,
                     'lead_title'    => $lead->title,
                     'person_name'   => $lead->person?->name,
-                    'edit_url'      => route('admin.leads.view', $lead->id),
+                    'edit_url'      => lead_route_for_user('view', $lead->id),
                 ];
             });
 
@@ -899,7 +899,8 @@ class ActivityController extends Controller
 
         return request('stage_meeting')
             && (
-                $sourceAccessService->isSdrUser()
+                $sourceAccessService->isBdeUser()
+                || $sourceAccessService->isSdrUser()
                 || $sourceAccessService->isLgeUser()
             );
     }

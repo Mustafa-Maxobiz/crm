@@ -66,11 +66,11 @@
 
     $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
     $leadForwardService = app(\Webkul\Lead\Services\LeadForwardService::class);
-    $accessibleStages = in_array(lead_variant(), ['sdr', 'lge'], true)
+    $accessibleStages = in_array(lead_variant(), ['bde', 'sdr', 'lge'], true)
         ? $pipeline->stages->values()
         : $sourceAccessService->filterAccessibleStages($pipeline->stages);
 
-    if (in_array(lead_variant(), ['sdr', 'lge'], true)) {
+    if (in_array(lead_variant(), ['bde', 'sdr', 'lge'], true)) {
         $meetingStage = $pipeline->stages->firstWhere('code', 'meeting');
 
         if ($meetingStage) {
@@ -108,7 +108,7 @@
     $isSdrUser = $sourceAccessService->isSdrUser();
     $isLgeLeadVariant = ($leadVariant ?? 'main') === 'lge';
     $isLgeUser = $sourceAccessService->isLgeUser();
-    $isCallingRoleLeadVariant = in_array($leadVariant ?? 'main', ['sdr', 'lge'], true);
+    $isCallingRoleLeadVariant = in_array($leadVariant ?? 'main', ['bde', 'sdr', 'lge'], true);
     $isOwnerRestrictedLeadVariant = in_array($leadVariant ?? 'main', ['bde', 'sdr', 'lge'], true);
     $currentUserId = auth()->guard('user')->id();
     $canManageAllLeadOwners = $sourceAccessService->isAdmin();

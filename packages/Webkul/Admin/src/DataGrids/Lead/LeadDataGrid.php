@@ -97,6 +97,12 @@ class LeadDataGrid extends DataGrid
                 'persons.contact_numbers',
                 'industry_options.name as industry',
                 'industry_values.integer_value as industry_option_id',
+                DB::raw('EXISTS (
+                    SELECT 1
+                    FROM lead_forwards
+                    WHERE lead_forwards.lead_id = leads.id
+                      AND lead_forwards.from_user_id = '.(int) auth()->guard('user')->id().'
+                ) as forwarded_from_current_user'),
                 DB::raw('(
                     SELECT lead_tags.tag_id
                     FROM lead_tags

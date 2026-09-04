@@ -1411,7 +1411,7 @@ class LeadController extends Controller
             ? $this->sourceAccessService->filterAccessibleStages($lead->pipeline->stages)
             : collect();
 
-        if ($lead->pipeline && in_array(lead_variant(), ['sdr', 'lge'], true)) {
+        if ($lead->pipeline && in_array(lead_variant(), ['bde', 'sdr', 'lge'], true)) {
             $meetingStage = $lead->pipeline->stages->firstWhere('code', 'meeting');
 
             if ($meetingStage) {
@@ -1798,9 +1798,14 @@ class LeadController extends Controller
         return lead_variant() === 'lge' || $this->sourceAccessService->isLgeUser();
     }
 
+    protected function isBdeUser(): bool
+    {
+        return lead_variant() === 'bde' || $this->sourceAccessService->isBdeUser();
+    }
+
     protected function isCallingRoleUser(): bool
     {
-        return $this->isSdrUser() || $this->isLgeUser();
+        return $this->isBdeUser() || $this->isSdrUser() || $this->isLgeUser();
     }
 
     /**
@@ -2200,7 +2205,7 @@ class LeadController extends Controller
 
             if ($this->isCallingRoleUser() && $this->stageIsBeyondMeeting($lead, $stage)) {
                 return response()->json([
-                    'message' => 'You can move SDR/LGE leads up to Meeting only.',
+                    'message' => 'You can move BDE/SDR/LGE leads up to Meeting only.',
                 ], 403);
             }
 
@@ -2242,11 +2247,7 @@ class LeadController extends Controller
                 $handoffSdrUserId = (int) request()->input('sdr_user_id');
             }
 
-            if (
-                $stage->code === 'meeting'
-                && $this->isCallingRoleUser()
-                && request()->filled('assigned_user_id')
-            ) {
+            if ($stage->code === 'meeting' && $this->isCallingRoleUser()) {
                 $this->validate(request(), [
                     'assigned_user_id' => [
                         'required',
@@ -2290,19 +2291,30 @@ class LeadController extends Controller
                 $attributes[] = 'user_id';
             }
 
+            $oldSalesOwnerId = $lead->user_id ? (int) $lead->user_id : null;
+
             if ($assignedMeetingOwnerId) {
                 $payload['user_id'] = $assignedMeetingOwnerId;
+                $payload['lead_owner_id'] = $assignedMeetingOwnerId;
                 $attributes[] = 'user_id';
-
-                if (empty($lead->lead_owner_id)) {
-                    $payload['lead_owner_id'] = auth()->guard('user')->id();
-                    $attributes[] = 'lead_owner_id';
-                }
+                $attributes[] = 'lead_owner_id';
             }
 
             $attributes = array_values(array_unique($attributes));
 
             $lead = $this->leadRepository->update($payload, $id, $attributes);
+
+            if ($assignedMeetingOwnerId && $oldSalesOwnerId && $oldSalesOwnerId !== $assignedMeetingOwnerId) {
+                DB::table('lead_forwards')->insert([
+                    'lead_id'      => $lead->id,
+                    'from_user_id' => $oldSalesOwnerId,
+                    'to_user_id'   => $assignedMeetingOwnerId,
+                    'forward_type' => SalesOwnerTransferService::TYPE_SALES_OWNER_TRANSFER,
+                    'forwarded_at' => now(),
+                    'created_at'   => now(),
+                    'updated_at'   => now(),
+                ]);
+            }
 
             if ($stage->code === 'follow-up' && request()->filled('followup_mode')) {
                 $mode = request()->input('followup_mode');

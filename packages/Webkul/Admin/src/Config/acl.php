@@ -92,6 +92,8 @@ return [
             'admin.leads.bde.get',
             'admin.leads.bde.search',
             'admin.leads.bde.kanban.look_up',
+            'admin.leads.bde.eligible_meeting_owners',
+            'admin.leads.bde.scheduling_context',
         ],
         'sort'  => 2,
     ], [

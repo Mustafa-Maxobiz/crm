@@ -109,6 +109,51 @@ if (! function_exists('lead_route')) {
     }
 }
 
+if (! function_exists('lead_variant_for_user')) {
+    /**
+     * Resolve the lead screen variant a user should open outside lead routes.
+     */
+    function lead_variant_for_user($user = null): string
+    {
+        $user = $user ?? auth()->guard('user')->user();
+        $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
+
+        if ($sourceAccessService->isAdmin($user)) {
+            return 'main';
+        }
+
+        if ($sourceAccessService->isBdeUser($user)) {
+            return 'bde';
+        }
+
+        if ($sourceAccessService->isSdrUser($user)) {
+            return 'sdr';
+        }
+
+        if ($sourceAccessService->isLgeUser($user)) {
+            return 'lge';
+        }
+
+        if ($sourceAccessService->isLeadCloserUser($user)) {
+            return 'lead_clouser';
+        }
+
+        return 'main';
+    }
+}
+
+if (! function_exists('lead_route_for_user')) {
+    /**
+     * Generate a URL for the lead route matching a user's active role.
+     *
+     * @param  mixed  $parameters
+     */
+    function lead_route_for_user(string $action = 'index', $parameters = [], bool $absolute = true, $user = null): string
+    {
+        return lead_route($action, $parameters, $absolute, lead_variant_for_user($user));
+    }
+}
+
 if (! function_exists('lead_url')) {
     /**
      * Base URL for lead AJAX paths (…/admin/leads or …/admin/leads/sdr).

@@ -55,7 +55,7 @@ class MeetingHandoffService
             return false;
         }
 
-        return $this->sourceAccessService->canViewLead($lead, $user);
+        return $this->sourceAccessService->canEditLead($lead, $user);
     }
 
     public function canInitiateMeetingHandoff(LeadContract $lead, ?UserContract $user = null): bool
@@ -70,7 +70,7 @@ class MeetingHandoffService
             return false;
         }
 
-        return $this->sourceAccessService->canViewLead($lead, $user);
+        return $this->sourceAccessService->canEditLead($lead, $user);
     }
 
     /**
@@ -107,6 +107,7 @@ class MeetingHandoffService
             Event::dispatch('activity.create.after', $activity);
 
             $stage = $lead->pipeline->stages->firstWhere('id', $stageId);
+            $oldSalesOwnerId = $lead->user_id ? (int) $lead->user_id : null;
 
             Event::dispatch('lead.update.before', $leadId);
 
@@ -114,20 +115,30 @@ class MeetingHandoffService
                 'entity_type'            => 'leads',
                 'lead_pipeline_stage_id' => $stage->id,
                 'user_id'                => $assignedUserId,
+                'lead_owner_id'          => $assignedUserId,
             ];
 
-            $attributes = ['lead_pipeline_stage_id', 'user_id'];
-
-            if (empty($lead->lead_owner_id)) {
-                $payload['lead_owner_id'] = $actor->id;
-                $attributes[] = 'lead_owner_id';
-            }
+            $attributes = ['lead_pipeline_stage_id', 'user_id', 'lead_owner_id'];
 
             $lead = $this->leadRepository->update(
                 $payload,
                 $leadId,
                 array_values(array_unique($attributes)),
             );
+
+            if ($oldSalesOwnerId && $oldSalesOwnerId !== $assignedUserId) {
+                $now = now();
+
+                DB::table('lead_forwards')->insert([
+                    'lead_id'      => $lead->id,
+                    'from_user_id' => $oldSalesOwnerId,
+                    'to_user_id'   => $assignedUserId,
+                    'forward_type' => SalesOwnerTransferService::TYPE_SALES_OWNER_TRANSFER,
+                    'forwarded_at' => $now,
+                    'created_at'   => $now,
+                    'updated_at'   => $now,
+                ]);
+            }
 
             Event::dispatch('lead.update.after', $lead);
 
@@ -137,7 +148,7 @@ class MeetingHandoffService
 
     public function isActiveMeetingOwnerId(int $userId): bool
     {
-        return $this->eligibleOwnerBaseQuery()
+        return $this->eligibleOwnerBaseQuery($this->includeAdminMeetingOwners())
             ->where('users.id', $userId)
             ->exists();
     }
@@ -148,7 +159,7 @@ class MeetingHandoffService
     public function getAllActiveMeetingOwners(): array
     {
         return $this->mapEligibleOwnerRows(
-            $this->eligibleOwnerBaseQuery()
+            $this->eligibleOwnerBaseQuery($this->includeAdminMeetingOwners())
                 ->distinct()
                 ->orderBy('users.name')
                 ->get(['users.id', 'users.name', 'users.email', 'roles.name as role_name'])
@@ -173,7 +184,7 @@ class MeetingHandoffService
         }
 
         return $this->mapEligibleOwnerRows(
-            $this->eligibleOwnerBaseQuery()
+            $this->eligibleOwnerBaseQuery($this->includeAdminMeetingOwners())
                 ->join('service_user', 'service_user.user_id', '=', 'users.id')
                 ->whereIn('service_user.service_id', $serviceIds)
                 ->distinct()
@@ -223,37 +234,74 @@ class MeetingHandoffService
             ->all();
     }
 
-    protected function eligibleOwnerBaseQuery(): Builder
+    protected function eligibleOwnerBaseQuery(bool $includeAdmins = true): Builder
     {
+        $leadCloserRoleNames = [
+            'lead',
+            'lead clouser',
+            'lead closer',
+            'lead closure',
+        ];
+
         $query = DB::table('users')
             ->where('users.status', 1);
 
         if (\Illuminate\Support\Facades\Schema::hasTable('user_roles')) {
-            return $query
+            $query
                 ->join('user_roles', 'users.id', '=', 'user_roles.user_id')
-                ->join('roles', 'user_roles.role_id', '=', 'roles.id')
-                ->where(function ($query) {
-                    $query->where('roles.permission_type', 'all')
-                        ->orWhereIn(DB::raw('LOWER(roles.name)'), [
-                            'lead',
-                            'lead clouser',
-                            'lead closer',
-                            'lead closure',
-                        ]);
+                ->join('roles', 'user_roles.role_id', '=', 'roles.id');
+
+            if (! $includeAdmins) {
+                $query->leftJoin('roles as primary_roles', 'users.role_id', '=', 'primary_roles.id');
+            }
+
+            return $query
+                ->where(function ($query) use ($includeAdmins, $leadCloserRoleNames) {
+                    if ($includeAdmins) {
+                        $query->where('roles.permission_type', 'all')
+                            ->orWhereIn(DB::raw('LOWER(roles.name)'), $leadCloserRoleNames);
+
+                        return;
+                    }
+
+                    $query->whereIn(DB::raw('LOWER(roles.name)'), $leadCloserRoleNames);
+                })
+                ->when(! $includeAdmins, function ($query) {
+                    $query->where(function ($query) {
+                        $query
+                            ->whereNull('primary_roles.id')
+                            ->orWhere(function ($query) {
+                                $query
+                                    ->where('primary_roles.permission_type', '!=', 'all')
+                                    ->whereNotIn(DB::raw('LOWER(TRIM(primary_roles.name))'), [
+                                        'admin',
+                                        'administrator',
+                                        'super admin',
+                                    ]);
+                            });
+                    });
                 });
         }
 
         return $query
             ->join('roles', 'users.role_id', '=', 'roles.id')
-            ->where(function ($query) {
-                $query->where('roles.permission_type', 'all')
-                    ->orWhereIn(DB::raw('LOWER(roles.name)'), [
-                        'lead',
-                        'lead clouser',
-                        'lead closer',
-                        'lead closure',
-                    ]);
+            ->where(function ($query) use ($includeAdmins, $leadCloserRoleNames) {
+                if ($includeAdmins) {
+                    $query->where('roles.permission_type', 'all')
+                        ->orWhereIn(DB::raw('LOWER(roles.name)'), $leadCloserRoleNames);
+
+                    return;
+                }
+
+                $query->whereIn(DB::raw('LOWER(roles.name)'), $leadCloserRoleNames);
             });
+    }
+
+    protected function includeAdminMeetingOwners(?UserContract $actor = null): bool
+    {
+        $actor = $actor ?? auth()->guard('user')->user();
+
+        return ! ($actor && $this->sourceAccessService->isBdeUser($actor));
     }
 
     /**
@@ -308,7 +356,7 @@ class MeetingHandoffService
         }
 
         if ($this->stageIsBeyondMeeting($lead, $stage)) {
-            throw new AuthorizationException('You can move SDR/LGE leads up to Meeting only.');
+            throw new AuthorizationException('You can move BDE/SDR/LGE leads up to Meeting only.');
         }
 
         if (! $this->isEligibleMeetingOwnerForLead($lead, $assignedUserId)) {
@@ -335,7 +383,8 @@ class MeetingHandoffService
 
     protected function isCallingRoleUser(UserContract $user): bool
     {
-        return $this->sourceAccessService->isSdrUser($user)
+        return $this->sourceAccessService->isBdeUser($user)
+            || $this->sourceAccessService->isSdrUser($user)
             || $this->sourceAccessService->isLgeUser($user);
     }
 }

@@ -363,7 +363,7 @@
                     ) {
                         this.$emitter.emit('add-flash', {
                             type: 'error',
-                            message: 'You can move SDR/LGE leads up to Meeting only.',
+                            message: 'You can move BDE/SDR/LGE leads up to Meeting only.',
                         });
 
                         this.refreshKanban();
@@ -529,12 +529,12 @@
                         return false;
                     }
 
-                    if (lead.forwarded_from_current_user) {
-                        return true;
-                    }
-
                     if (Number(lead.user_id || 0) === Number(this.currentUserId)) {
                         return false;
+                    }
+
+                    if (lead.forwarded_from_current_user) {
+                        return true;
                     }
 
                     return Number(lead.lead_owner_id || 0) === Number(this.currentUserId);
@@ -590,6 +590,10 @@
 
                 isHandoffLead(lead) {
                     if (! this.isOwnerRestrictedLeadVariant) {
+                        return false;
+                    }
+
+                    if (Number(lead.user_id || 0) === Number(this.currentUserId)) {
                         return false;
                     }
 

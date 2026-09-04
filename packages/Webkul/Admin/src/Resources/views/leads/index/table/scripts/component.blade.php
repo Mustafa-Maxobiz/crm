@@ -630,7 +630,7 @@
                         }
 
                         if (stageCode === 'meeting') {
-                            if (Number(record.meeting_activity_count) > 0) {
+                            if (! this.isCallingRoleLeadVariant && Number(record.meeting_activity_count) > 0) {
                                 this.updateStage(leadId, value)
                                     .then(() => this.$refs.datagrid.get())
                                     .catch(error => {
@@ -1129,6 +1129,13 @@
 
                     if (Number(record.user_id) === Number(this.currentUserId)) {
                         return false;
+                    }
+
+                    if (
+                        record.forwarded_from_current_user === true
+                        || Number(record.forwarded_from_current_user || 0) === 1
+                    ) {
+                        return true;
                     }
 
                     return Number(record.lead_owner_id || 0) === Number(this.currentUserId);

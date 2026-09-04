@@ -147,7 +147,7 @@ class ActivityDataGrid extends DataGrid
                     return "<span class='text-gray-800 dark:text-gray-300'>".e($row->lead_title).'</span>';
                 }
 
-                $route = urldecode(route('admin.leads.view', $row->lead_id));
+                $route = urldecode(lead_route_for_user('view', $row->lead_id));
 
                 return "<a class='text-brandColor hover:underline' target='_blank' href='".$route."'>".e($row->lead_title).'</a>';
             },
