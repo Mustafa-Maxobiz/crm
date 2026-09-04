@@ -34,7 +34,12 @@ class SalesOwnerTransferService
             return collect();
         }
 
-        return $this->usersWithRoles($allowedRoleNames, (int) $lead->user_id);
+        return $this->usersWithRoles(
+            $allowedRoleNames,
+            (int) $lead->user_id,
+            true,
+            $this->isBdeRoleName($this->activeRoleName($actor))
+        );
     }
 
     public function transfer(Lead $lead, int $newOwnerId, ?UserContract $actor = null): Lead
@@ -150,7 +155,7 @@ class SalesOwnerTransferService
             return null;
         }
 
-        $roleName = strtolower(trim((string) $this->activeRoleService->getActiveRole($actor)?->name));
+        $roleName = $this->activeRoleName($actor);
 
         if ($roleName === 'lge') {
             return ['sdr', 'lead closer', 'lead clouser', 'lead closure', 'lead'];
@@ -160,10 +165,8 @@ class SalesOwnerTransferService
             return ['lge', 'lead closer', 'lead clouser', 'lead closure', 'lead'];
         }
 
-        $bdeRoleNames = ['bd', 'bde', 'bd executive', 'bd exective', 'bde executive', 'bde exective', 'business development executive'];
-
-        if (in_array($roleName, $bdeRoleNames, true)) {
-            return $bdeRoleNames;
+        if ($this->isBdeRoleName($roleName)) {
+            return $this->bdeRoleNames();
         }
 
         return [];
@@ -194,35 +197,42 @@ class SalesOwnerTransferService
         ?array $allowedRoleNames,
         ?int $excludeUserId = null,
         bool $activeOnly = true,
+        bool $excludePrimaryAdminUsers = false,
     ): Collection
     {
         if (Schema::hasTable('user_roles')) {
             $pivotUsers = $this->applyUserRoleQueryFilters(
                 DB::table('users')
                 ->join('user_roles', 'users.id', '=', 'user_roles.user_id')
-                    ->join('roles', 'user_roles.role_id', '=', 'roles.id'),
+                    ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                    ->leftJoin('roles as primary_roles', 'users.role_id', '=', 'primary_roles.id'),
                 $allowedRoleNames,
                 $excludeUserId,
-                $activeOnly
+                $activeOnly,
+                $excludePrimaryAdminUsers,
+                'primary_roles'
             )->get([
                 'users.id',
                 'users.name',
                 'users.email',
                 'roles.id as role_id',
                 'roles.name as role_name',
+                'primary_roles.name as primary_role_name',
             ]);
 
             $primaryRoleUsers = $this->applyUserRoleQueryFilters(
                 DB::table('users')->join('roles', 'users.role_id', '=', 'roles.id'),
                 $allowedRoleNames,
                 $excludeUserId,
-                $activeOnly
+                $activeOnly,
+                $excludePrimaryAdminUsers
             )->get([
                 'users.id',
                 'users.name',
                 'users.email',
                 'roles.id as role_id',
                 'roles.name as role_name',
+                'roles.name as primary_role_name',
             ]);
 
             return $pivotUsers
@@ -235,7 +245,8 @@ class SalesOwnerTransferService
                 DB::table('users')->join('roles', 'users.role_id', '=', 'roles.id'),
                 $allowedRoleNames,
                 $excludeUserId,
-                $activeOnly
+                $activeOnly,
+                $excludePrimaryAdminUsers
             );
 
             return $query
@@ -247,6 +258,7 @@ class SalesOwnerTransferService
                     'users.email',
                     'roles.id as role_id',
                     'roles.name as role_name',
+                    'roles.name as primary_role_name',
                 ])
                 ->unique('id')
                 ->values();
@@ -258,6 +270,8 @@ class SalesOwnerTransferService
         ?array $allowedRoleNames,
         ?int $excludeUserId,
         bool $activeOnly,
+        bool $excludePrimaryAdminUsers = false,
+        string $primaryRoleAlias = 'roles',
     ): \Illuminate\Database\Query\Builder {
         if ($activeOnly) {
             $query->where('users.status', 1);
@@ -271,6 +285,36 @@ class SalesOwnerTransferService
             $query->whereIn(DB::raw('LOWER(TRIM(roles.name))'), $allowedRoleNames);
         }
 
+        if ($excludePrimaryAdminUsers) {
+            $query->whereNotIn(DB::raw("LOWER(TRIM({$primaryRoleAlias}.name))"), $this->primaryAdminRoleNames());
+        }
+
         return $query;
+    }
+
+    protected function activeRoleName(UserContract $actor): string
+    {
+        return strtolower(trim((string) $this->activeRoleService->getActiveRole($actor)?->name));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function bdeRoleNames(): array
+    {
+        return ['bd', 'bde', 'bd executive', 'bd exective', 'bde executive', 'bde exective', 'business development executive'];
+    }
+
+    protected function isBdeRoleName(string $roleName): bool
+    {
+        return in_array($roleName, $this->bdeRoleNames(), true);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function primaryAdminRoleNames(): array
+    {
+        return ['admin', 'administrator', 'super admin'];
     }
 }
