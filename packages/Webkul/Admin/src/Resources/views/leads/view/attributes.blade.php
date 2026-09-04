@@ -29,8 +29,7 @@
     $salesOwnerTransferService = app(\Webkul\Lead\Services\SalesOwnerTransferService::class);
     $currentSalesOwnerLabel = $salesOwnerTransferService->ownerLabel($lead->user_id);
     $canChangeSalesOwner = bouncer()->hasPermission(lead_permission('edit'))
-        && ! ($readOnlyForCurrentUser ?? false)
-        && $salesOwnerTransferService->eligibleOwnersForLead($lead)->isNotEmpty();
+        && ! ($readOnlyForCurrentUser ?? false);
 @endphp
 
 <div class="flex w-full flex-col gap-4 border-b border-gray-200 p-4 dark:border-gray-800">
