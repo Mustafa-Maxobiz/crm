@@ -921,7 +921,7 @@ class LeadController extends Controller
 
     protected function addForwardedOriginFlagForKanban(mixed $query): void
     {
-        if (! in_array(lead_variant(), ['sdr', 'lge'], true)) {
+        if (! in_array(lead_variant(), ['bde', 'sdr', 'lge'], true)) {
             return;
         }
 

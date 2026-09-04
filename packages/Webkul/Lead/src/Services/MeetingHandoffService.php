@@ -93,6 +93,8 @@ class MeetingHandoffService
 
             $this->assertCanCompleteHandoff($lead, $actor, $stageId, $assignedUserId);
 
+            $activityData = $this->withAssignedOwnerParticipant($activityData, $assignedUserId, (int) $actor->id);
+
             Event::dispatch('activity.create.before');
 
             $activity = $this->activityRepository->create(array_merge($activityData, [
@@ -299,9 +301,26 @@ class MeetingHandoffService
 
     protected function includeAdminMeetingOwners(?UserContract $actor = null): bool
     {
-        $actor = $actor ?? auth()->guard('user')->user();
+        return true;
+    }
 
-        return ! ($actor && $this->sourceAccessService->isBdeUser($actor));
+    protected function withAssignedOwnerParticipant(array $activityData, int $assignedUserId, int $actorId): array
+    {
+        $participants = is_array($activityData['participants'] ?? null)
+            ? $activityData['participants']
+            : [];
+
+        $participants['users'] = collect($participants['users'] ?? [])
+            ->map(fn ($userId) => (int) $userId)
+            ->filter(fn ($userId) => $userId > 0 && $userId !== $actorId)
+            ->push($assignedUserId)
+            ->unique()
+            ->values()
+            ->all();
+
+        $activityData['participants'] = $participants;
+
+        return $activityData;
     }
 
     /**

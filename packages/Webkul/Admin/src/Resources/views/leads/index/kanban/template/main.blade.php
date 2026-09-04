@@ -156,7 +156,7 @@
 
                                         <span
                                             class="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-800"
-                                            v-if="isHandoffLead(element)"
+                                            v-if="Number(element.user_id || 0) !== Number(currentUserId)"
                                         >
                                             Assigned
                                         </span>
