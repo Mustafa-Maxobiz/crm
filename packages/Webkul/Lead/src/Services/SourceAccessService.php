@@ -781,10 +781,6 @@ class SourceAccessService
             return false;
         }
 
-        if (! $this->leadMatchesSourceScope($lead, $user)) {
-            return false;
-        }
-
         if (! $this->leadMatchesOrganizationScope($lead, $user)) {
             return false;
         }
@@ -877,8 +873,6 @@ class SourceAccessService
 
         $query = $this->applyAccessibleStageScope($query);
 
-        $query = $this->applySourceQueryScope($query);
-
         return $this->applyOrganizationQueryScope($query);
     }
 
@@ -887,8 +881,6 @@ class SourceAccessService
         $query = $this->applyDisqualificationTableScope($query);
 
         $query = $this->applyAccessibleStageTableScope($query);
-
-        $query = $this->applySourceTableScope($query);
 
         return $this->applyOrganizationTableScope($query);
     }
