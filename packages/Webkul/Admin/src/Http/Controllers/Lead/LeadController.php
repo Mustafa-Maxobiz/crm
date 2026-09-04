@@ -95,7 +95,7 @@ class LeadController extends Controller
      */
     public function index()
     {
-        if (! $this->sourceAccessService->isAdmin() && $this->sourceAccessService->isBdeUser()) {
+        if (! $this->sourceAccessService->isAdmin() && $this->canAccessBdeLeadScreen()) {
             return redirect()->route('admin.leads.bde', request()->query());
         }
 
@@ -196,7 +196,7 @@ class LeadController extends Controller
         }
 
         $allowed = match ($leadVariant) {
-            'bde'          => $this->sourceAccessService->isBdeUser(),
+            'bde'          => $this->canAccessBdeLeadScreen(),
             'sdr'          => $this->sourceAccessService->isSdrUser(),
             'lge'          => $this->sourceAccessService->isLgeUser(),
             'lead_clouser' => $this->sourceAccessService->isLeadCloserUser(),
@@ -204,6 +204,13 @@ class LeadController extends Controller
         };
 
         abort_unless($allowed, 403, 'You are not allowed to access this lead screen.');
+    }
+
+    protected function canAccessBdeLeadScreen(): bool
+    {
+        return $this->sourceAccessService->isBdeUser()
+            || bouncer()->hasPermission('bde_leads')
+            || bouncer()->hasPermission('bde_leads.view');
     }
 
     /**
@@ -219,6 +226,8 @@ class LeadController extends Controller
      */
     public function importTemplate(): StreamedResponse
     {
+        $isBdeImport = lead_variant() === 'bde';
+
         $headers = [
             'companies*',
             'lead_value*',
@@ -233,7 +242,6 @@ class LeadController extends Controller
             'state',
             'country',
             'postcode',
-            'sales_owner_email',
             'pipeline',
             'stage',
             'expected_close_date',
@@ -259,7 +267,6 @@ class LeadController extends Controller
             'CA',
             'US',
             '95120',
-            'sdr@example.com',
             'Default Pipeline',
             'New',
             Carbon::now()->addDays(14)->toDateString(),
@@ -270,6 +277,11 @@ class LeadController extends Controller
             '',
             'priority',
         ];
+
+        if (! $isBdeImport) {
+            array_splice($headers, 13, 0, 'sales_owner_email');
+            array_splice($sample, 13, 0, 'sdr@example.com');
+        }
 
         return response()->streamDownload(function () use ($headers, $sample) {
             $stream = fopen('php://output', 'w');
@@ -862,11 +874,7 @@ class LeadController extends Controller
                     'lead_pipeline_stage_id' => $stage->id,
                 ]);
 
-            if (! $this->sourceAccessService->isAdmin() && lead_variant() === 'bde') {
-                $query->where('leads.user_id', auth()->guard('user')->id());
-            } else {
-                $this->sourceAccessService->applyLeadOwnerVisibilityScope($query);
-            }
+            $this->sourceAccessService->applyLeadOwnerVisibilityScope($query);
 
             $this->sourceAccessService->applyLeadQueryScope($query);
 
@@ -2569,11 +2577,7 @@ class LeadController extends Controller
 
         $results = $repository
             ->scopeQuery(function ($query) use ($limit, $queryTerm) {
-                if (! $this->sourceAccessService->isAdmin() && lead_variant() === 'bde') {
-                    $query->where('leads.user_id', auth()->guard('user')->id());
-                } else {
-                    $this->sourceAccessService->applyLeadOwnerVisibilityScope($query);
-                }
+                $this->sourceAccessService->applyLeadOwnerVisibilityScope($query);
 
                 $this->sourceAccessService->applyLeadQueryScope($query);
 
@@ -3413,6 +3417,7 @@ class LeadController extends Controller
         if (
             ! $skipSalesOwnerEmail
             && lead_variant() !== 'lge'
+            && lead_variant() !== 'bde'
             && filled($row['sales_owner_email'] ?? null)
             && ! $this->resolveUserId($row['sales_owner_email'])
         ) {
@@ -3485,8 +3490,10 @@ class LeadController extends Controller
             ];
         }
 
+        $importerOwnsLead = in_array(lead_variant(), ['bde', 'lge', 'sdr'], true);
+
         $ownerId = $assigneeUserId
-            ?? (in_array(lead_variant(), ['lge', 'sdr'], true)
+            ?? ($importerOwnsLead
                 ? auth()->guard('user')->id()
                 : (filled($row['sales_owner_email'] ?? null)
                     ? $this->resolveUserId($row['sales_owner_email'])
@@ -3505,7 +3512,7 @@ class LeadController extends Controller
             'source_link'              => $this->nullableImportValue($row['source_link'] ?? null),
             'user_id'                  => $ownerId,
             'lead_owner_id'            => $assigneeUserId
-                ?? (in_array(lead_variant(), ['lge', 'sdr'], true)
+                ?? ($importerOwnsLead
                     ? auth()->guard('user')->id()
                     : null),
             'lead_pipeline_id'         => $pipeline->id,

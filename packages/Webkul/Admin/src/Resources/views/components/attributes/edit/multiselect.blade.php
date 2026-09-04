@@ -442,15 +442,17 @@
                 },
 
                 createOption() {
-                    if (! this.canAddNew || ! this.storeUrl || ! this.searchableNewLabel || this.isCreating) {
-                        return;
-                    }
+    const optionName = String(this.newOptionName || '').trim();
 
-                    this.isCreating = true;
+    if (! this.canAddNew || ! this.storeUrl || ! optionName || this.isCreating) {
+        return;
+    }
 
-                    this.$axios.post(this.storeUrl, {
-                        name: this.searchableNewLabel,
-                    }).then(response => {
+    this.isCreating = true;
+
+    this.$axios.post(this.storeUrl, {
+        name: optionName,
+    }).then(response => {
                         const option = response.data.data;
                         const normalizedOption = {
                             id: option.id,

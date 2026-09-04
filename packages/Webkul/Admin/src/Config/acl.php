@@ -86,7 +86,13 @@ return [
     ], [
         'key'   => 'bde_leads.view',
         'name'  => 'admin::app.acl.view',
-        'route' => 'admin.leads.bde.view',
+        'route' => [
+            'admin.leads.bde',
+            'admin.leads.bde.view',
+            'admin.leads.bde.get',
+            'admin.leads.bde.search',
+            'admin.leads.bde.kanban.look_up',
+        ],
         'sort'  => 2,
     ], [
         'key'   => 'bde_leads.edit',

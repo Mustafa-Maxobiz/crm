@@ -109,6 +109,7 @@
     $isLgeLeadVariant = ($leadVariant ?? 'main') === 'lge';
     $isLgeUser = $sourceAccessService->isLgeUser();
     $isCallingRoleLeadVariant = in_array($leadVariant ?? 'main', ['sdr', 'lge'], true);
+    $isOwnerRestrictedLeadVariant = in_array($leadVariant ?? 'main', ['bde', 'sdr', 'lge'], true);
     $currentUserId = auth()->guard('user')->id();
     $canManageAllLeadOwners = $sourceAccessService->isAdmin();
     $activeSdrUsers = $isLgeUser

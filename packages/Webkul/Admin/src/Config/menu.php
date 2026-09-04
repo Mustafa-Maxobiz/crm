@@ -61,7 +61,7 @@ return [
      */
     [
         'key'        => 'bde_leads',
-        'name'       => 'admin::app.layouts.leads-bde',
+        'name'       => 'admin::app.layouts.leads',
         'route'      => 'admin.leads.bde',
         'sort'       => 6,
         'icon-class' => 'icon-leads',

@@ -69,7 +69,7 @@
                                             v-model="newServiceName"
                                             class="min-w-0 flex-1 rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-brandColor dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300"
                                             placeholder="@lang('admin::app.leads.index.datagrid.service-offered')"
-                                            @keydown.enter.prevent="createOtherServiceOption(openServiceRecord)"
+                                            @keydown.enter.stop.prevent="createOtherServiceOption(openServiceRecord)"
                                         />
 
                                         <button
@@ -77,7 +77,7 @@
                                             type="button"
                                             class="rounded bg-brandColor px-3 py-1.5 text-sm font-semibold text-white hover:bg-brandColor/90"
                                             :disabled="isCreatingService"
-                                            @click="createOtherServiceOption(openServiceRecord)"
+                                            @click.stop.prevent="createOtherServiceOption(openServiceRecord)"
                                         >
                                             @{{ isCreatingService ? serviceCreatingLabel : 'Add' }}
                                         </button>

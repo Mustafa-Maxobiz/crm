@@ -56,6 +56,7 @@
                     isLgeLeadVariant: @json($isLgeLeadVariant),
                     isLgeUser: @json($isLgeUser),
                     isCallingRoleLeadVariant: @json($isCallingRoleLeadVariant),
+                    isOwnerRestrictedLeadVariant: @json($isOwnerRestrictedLeadVariant),
                     activeSdrUsers: @json($activeSdrUsers),
                     meetingOwnerOptions: [],
                     meetingOwnersLoading: false,
@@ -314,14 +315,16 @@
                 },
 
                 createOtherServiceOption(record) {
-                    if (! this.canAddServiceOffered || ! this.serviceSearchableNewLabel || this.isCreatingService) {
+                    const serviceName = String(this.newServiceName || '').trim();
+
+                    if (! this.canAddServiceOffered || ! serviceName || this.isCreatingService) {
                         return;
                     }
 
                     this.isCreatingService = true;
 
                     this.$axios.post("{{ lead_route('services_offered.store') }}", {
-                        name: this.serviceSearchableNewLabel,
+                        name: serviceName,
                     }).then(response => {
                         const option = response.data.data;
                         const items = this.inlineOptions.service_offered?.items || [];
@@ -1120,7 +1123,7 @@
                 },
 
                 isStageEditingLocked(record, stages) {
-                    if (! this.isCallingRoleLeadVariant) {
+                    if (! this.isOwnerRestrictedLeadVariant) {
                         return false;
                     }
 

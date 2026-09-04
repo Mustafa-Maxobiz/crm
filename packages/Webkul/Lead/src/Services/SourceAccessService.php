@@ -237,7 +237,9 @@ class SourceAccessService
             'bd',
             'bde',
             'bd executive',
+            'bd exective',
             'bde executive',
+            'bde exective',
             'business development executive',
         ], true);
     }
@@ -646,7 +648,7 @@ class SourceAccessService
     }
 
     /**
-     * Leads originated by a calling-role user (SDR/LGE), including legacy rows without lead_owner_id.
+     * Leads originated by a role user (BDE/SDR/LGE), including legacy rows without lead_owner_id.
      */
     public function applyOriginatingCallingOwnerTableScope(QueryBuilder $query, int $userId): QueryBuilder
     {
@@ -692,7 +694,7 @@ class SourceAccessService
 
     public function isCallingRoleUser(?UserContract $user = null): bool
     {
-        return $this->isSdrUser($user) || $this->isLgeUser($user);
+        return $this->isBdeUser($user) || $this->isSdrUser($user) || $this->isLgeUser($user);
     }
 
     public function canAccessSourceId(int $sourceId, ?UserContract $user = null): bool

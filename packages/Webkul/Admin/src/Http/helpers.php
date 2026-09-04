@@ -135,13 +135,12 @@ if (! function_exists('admin_menu_items')) {
     {
         $items = menu()->getItems('admin');
         $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
+        $isAdmin = $sourceAccessService->isAdmin();
+        $hasBdeLeadPermission = bouncer()->hasPermission('bde_leads')
+            || bouncer()->hasPermission('bde_leads.view');
 
-        if ($sourceAccessService->isBdeUser()) {
+        if (! $isAdmin && ($sourceAccessService->isBdeUser() || $hasBdeLeadPermission)) {
             $hidden = [
-                'dashboard',
-                'sdr_dashboard',
-                'lead_clouser_dashboard',
-                'lge_dashboard',
                 'leads',
                 'sdr_leads',
                 'lead_clouser_leads',
@@ -169,7 +168,7 @@ if (! function_exists('admin_menu_items')) {
             )->values();
         }
 
-        if (! $sourceAccessService->isAdmin()) {
+        if (! $isAdmin) {
             return $items;
         }
 

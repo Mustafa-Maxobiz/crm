@@ -18,7 +18,9 @@ return new class extends Migration
                 'bd',
                 'bde',
                 'bd executive',
+                'bd exective',
                 'bde executive',
+                'bde exective',
                 'business development executive',
             ])
             ->get(['id', 'permissions']);
@@ -62,7 +64,9 @@ return new class extends Migration
                 'bd',
                 'bde',
                 'bd executive',
+                'bd exective',
                 'bde executive',
+                'bde exective',
                 'business development executive',
             ])
             ->get(['id', 'permissions']);

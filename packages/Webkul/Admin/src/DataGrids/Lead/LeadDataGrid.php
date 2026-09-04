@@ -206,12 +206,8 @@ class LeadDataGrid extends DataGrid
         $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
 
         if (! $sourceAccessService->isAdmin()) {
-            if (lead_variant() === 'bde') {
-                $sourceAccessService->applyCurrentAssigneeTableScope($queryBuilder, (int) auth()->guard('user')->id());
-            } else {
-                $sourceAccessService->applyLeadOwnerVisibilityTableScope($queryBuilder);
-                $sourceAccessService->applyNonTransferredOwnerTableScope($queryBuilder);
-            }
+            $sourceAccessService->applyLeadOwnerVisibilityTableScope($queryBuilder);
+            $sourceAccessService->applyNonTransferredOwnerTableScope($queryBuilder);
         }
 
         $sourceAccessService->applyLeadTableScope($queryBuilder);

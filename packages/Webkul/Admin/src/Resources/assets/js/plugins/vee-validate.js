@@ -4,6 +4,7 @@
  */
 import { configure, defineRule, Field, Form, ErrorMessage } from "vee-validate";
 import { localize, setLocale } from "@vee-validate/i18n";
+import { h } from "vue";
 import ar from "@vee-validate/i18n/dist/locale/ar.json";
 import bn from "@vee-validate/i18n/dist/locale/bn.json";
 import de from "@vee-validate/i18n/dist/locale/de.json";
@@ -33,7 +34,16 @@ export default {
          * Global components registration;
          */
         app.component("VForm", Form);
-        app.component("VField", Field);
+        app.component("VField", {
+            inheritAttrs: false,
+
+            setup(_, { attrs, slots }) {
+                return () => h(Field, {
+                    ...attrs,
+                    rules: attrs.rules ?? undefined,
+                }, slots);
+            },
+        });
         app.component("VErrorMessage", ErrorMessage);
 
         window.addEventListener("load", () => setLocale(document.documentElement.attributes.lang.value));

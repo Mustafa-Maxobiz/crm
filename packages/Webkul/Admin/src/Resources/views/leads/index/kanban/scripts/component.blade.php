@@ -58,6 +58,7 @@
                     currentUserId: @json($currentUserId),
                     isLgeLeadVariant: @json($isLgeLeadVariant),
                     isCallingRoleLeadVariant: @json($isCallingRoleLeadVariant),
+                    isOwnerRestrictedLeadVariant: @json($isOwnerRestrictedLeadVariant),
 
                     stages: @json($accessibleStages->all()),
 
@@ -524,7 +525,7 @@
                 },
 
                 isStageEditingLocked(lead) {
-                    if (! this.isCallingRoleLeadVariant) {
+                    if (! this.isOwnerRestrictedLeadVariant) {
                         return false;
                     }
 
@@ -588,7 +589,7 @@
                 },
 
                 isHandoffLead(lead) {
-                    if (! this.isCallingRoleLeadVariant) {
+                    if (! this.isOwnerRestrictedLeadVariant) {
                         return false;
                     }
 

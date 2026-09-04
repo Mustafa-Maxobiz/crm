@@ -54,6 +54,8 @@
                                             Choose one or more <strong>SDR users</strong> to own these leads (multiple users share them equally) and an <strong>Industry</strong> for the whole file.
                                         @elseif (lead_variant() === 'lge')
                                             If the selected tag is <strong>Cold Lead</strong>, choose one or more <strong>SDR users</strong> to receive the imported leads.
+                                        @elseif (lead_variant() === 'bde')
+                                            Imported leads are assigned to you automatically as Sales Owner and Lead Owner.
                                         @endif
                                     </p>
 
