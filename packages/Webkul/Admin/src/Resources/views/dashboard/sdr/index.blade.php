@@ -4,6 +4,7 @@
         $showUsFeatures = $showUsFeatures ?? true;
         $showMeetings = $showMeetings ?? ($dashboardVariant === 'lead_clouser');
         $dashboardRoleLabel = match ($dashboardVariant) {
+            'bde' => 'BDE',
             'lge' => 'LGE',
             'lead_clouser' => 'Closer',
             default => 'SDR',
@@ -69,11 +70,13 @@
                     <div class="mb-4 flex items-center justify-between gap-4">
                         <div class="grid gap-1">
                             <p class="text-lg font-semibold text-gray-800 dark:text-white">
-                                {{ $dashboardVariant === 'lge' ? 'LinkedIn Summary' : ($dashboardVariant === 'lead_clouser' ? 'Meeting Summary' : 'Call Summary') }}
+                                {{ $dashboardVariant === 'bde' ? 'Lead Work Summary' : ($dashboardVariant === 'lge' ? 'LinkedIn Summary' : ($dashboardVariant === 'lead_clouser' ? 'Meeting Summary' : 'Call Summary')) }}
                             </p>
 
                             <p class="text-sm text-gray-500 dark:text-gray-400">
-                                @if ($dashboardVariant === 'lge')
+                                @if ($dashboardVariant === 'bde')
+                                    Daily, weekly, and monthly BD Executive lead work.
+                                @elseif ($dashboardVariant === 'lge')
                                     Daily, weekly, and monthly LinkedIn funnel.
                                 @elseif ($dashboardVariant === 'lead_clouser')
                                     Daily, weekly, and monthly closer meeting performance.
@@ -175,15 +178,17 @@
                 <div class="flex items-center justify-between gap-3 border-b border-gray-200 p-3 dark:border-gray-800 max-lg:flex-wrap">
                     <div class="grid gap-1">
                         <p class="text-lg font-semibold text-gray-800 dark:text-white">
-                            @{{ isLgeDashboard ? 'LinkedIn Summary' : (isCloserDashboard ? 'Meeting Summary' : 'Call Summary') }}
+                            @{{ isBdeDashboard ? 'Lead Work Summary' : (isLgeDashboard ? 'LinkedIn Summary' : (isCloserDashboard ? 'Meeting Summary' : 'Call Summary')) }}
                         </p>
 
                         <p class="text-sm text-gray-500 dark:text-gray-400">
-                            @{{ isLgeDashboard
+                            @{{ isBdeDashboard
+                                ? `${periodLabel} BD Executive lead work.`
+                                : (isLgeDashboard
                                 ? `${periodLabel} LinkedIn lead generation funnel.`
                                 : (isCloserDashboard
                                     ? `${periodLabel} closer meeting performance.`
-                                    : `${periodLabel} ${roleLabel} call performance.`) }}
+                                    : `${periodLabel} ${roleLabel} call performance.`)) }}
                         </p>
                     </div>
 
@@ -226,7 +231,96 @@
                 </div>
 
                 <div
-                    v-if="isLgeDashboard"
+                    v-if="isBdeDashboard"
+                    class="grid flex-1 grid-cols-3 gap-2.5 p-3 max-lg:grid-cols-2 max-sm:grid-cols-1"
+                >
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Total Leads Created
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-gray-800 dark:text-white">
+                            @{{ summary.bde.total_created }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            @{{ summary.period.start }} - @{{ summary.period.end }}
+                        </p>
+                    </div>
+
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Forwarded Leads
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-gray-800 dark:text-white">
+                            @{{ summary.bde.forwarded }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Forwarded in selected period
+                        </p>
+                    </div>
+
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Follow-ups
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-gray-800 dark:text-white">
+                            @{{ summary.bde.followups }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Due in selected period
+                        </p>
+                    </div>
+
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Meetings Booked
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-gray-800 dark:text-white">
+                            @{{ summary.meetings.booked }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Linked to BDE lead work
+                        </p>
+                    </div>
+
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Won Leads
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-green-600">
+                            @{{ summary.outcomes.won }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            @{{ summary.outcomes.won_percent }}% of outcomes
+                        </p>
+                    </div>
+
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Lost Leads
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-red-600">
+                            @{{ summary.outcomes.lost }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            @{{ summary.outcomes.lost_percent }}% of outcomes
+                        </p>
+                    </div>
+                </div>
+
+                <div
+                    v-else-if="isLgeDashboard"
                     class="grid flex-1 grid-cols-3 gap-2.5 p-3 max-lg:grid-cols-2 max-sm:grid-cols-1"
                 >
                     <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
@@ -500,36 +594,78 @@
 
                                 <div
                                     v-if="section.key === 'today-calendar'"
-                                    class="flex shrink-0 flex-nowrap items-center gap-1.5"
+                                    class="flex shrink-0 flex-wrap items-center justify-end gap-2"
                                 >
-                                    <button
-                                        v-if="showMeetings"
-                                        type="button"
-                                        class="sdr-summary-badge meeting"
-                                        :class="{'active': isCalendarFilterActive('meeting')}"
-                                        @click="setCalendarFilter('meeting')"
-                                    >
-                                        Meetings @{{ summary.meetings }}
-                                    </button>
+                                    <div class="flex items-center gap-1">
+                                        <button
+                                            type="button"
+                                            class="secondary-button !min-h-[31px] !min-w-[31px] !px-2"
+                                            title="Previous day"
+                                            @click="moveCalendarDate(-1)"
+                                        >
+                                            &lt;
+                                        </button>
 
-                                    <button
-                                        type="button"
-                                        class="sdr-summary-badge followup"
-                                        :class="{'active': ! showMeetings || isCalendarFilterActive('followup')}"
-                                        @click="setCalendarFilter('followup')"
-                                    >
-                                        Follow-ups @{{ summary.followups }}
-                                    </button>
+                                        <div class="relative">
+                                            <input
+                                                ref="calendarDateInput"
+                                                type="text"
+                                                class="sr-only"
+                                                :value="calendarDate"
+                                                tabindex="-1"
+                                            />
 
-                                    <button
-                                        v-if="showMeetings"
-                                        type="button"
-                                        class="sdr-summary-badge total"
-                                        :class="{'active': isCalendarFilterActive('all')}"
-                                        @click="setCalendarFilter('all')"
-                                    >
-                                        Total @{{ summary.total }}
-                                    </button>
+                                            <button
+                                                type="button"
+                                                class="secondary-button !min-h-[31px] !px-2.5"
+                                                :title="calendarDate"
+                                                @click="openCalendarDatePicker"
+                                            >
+                                                <span class="icon-calendar text-lg"></span>
+                                                <span>@{{ calendarDateLabel }}</span>
+                                            </button>
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            class="secondary-button !min-h-[31px] !min-w-[31px] !px-2"
+                                            title="Next day"
+                                            @click="moveCalendarDate(1)"
+                                        >
+                                            &gt;
+                                        </button>
+                                    </div>
+
+                                    <div class="flex flex-nowrap items-center gap-1.5">
+                                        <button
+                                            v-if="showMeetings"
+                                            type="button"
+                                            class="sdr-summary-badge meeting"
+                                            :class="{'active': isCalendarFilterActive('meeting')}"
+                                            @click="setCalendarFilter('meeting')"
+                                        >
+                                            Meetings @{{ summary.meetings }}
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            class="sdr-summary-badge followup"
+                                            :class="{'active': ! showMeetings || isCalendarFilterActive('followup')}"
+                                            @click="setCalendarFilter('followup')"
+                                        >
+                                            Follow-ups @{{ summary.followups }}
+                                        </button>
+
+                                        <button
+                                            v-if="showMeetings"
+                                            type="button"
+                                            class="sdr-summary-badge total"
+                                            :class="{'active': isCalendarFilterActive('all')}"
+                                            @click="setCalendarFilter('all')"
+                                        >
+                                            Total @{{ summary.total }}
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <span
@@ -691,6 +827,8 @@
                     return {
                         todayCalendar: [],
                         calendarFilter: 'all',
+                        calendarDate: '',
+                        calendarDatePicker: null,
                         summary: {
                             meetings: 0,
                             followups: 0,
@@ -711,14 +849,14 @@
                                 sections: [
                                     {
                                         key: 'today-calendar',
-                                        title: "Today's Calendar",
+                                        title: this.calendarTitle,
                                         description: this.showMeetings
                                             ? (this.showUsFeatures
-                                                ? 'Meetings and follow-ups due today.<br>Items with a green border are high priority during 11:00 AM – 4:00 PM in the prospect US timezone.'
-                                                : 'Meetings and follow-ups due today.')
+                                                ? `${this.calendarDateDescription}.<br>Items with a green border are high priority during 11:00 AM – 4:00 PM in the prospect US timezone.`
+                                                : `${this.calendarDateDescription}.`)
                                             : (this.showUsFeatures
-                                                ? 'Follow-ups due today.<br>Items with a green border are high priority during 11:00 AM – 4:00 PM in the prospect US timezone.'
-                                                : 'Follow-ups due today.'),
+                                                ? `${this.calendarFollowupDescription}.<br>Items with a green border are high priority during 11:00 AM – 4:00 PM in the prospect US timezone.`
+                                                : `${this.calendarFollowupDescription}.`),
                                         items: this.filteredTodayCalendar,
                                         pageSize: 10,
                                         tall: true,
@@ -743,9 +881,47 @@
 
                         return items;
                     },
+
+                    calendarTitle() {
+                        return this.isSelectedCalendarDateToday
+                            ? "Today's Calendar"
+                            : 'Calendar';
+                    },
+
+                    calendarDateDescription() {
+                        return this.isSelectedCalendarDateToday
+                            ? 'Meetings and follow-ups due today'
+                            : `Meetings and follow-ups due on ${this.calendarDateLabel}`;
+                    },
+
+                    calendarFollowupDescription() {
+                        return this.isSelectedCalendarDateToday
+                            ? 'Follow-ups due today'
+                            : `Follow-ups due on ${this.calendarDateLabel}`;
+                    },
+
+                    calendarDateLabel() {
+                        if (! this.calendarDate) {
+                            return 'Select Date';
+                        }
+
+                        return new Intl.DateTimeFormat('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                        }).format(new Date(`${this.calendarDate}T00:00:00`));
+                    },
+
+                    isSelectedCalendarDateToday() {
+                        return this.calendarDate === this.formatDateForInput(new Date());
+                    },
                 },
 
                 mounted() {
+                    this.calendarDate = this.formatDateForInput(new Date());
+
+                    this.$nextTick(() => this.activateCalendarDatePicker());
+
                     this.getSections();
 
                     this.refreshInterval = setInterval(this.getSections, 60000);
@@ -753,9 +929,66 @@
 
                 beforeUnmount() {
                     clearInterval(this.refreshInterval);
+                    this.calendarDatePicker?.destroy?.();
                 },
 
                 methods: {
+                    activateCalendarDatePicker() {
+                        const calendarDateInput = Array.isArray(this.$refs.calendarDateInput)
+                            ? this.$refs.calendarDateInput[0]
+                            : this.$refs.calendarDateInput;
+
+                        if (! calendarDateInput || typeof Flatpickr === 'undefined') {
+                            return;
+                        }
+
+                        this.calendarDatePicker = new Flatpickr(calendarDateInput, {
+                            dateFormat: 'Y-m-d',
+                            defaultDate: this.calendarDate,
+                            clickOpens: false,
+                            allowInput: false,
+                            onChange: (selectedDates) => {
+                                if (! selectedDates.length) {
+                                    return;
+                                }
+
+                                this.setCalendarDate(this.formatDateForInput(selectedDates[0]));
+                            },
+                        });
+                    },
+
+                    openCalendarDatePicker() {
+                        this.calendarDatePicker?.open();
+                    },
+
+                    setCalendarDate(date) {
+                        if (! date || this.calendarDate === date) {
+                            return;
+                        }
+
+                        this.calendarDate = date;
+                        this.calendarDatePicker?.setDate(date, false);
+                        this.pages['today-calendar'] = 1;
+                        this.getSections();
+                    },
+
+                    moveCalendarDate(days) {
+                        const date = new Date(`${this.calendarDate}T00:00:00`);
+
+                        date.setDate(date.getDate() + days);
+
+                        this.setCalendarDate(this.formatDateForInput(date));
+                    },
+
+                    formatDateForInput(date) {
+                        const value = new Date(date);
+                        const year = value.getFullYear();
+                        const month = `${value.getMonth() + 1}`.padStart(2, '0');
+                        const day = `${value.getDate()}`.padStart(2, '0');
+
+                        return `${year}-${month}-${day}`;
+                    },
+
                     pageFor(key) {
                         return this.pages[key] || 1;
                     },
@@ -848,9 +1081,18 @@
                     },
 
                     getSections() {
-                        this.$axios.get(this.sectionsUrl)
+                        this.$axios.get(this.sectionsUrl, {
+                            params: {
+                                date: this.calendarDate,
+                            },
+                        })
                             .then(response => {
                                 const summary = response.data.summary || {};
+
+                                if (response.data.calendar_date) {
+                                    this.calendarDate = response.data.calendar_date;
+                                    this.calendarDatePicker?.setDate(this.calendarDate, false);
+                                }
 
                                 this.todayCalendar = response.data.today_calendar || [];
                                 this.summary = {
@@ -999,11 +1241,20 @@
                                 acceptance_rate: 0,
                                 response_rate: 0,
                             },
+                            bde: {
+                                total_created: 0,
+                                forwarded: 0,
+                                followups: 0,
+                            },
                         },
                     };
                 },
 
                 computed: {
+                    isBdeDashboard() {
+                        return this.dashboardVariant === 'bde';
+                    },
+
                     isLgeDashboard() {
                         return this.dashboardVariant === 'lge';
                     },

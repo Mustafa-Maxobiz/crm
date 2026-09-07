@@ -103,6 +103,8 @@ class Column
 
         $this->setSortable($column['sortable'] ?? $this->sortable);
 
+        $this->setExportable($column['exportable'] ?? $this->exportable);
+
         $this->setVisibility($column['visibility'] ?? $this->visibility);
 
         $this->setClosure($column['closure'] ?? $this->closure);
@@ -338,6 +340,7 @@ class Column
             'filterable_options'    => $this->filterableOptions,
             'allow_multiple_values' => $this->allowMultipleValues,
             'sortable'              => $this->sortable,
+            'exportable'            => $this->exportable,
             'visibility'            => $this->visibility,
         ];
     }

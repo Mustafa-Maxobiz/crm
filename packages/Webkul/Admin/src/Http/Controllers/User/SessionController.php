@@ -195,6 +195,7 @@ class SessionController extends Controller
 
         if (! bouncer()->hasPermission('dashboard')
             && ! bouncer()->hasPermission('sdr_dashboard')
+            && ! bouncer()->hasPermission('bde_dashboard')
             && ! bouncer()->hasPermission('lge_dashboard')
             && ! bouncer()->hasPermission('lead_clouser_dashboard')
         ) {

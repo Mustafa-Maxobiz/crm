@@ -12,20 +12,25 @@ return [
         'route' => 'admin.dashboard.sdr',
         'sort'  => 2,
     ], [
+        'key'   => 'bde_dashboard',
+        'name'  => 'admin::app.acl.dashboard-bde',
+        'route' => 'admin.dashboard.bde',
+        'sort'  => 3,
+    ], [
         'key'   => 'lead_clouser_dashboard',
         'name'  => 'admin::app.acl.dashboard-lead-clouser',
         'route' => 'admin.dashboard.lead_clouser',
-        'sort'  => 3,
+        'sort'  => 4,
     ], [
         'key'   => 'lge_dashboard',
         'name'  => 'admin::app.acl.dashboard-lge',
         'route' => 'admin.dashboard.lge',
-        'sort'  => 4,
+        'sort'  => 5,
     ], [
         'key'   => 'leads',
         'name'  => 'admin::app.acl.leads',
         'route' => 'admin.leads.index',
-        'sort'  => 5,
+        'sort'  => 6,
     ], [
         'key'   => 'leads.create',
         'name'  => 'admin::app.acl.create',

@@ -186,6 +186,10 @@ if (! function_exists('admin_menu_items')) {
 
         if (! $isAdmin && ($sourceAccessService->isBdeUser() || $hasBdeLeadPermission)) {
             $hidden = [
+                'dashboard',
+                'sdr_dashboard',
+                'lead_clouser_dashboard',
+                'lge_dashboard',
                 'leads',
                 'sdr_leads',
                 'lead_clouser_leads',
@@ -201,6 +205,7 @@ if (! function_exists('admin_menu_items')) {
             $hidden = [
                 'dashboard',
                 'sdr_dashboard',
+                'bde_dashboard',
                 'bde_leads',
                 'lge_dashboard',
                 'leads',
@@ -219,6 +224,7 @@ if (! function_exists('admin_menu_items')) {
 
         $hidden = [
             'sdr_dashboard',
+            'bde_dashboard',
             'lead_clouser_dashboard',
             'lge_dashboard',
             'bde_leads',

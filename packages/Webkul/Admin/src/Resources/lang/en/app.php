@@ -56,6 +56,7 @@ return [
         'restore'          => 'Restore',
         'dashboard'        => 'Dashboard',
         'dashboard-sdr'    => 'SDR Dashboard',
+        'dashboard-bde'    => 'BD Executive Dashboard',
         'dashboard-lead-clouser' => 'Lead Closer Dashboard',
         'dashboard-lge'    => 'LGE Dashboard',
         'data-transfer'    => 'Data Transfer',

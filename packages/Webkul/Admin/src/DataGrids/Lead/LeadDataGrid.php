@@ -91,6 +91,7 @@ class LeadDataGrid extends DataGrid
                 'lead_pipeline_stages.code as stage_code',
                 'lead_pipeline_stages.sort_order as stage_sort_order',
                 'users.id as user_id',
+                'users.name as user',
                 'users.name as user_name',
                 'persons.id as person_id',
                 'persons.name as person_name',
@@ -448,6 +449,7 @@ class LeadDataGrid extends DataGrid
             'sortable'   => false,
             'filterable' => false,
             'visibility' => false,
+            'exportable' => false,
         ]);
 
         $this->addColumn([

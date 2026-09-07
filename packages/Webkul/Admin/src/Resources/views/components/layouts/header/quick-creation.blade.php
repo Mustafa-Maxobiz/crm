@@ -1,5 +1,14 @@
 <div>
+    @php
+        $canQuickCreateBdeLead = lead_variant_for_user() === 'bde'
+            && bouncer()->hasPermission('bde_leads.create');
+        $canQuickImportBdeLeads = lead_variant_for_user() === 'bde'
+            && bouncer()->hasPermission('bde_leads.import');
+    @endphp
+
     @if (bouncer()->hasPermission('leads.create')
+        || $canQuickCreateBdeLead
+        || $canQuickImportBdeLeads
         || bouncer()->hasPermission('lge_leads.create')
         || bouncer()->hasPermission('lge_leads.import')
         || bouncer()->hasPermission('quotes.create')
@@ -31,6 +40,30 @@
                                         <i class="icon-leads text-2xl text-gray-600"></i>
 
                                         <span class="font-medium dark:text-gray-300">@lang('admin::app.layouts.lead')</span>
+                                    </div>
+                                </a>
+                            </div>
+                        @endif
+
+                        @if ($canQuickCreateBdeLead)
+                            <div class="rounded-lg bg-white p-2 hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-950">
+                                <a href="{{ route('admin.leads.bde.create') }}">
+                                    <div class="flex flex-col gap-1">
+                                        <i class="icon-leads text-2xl text-gray-600"></i>
+
+                                        <span class="font-medium dark:text-gray-300">@lang('admin::app.leads.index.create-btn')</span>
+                                    </div>
+                                </a>
+                            </div>
+                        @endif
+
+                        @if ($canQuickImportBdeLeads)
+                            <div class="rounded-lg bg-white p-2 hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-950">
+                                <a href="{{ route('admin.leads.bde', ['action' => 'import']) }}">
+                                    <div class="flex flex-col gap-1">
+                                        <i class="icon-download text-2xl text-gray-600"></i>
+
+                                        <span class="font-medium dark:text-gray-300">Import Leads</span>
                                     </div>
                                 </a>
                             </div>

@@ -15,6 +15,8 @@ Route::controller(DashboardController::class)->prefix('dashboard')->group(functi
 
     Route::get('sdr', 'sdr')->name('admin.dashboard.sdr');
 
+    Route::get('bde', 'bde')->name('admin.dashboard.bde');
+
     Route::get('lead-clouser', 'leadClouser')->name('admin.dashboard.lead_clouser');
 
     Route::get('lge', 'lge')->name('admin.dashboard.lge');

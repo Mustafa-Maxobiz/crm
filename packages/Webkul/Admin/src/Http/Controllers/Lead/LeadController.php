@@ -393,7 +393,7 @@ class LeadController extends Controller
             }
 
             $rowData = $this->mapImportRow($headers, $row);
-            $rowErrors = $this->validateImportRow($rowData, ! empty($assignment['assignee_user_ids']), $batchLinkedInProfileId);
+            $rowErrors = $this->validateImportRow($rowData, ! empty($assignment['assignee_user_ids']), $batchLinkedInProfileId, $sourceId);
 
             if (! empty($rowErrors)) {
                 $errors[] = 'Row '.$rowNumber.': '.implode(' ', $rowErrors);
@@ -616,7 +616,7 @@ class LeadController extends Controller
 
         foreach ($chunk as $row) {
             $rowData = $row['data'] ?? [];
-            $rowErrors = $this->validateImportRow($rowData, ! empty($assigneeUserIds), $batchLinkedInProfileId);
+            $rowErrors = $this->validateImportRow($rowData, ! empty($assigneeUserIds), $batchLinkedInProfileId, $sourceId);
 
             if (! empty($rowErrors)) {
                 $errorMessage = implode(' ', $rowErrors);
@@ -736,7 +736,7 @@ class LeadController extends Controller
         foreach ($data['rows'] as $row) {
             $rowNumber = (int) $row['row_number'];
             $rowData = $this->normalizeRetriedImportRow($row['data'] ?? []);
-            $rowErrors = $this->validateImportRow($rowData, ! empty($assignment['assignee_user_ids']), $batchLinkedInProfileId);
+            $rowErrors = $this->validateImportRow($rowData, ! empty($assignment['assignee_user_ids']), $batchLinkedInProfileId, $sourceId);
 
             if (! empty($rowErrors)) {
                 $failedRows[] = [
@@ -1038,8 +1038,11 @@ class LeadController extends Controller
     {
         $this->shareLeadVariant();
 
+        $linkedInSourceIds = $this->sourceRepository->getAllowedLinkedInSourceIds();
+
         return view('admin::leads.create', [
-            'linkedInProfiles' => lead_variant() === 'lge'
+            'linkedInSourceIds' => $linkedInSourceIds,
+            'linkedInProfiles' => ! empty($linkedInSourceIds)
                 ? $this->linkedInProfileAccessService->getAssignedProfiles()
                 : collect(),
             'tagOptions'       => $this->leadCreateTagOptions(),
@@ -1131,10 +1134,10 @@ class LeadController extends Controller
         $isLgeCreate = lead_variant() === 'lge';
         $isCallingRoleCreate = in_array(lead_variant(), ['lge', 'sdr'], true);
 
-        if ($isLgeCreate) {
+        if ($isLgeCreate || $this->sourceRepository->isLinkedInSource((int) ($data['lead_source_id'] ?? 0))) {
             try {
                 $this->applyLinkedInProfileToLeadData($data);
-                $coldLeadForwardSdrId = $this->validatedColdLeadForwardSdrId($data);
+                $coldLeadForwardSdrId = $isLgeCreate ? $this->validatedColdLeadForwardSdrId($data) : null;
             } catch (\Illuminate\Validation\ValidationException $exception) {
                 if (request()->ajax()) {
                     return response()->json([
@@ -1149,6 +1152,7 @@ class LeadController extends Controller
                     ->withErrors($exception->errors());
             }
         } else {
+            $data['linkedin_profile_id'] = null;
             $coldLeadForwardSdrId = null;
         }
 
@@ -1676,12 +1680,18 @@ class LeadController extends Controller
     }
 
     /**
-     * Resolve and validate LinkedIn working profile for LGE lead create/update payloads.
+     * Resolve and validate the working profile only for LinkedIn-source leads.
      *
      * @throws \Illuminate\Validation\ValidationException
      */
     protected function applyLinkedInProfileToLeadData(array &$data, ?int $batchProfileId = null): void
     {
+        if (! $this->sourceRepository->isLinkedInSource((int) ($data['lead_source_id'] ?? 0))) {
+            $data['linkedin_profile_id'] = null;
+
+            return;
+        }
+
         $user = auth()->guard('user')->user();
         $ownerUserId = (int) ($user?->id ?? 0);
         $entry = $this->findLinkedInEntryBySourceLink($data['source_link'] ?? null);
@@ -3374,7 +3384,7 @@ class LeadController extends Controller
         return $value;
     }
 
-    protected function validateImportRow(array $row, bool $skipSalesOwnerEmail = false, ?int $batchLinkedInProfileId = null): array
+    protected function validateImportRow(array $row, bool $skipSalesOwnerEmail = false, ?int $batchLinkedInProfileId = null, int $sourceId = 0): array
     {
         $errors = [];
 
@@ -3384,7 +3394,7 @@ class LeadController extends Controller
             }
         }
 
-        if (lead_variant() === 'lge' && filled($row['source_link'] ?? null)) {
+        if ($this->sourceRepository->isLinkedInSource($sourceId)) {
             $profileId = $this->resolveImportedLinkedInProfileId($row, $batchLinkedInProfileId);
 
             if ($profileId <= 0) {
@@ -3548,7 +3558,7 @@ class LeadController extends Controller
             $lead['industry'] = $industryId;
         }
 
-        if (lead_variant() === 'lge' && filled($row['source_link'] ?? null)) {
+        if ($this->sourceRepository->isLinkedInSource($leadSourceId)) {
             $profileId = $this->resolveImportedLinkedInProfileId($row, $batchLinkedInProfileId);
 
             if ($profileId <= 0) {
@@ -3672,7 +3682,7 @@ class LeadController extends Controller
      */
     protected function validatedLgeImportProfileId(): int|null|JsonResponse|RedirectResponse
     {
-        if (lead_variant() !== 'lge') {
+        if (! $this->sourceRepository->isLinkedInSource((int) request()->input('lead_source_id', 0))) {
             return null;
         }
 
