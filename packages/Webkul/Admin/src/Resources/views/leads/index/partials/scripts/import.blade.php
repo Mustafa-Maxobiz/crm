@@ -358,7 +358,6 @@
                 renderFailedRows([], null);
                 setLeadImportFooterMode('done');
                 flash(skippedCount > 0 ? 'warning' : 'success', result.message);
-                setTimeout(() => window.location.reload(), 900);
             };
 
             document.addEventListener('change', (event) => {
@@ -591,7 +590,6 @@
                         setProgress(elements, 100, result.message || 'All failed rows imported successfully.');
                         setLeadImportFooterMode('done');
                         flash(skippedCount > 0 ? 'warning' : 'success', result.message || 'All failed rows imported successfully.');
-                        setTimeout(() => window.location.reload(), 900);
                     }
                 } catch (error) {
                     const message = error.response?.data?.message || 'Retry failed. Please check the rows and try again.';

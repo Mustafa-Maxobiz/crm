@@ -50,6 +50,84 @@
             methods: {
                 setOptions: function() {
                     let self = this;
+                    let syncInputValue = function(date, instance) {
+                        let dateStr = date instanceof Date
+                            ? instance.formatDate(date, instance.config.dateFormat)
+                            : date;
+                        let displayValue = date instanceof Date
+                            ? instance.formatDate(date, instance.config.altFormat)
+                            : dateStr;
+
+                        instance.input.value = dateStr;
+
+                        if (instance.altInput) {
+                            instance.altInput.value = displayValue;
+                        }
+
+                        instance.input.dispatchEvent(new Event('input', { bubbles: true }));
+                        instance.input.dispatchEvent(new Event('change', { bubbles: true }));
+
+                        self.$emit("onChange", dateStr);
+                    };
+                    let dateWithCurrentTime = function(instance) {
+                        let selectedDate = instance.selectedDates?.[0]
+                            || instance.latestSelectedDateObj
+                            || new Date();
+                        let date = new Date(selectedDate.getTime());
+                        let hour = Number.parseInt(instance.hourElement?.value, 10);
+                        let minute = Number.parseInt(instance.minuteElement?.value, 10);
+
+                        if (Number.isNaN(hour)) {
+                            hour = date.getHours();
+                        }
+
+                        if (Number.isNaN(minute)) {
+                            minute = date.getMinutes();
+                        }
+
+                        if (! instance.config.time_24hr && instance.amPM) {
+                            let meridian = String(instance.amPM.textContent || instance.amPM.value || '').toUpperCase();
+
+                            if (meridian === 'PM' && hour < 12) {
+                                hour += 12;
+                            }
+
+                            if (meridian === 'AM' && hour === 12) {
+                                hour = 0;
+                            }
+                        }
+
+                        date.setHours(hour, minute, 0, 0);
+
+                        return date;
+                    };
+                    let syncCurrentValue = function(instance) {
+                        let date = dateWithCurrentTime(instance);
+
+                        instance.selectedDates = [date];
+                        instance.latestSelectedDateObj = date;
+
+                        syncInputValue(date, instance);
+                    };
+                    let bindTimeSync = function(instance) {
+                        if (! instance.calendarContainer || instance.__maxobizTimeSyncBound) {
+                            return;
+                        }
+
+                        instance.__maxobizTimeSyncBound = true;
+
+                        ['input', 'change', 'keyup', 'mouseup', 'click'].forEach(function(eventName) {
+                            instance.calendarContainer.addEventListener(eventName, function(event) {
+                                if (! event.target.closest('.flatpickr-time')) {
+                                    return;
+                                }
+
+                                setTimeout(function() {
+                                    syncCurrentValue(instance);
+                                }, 0);
+                            });
+                        });
+                    };
 
                     return {
                         allowInput: this.allowInput ?? true,
@@ -64,7 +142,23 @@
                         weekNumbers: true,
 
                         onChange: function(selectedDates, dateStr, instance) {
-                            self.$emit("onChange", dateStr);
+                            syncInputValue(selectedDates[0] || dateStr, instance);
+                        },
+
+                        onValueUpdate: function(selectedDates, dateStr, instance) {
+                            syncInputValue(selectedDates[0] || dateStr, instance);
+                        },
+
+                        onClose: function(selectedDates, dateStr, instance) {
+                            syncInputValue(selectedDates[0] || dateStr, instance);
+                        },
+
+                        onReady: function(selectedDates, dateStr, instance) {
+                            bindTimeSync(instance);
+                        },
+
+                        onOpen: function(selectedDates, dateStr, instance) {
+                            bindTimeSync(instance);
                         }
                     };
                 },

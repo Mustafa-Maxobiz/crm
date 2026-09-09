@@ -41,9 +41,10 @@
         </div>
 
         <div class="sdr-dashboard-right-static grid min-w-0 content-start gap-4">
-            @if ($showMeetings)
+            @if ($showMeetings || $dashboardVariant === 'bde')
                 <v-sdr-today-summary
                     sections-url="{{ route('admin.dashboard.lead_sections', ['variant' => $dashboardVariant, 'show_meetings' => $showMeetings ? 1 : 0]) }}"
+                    :show-meetings='@json($showMeetings)'
                 >
                     <div class="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
                         <div class="mb-3 grid gap-1">
@@ -51,10 +52,12 @@
                             <div class="light-shimmer-bg dark:shimmer h-4 w-56 rounded-md"></div>
                         </div>
 
-                        <div class="grid grid-cols-3 gap-2.5 max-sm:grid-cols-1">
+                        <div class="grid {{ $showMeetings ? 'grid-cols-3' : 'grid-cols-2' }} gap-2.5 max-sm:grid-cols-1">
                             <div class="light-shimmer-bg dark:shimmer h-[84px] rounded-md"></div>
                             <div class="light-shimmer-bg dark:shimmer h-[84px] rounded-md"></div>
-                            <div class="light-shimmer-bg dark:shimmer h-[84px] rounded-md"></div>
+                            @if ($showMeetings)
+                                <div class="light-shimmer-bg dark:shimmer h-[84px] rounded-md"></div>
+                            @endif
                         </div>
                     </div>
                 </v-sdr-today-summary>
@@ -70,14 +73,14 @@
                     <div class="mb-4 flex items-center justify-between gap-4">
                         <div class="grid gap-1">
                             <p class="text-lg font-semibold text-gray-800 dark:text-white">
-                                {{ $dashboardVariant === 'bde' ? 'Lead Work Summary' : ($dashboardVariant === 'lge' ? 'LinkedIn Summary' : ($dashboardVariant === 'lead_clouser' ? 'Meeting Summary' : 'Call Summary')) }}
+                                {{ $dashboardVariant === 'bde' ? 'Lead Work Summary' : ($dashboardVariant === 'lge' ? 'Activity Summary' : ($dashboardVariant === 'lead_clouser' ? 'Meeting Summary' : 'Call Summary')) }}
                             </p>
 
                             <p class="text-sm text-gray-500 dark:text-gray-400">
                                 @if ($dashboardVariant === 'bde')
                                     Daily, weekly, and monthly BD Executive lead work.
                                 @elseif ($dashboardVariant === 'lge')
-                                    Daily, weekly, and monthly LinkedIn funnel.
+                                    Daily, weekly, and monthly LGE activity.
                                 @elseif ($dashboardVariant === 'lead_clouser')
                                     Daily, weekly, and monthly closer meeting performance.
                                 @else
@@ -124,8 +127,14 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-3 gap-2.5 p-3 max-sm:grid-cols-1">
-                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                <div
+                    class="grid gap-2.5 p-3 max-sm:grid-cols-1"
+                    :class="showMeetings ? 'grid-cols-3' : 'grid-cols-2'"
+                >
+                    <div
+                        v-if="showMeetings"
+                        class="rounded-md border border-gray-200 p-3 dark:border-gray-800"
+                    >
                         <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
                             Meetings
                         </p>
@@ -178,14 +187,14 @@
                 <div class="flex items-center justify-between gap-3 border-b border-gray-200 p-3 dark:border-gray-800 max-lg:flex-wrap">
                     <div class="grid gap-1">
                         <p class="text-lg font-semibold text-gray-800 dark:text-white">
-                            @{{ isBdeDashboard ? 'Lead Work Summary' : (isLgeDashboard ? 'LinkedIn Summary' : (isCloserDashboard ? 'Meeting Summary' : 'Call Summary')) }}
+                            @{{ isBdeDashboard ? 'Lead Work Summary' : (isLgeDashboard ? 'Activity Summary' : (isCloserDashboard ? 'Meeting Summary' : 'Call Summary')) }}
                         </p>
 
                         <p class="text-sm text-gray-500 dark:text-gray-400">
                             @{{ isBdeDashboard
                                 ? `${periodLabel} BD Executive lead work.`
                                 : (isLgeDashboard
-                                ? `${periodLabel} LinkedIn lead generation funnel.`
+                                ? `${periodLabel} LGE activity.`
                                 : (isCloserDashboard
                                     ? `${periodLabel} closer meeting performance.`
                                     : `${periodLabel} ${roleLabel} call performance.`)) }}
@@ -381,7 +390,7 @@
 
                     <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
                         <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
-                            Meetings
+                            Booked Meetings
                         </p>
 
                         <p class="mt-2 text-2xl font-semibold text-gray-800 dark:text-white">
@@ -1125,6 +1134,10 @@
                     sectionsUrl: {
                         type: String,
                         required: true,
+                    },
+                    showMeetings: {
+                        type: Boolean,
+                        default: true,
                     },
                 },
 

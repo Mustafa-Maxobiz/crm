@@ -45,11 +45,20 @@ class DashboardController extends Controller
      */
     public function index()
     {
-        if (app(SourceAccessService::class)->isBdeUser()) {
+        $sourceAccessService = app(SourceAccessService::class);
+
+        if ($this->isPrimaryAdminUser() || $sourceAccessService->isAdmin()) {
+            return view('admin::dashboard.index')->with([
+                'startDate' => $this->dashboardHelper->getStartDate(),
+                'endDate'   => $this->dashboardHelper->getEndDate(),
+            ]);
+        }
+
+        if ($sourceAccessService->isBdeUser()) {
             return redirect()->route('admin.dashboard.bde');
         }
 
-        if (app(SourceAccessService::class)->isLeadCloserUser()) {
+        if ($sourceAccessService->isLeadCloserUser()) {
             return redirect()->route('admin.dashboard.lead_clouser');
         }
 
@@ -64,6 +73,8 @@ class DashboardController extends Controller
      */
     public function sdr(): View
     {
+        $this->abortUnlessDashboardRole('sdr');
+
         return view('admin::dashboard.sdr.index')->with([
             'stateTimezones' => $this->usStateTimezoneService->allStates(),
             'dashboardTitle' => 'SDR Dashboard',
@@ -78,12 +89,14 @@ class DashboardController extends Controller
      */
     public function bde(): View
     {
+        $this->abortUnlessDashboardRole('bde');
+
         return view('admin::dashboard.sdr.index')->with([
             'stateTimezones' => [],
             'dashboardTitle' => 'BD Executive Dashboard',
             'showUsFeatures' => false,
             'dashboardVariant' => 'bde',
-            'showMeetings' => true,
+            'showMeetings' => false,
         ]);
     }
 
@@ -92,6 +105,8 @@ class DashboardController extends Controller
      */
     public function leadClouser(): View
     {
+        $this->abortUnlessDashboardRole('lead_clouser');
+
         return view('admin::dashboard.sdr.index')->with([
             'stateTimezones' => $this->usStateTimezoneService->allStates(),
             'dashboardTitle' => 'Lead Closer Dashboard',
@@ -106,6 +121,8 @@ class DashboardController extends Controller
      */
     public function lge(): View
     {
+        $this->abortUnlessDashboardRole('lge');
+
         return view('admin::dashboard.sdr.index')->with([
             'stateTimezones' => [],
             'dashboardTitle' => 'LGE Dashboard',
@@ -157,6 +174,8 @@ class DashboardController extends Controller
         $sourceAccessService = app(SourceAccessService::class);
         $variant = $data['variant'] ?? 'sdr';
 
+        $this->abortUnlessDashboardRole($variant);
+
         if ($variant === 'bde') {
             return response()->json($this->bdeDashboardSummary($startDate, $endDate, $userId));
         }
@@ -205,9 +224,9 @@ class DashboardController extends Controller
             ->join('leads', 'lead_activities.lead_id', '=', 'leads.id')
             ->where('activities.type', 'meeting')
             ->whereNull('leads.deleted_at')
+            ->where('activities.user_id', $userId)
             ->whereBetween('activities.schedule_from', [$startDate, $endDate]);
 
-        $sourceAccessService->applyOriginatingCallingOwnerTableScope($meetingQuery, $userId);
         $sourceAccessService->applyLeadTableScope($meetingQuery);
 
         $meetingStats = $meetingQuery
@@ -437,6 +456,7 @@ class DashboardController extends Controller
     protected function lgeLinkedInSummary(Carbon $startDate, Carbon $endDate): array
     {
         $userId = auth()->guard('user')->id();
+        $sourceAccessService = app(SourceAccessService::class);
 
         $requestStats = DB::table('linkedin_entry')
             ->where('user_id', $userId)
@@ -457,8 +477,11 @@ class DashboardController extends Controller
 
         $leadBase = DB::table('leads')
             ->leftJoin('lead_pipeline_stages', 'leads.lead_pipeline_stage_id', '=', 'lead_pipeline_stages.id')
-            ->whereNull('leads.deleted_at')
-            ->where('leads.lead_owner_id', $userId)
+            ->whereNull('leads.deleted_at');
+
+        $sourceAccessService->applyOriginatingCallingOwnerTableScope($leadBase, $userId);
+
+        $leadBase
             ->whereBetween('leads.created_at', [$startDate, $endDate])
             ->whereExists(function ($query) use ($userId) {
                 $query
@@ -479,19 +502,13 @@ class DashboardController extends Controller
         $outcomeQuery = DB::table('leads')
             ->leftJoin('lead_pipeline_stages', 'leads.lead_pipeline_stage_id', '=', 'lead_pipeline_stages.id')
             ->whereNull('leads.deleted_at')
-            ->whereNotNull('leads.closed_at')
-            ->where('leads.lead_owner_id', $userId)
+            ->whereNotNull('leads.closed_at');
+
+        $sourceAccessService->applyOriginatingCallingOwnerTableScope($outcomeQuery, $userId);
+
+        $outcomeQuery
             ->whereBetween('leads.closed_at', [$startDate, $endDate])
-            ->whereIn('lead_pipeline_stages.code', ['won', 'lost'])
-            ->whereExists(function ($query) use ($userId) {
-                $query
-                    ->selectRaw('1')
-                    ->from('linkedin_entry')
-                    ->where('linkedin_entry.user_id', $userId)
-                    ->whereRaw(
-                        "TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(linkedin_entry.url), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', '')) = TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(leads.source_link), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', ''))"
-                    );
-            });
+            ->whereIn('lead_pipeline_stages.code', ['won', 'lost']);
 
         $outcomeStats = $outcomeQuery
             ->selectRaw("COUNT(DISTINCT CASE WHEN lead_pipeline_stages.code = 'won' THEN leads.id END) as won_leads")
@@ -505,18 +522,12 @@ class DashboardController extends Controller
             ->join('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
             ->join('leads', 'lead_activities.lead_id', '=', 'leads.id')
             ->where('activities.type', 'meeting')
-            ->whereNull('leads.deleted_at')
-            ->where('leads.lead_owner_id', $userId)
+            ->whereNull('leads.deleted_at');
+
+        $sourceAccessService->applyOriginatingCallingOwnerTableScope($meetingCount, $userId);
+
+        $meetingCount = $meetingCount
             ->whereBetween('activities.schedule_from', [$startDate, $endDate])
-            ->whereExists(function ($query) use ($userId) {
-                $query
-                    ->selectRaw('1')
-                    ->from('linkedin_entry')
-                    ->where('linkedin_entry.user_id', $userId)
-                    ->whereRaw(
-                        "TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(linkedin_entry.url), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', '')) = TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(leads.source_link), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', ''))"
-                    );
-            })
             ->distinct('activities.id')
             ->count('activities.id');
 
@@ -566,10 +577,13 @@ class DashboardController extends Controller
         $todayEnd = $calendarDate->copy()->endOfDay();
         $sourceAccessService = app(SourceAccessService::class);
         $variant = request()->query('variant', 'sdr');
+
+        $this->abortUnlessDashboardRole($variant);
+
         $showUsFeatures = in_array($variant, ['sdr', 'lead_clouser'], true);
         $showMeetings = request()->has('show_meetings')
             ? request()->boolean('show_meetings')
-            : in_array($variant, ['bde', 'lead_clouser'], true);
+            : $variant === 'lead_clouser';
 
         if ($variant === 'bde') {
             return response()->json($this->bdeLeadSections($userId, $todayStart, $todayEnd));
@@ -619,6 +633,8 @@ class DashboardController extends Controller
                 ->unique('id')
                 ->values()
                 ->map(function ($activity) use ($showUsFeatures) {
+                    $leadUrl = $activity->lead_id ? lead_route_for_user('view', $activity->lead_id) : null;
+
                     return $this->mapDashboardCalendarItem([
                         'id'         => 'meeting-'.$activity->id,
                         'type'       => 'Meeting',
@@ -632,7 +648,7 @@ class DashboardController extends Controller
                         'fallback_meta' => $activity->location ?: 'Scheduled meeting',
                         'at'         => $activity->schedule_from,
                         'url'        => route('admin.activities.edit', $activity->id),
-                        'lead_url'   => $activity->lead_id ? route('admin.leads.view', $activity->lead_id) : null,
+                        'lead_url'   => $leadUrl,
                     ], $showUsFeatures);
                 });
         }
@@ -666,6 +682,8 @@ class DashboardController extends Controller
             ->orderBy('leads.next_followup_date')
             ->get()
             ->map(function ($lead) use ($showUsFeatures) {
+                $leadUrl = lead_route_for_user('view', $lead->id);
+
                 return $this->mapDashboardCalendarItem([
                     'id'         => 'followup-'.$lead->id,
                     'type'       => 'Follow-up',
@@ -678,8 +696,8 @@ class DashboardController extends Controller
                     'timezone'   => $lead->person_timezone,
                     'fallback_meta' => $lead->organization_name ?: 'Lead follow-up',
                     'at'         => $lead->next_followup_date,
-                    'url'        => route('admin.leads.view', $lead->id),
-                    'lead_url'   => route('admin.leads.view', $lead->id),
+                    'url'        => $leadUrl,
+                    'lead_url'   => $leadUrl,
                 ], $showUsFeatures);
             });
 
@@ -712,83 +730,6 @@ class DashboardController extends Controller
 
     protected function bdeLeadSections(int $userId, Carbon $todayStart, Carbon $todayEnd): array
     {
-        $activitiesBase = DB::table('activities')
-            ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
-            ->leftJoin('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
-            ->leftJoin('leads', 'lead_activities.lead_id', '=', 'leads.id')
-            ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
-            ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
-            ->leftJoin('organizations', 'persons.organization_id', '=', 'organizations.id')
-            ->where('activities.type', '!=', 'system')
-            ->whereNotNull('activities.schedule_from')
-            ->whereBetween('activities.schedule_from', [$todayStart, $todayEnd])
-            ->where(function ($query) {
-                $query
-                    ->whereNull('leads.id')
-                    ->orWhereNull('leads.deleted_at');
-            })
-            ->where(function ($query) use ($userId) {
-                $query
-                    ->where('activities.user_id', $userId)
-                    ->orWhere('activity_participants.user_id', $userId);
-
-                if (Schema::hasTable('lead_forwards')) {
-                    $query->orWhere(function ($query) use ($userId) {
-                        $query
-                            ->where('activities.type', 'meeting')
-                            ->whereExists(function ($query) use ($userId) {
-                                $query
-                                    ->selectRaw('1')
-                                    ->from('lead_forwards')
-                                    ->whereColumn('lead_forwards.lead_id', 'leads.id')
-                                    ->where('lead_forwards.from_user_id', $userId);
-                            });
-                    });
-                }
-            });
-
-        $todayActivities = (clone $activitiesBase)
-            ->select(
-                'activities.id',
-                'activities.type',
-                'activities.title',
-                'activities.schedule_from',
-                'activities.schedule_to',
-                'activities.location',
-                'leads.id as lead_id',
-                'leads.title as lead_title',
-                'persons.name as person_name',
-                'persons.city as person_city',
-                'persons.state as person_state',
-                'persons.country as person_country',
-                'persons.timezone as person_timezone',
-                'organizations.name as organization_name',
-                'lead_sources.name as source_name'
-            )
-            ->orderBy('activities.schedule_from')
-            ->get()
-            ->unique('id')
-            ->values()
-            ->map(function ($activity) {
-                $leadUrl = $activity->lead_id ? lead_route_for_user('view', $activity->lead_id) : null;
-
-                return $this->mapDashboardCalendarItem([
-                    'id'            => 'activity-'.$activity->id,
-                    'type'          => $this->dashboardActivityTypeLabel($activity->type),
-                    'source'        => $activity->source_name,
-                    'title'         => $activity->lead_title ?: ($activity->title ?: $this->dashboardActivityTypeLabel($activity->type)),
-                    'person'        => $activity->person_name,
-                    'city'          => $activity->person_city,
-                    'state'         => $activity->person_state,
-                    'country'       => $activity->person_country,
-                    'timezone'      => $activity->person_timezone,
-                    'fallback_meta' => $activity->organization_name ?: ($activity->location ?: 'Scheduled activity'),
-                    'at'            => $activity->schedule_from,
-                    'url'           => $leadUrl ?: route('admin.activities.edit', $activity->id),
-                    'lead_url'      => $leadUrl,
-                ], false);
-            });
-
         $followupsBase = DB::table('leads')
             ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
             ->leftJoin('organizations', 'persons.organization_id', '=', 'organizations.id')
@@ -831,24 +772,22 @@ class DashboardController extends Controller
                 ], false);
             });
 
-        $calendar = $todayActivities
-            ->merge($todayFollowups)
+        $calendar = $todayFollowups
             ->sortBy('sort_at')
             ->values();
 
-        $meetingsCount = $calendar->where('type', 'Meeting')->count();
         $followupsCount = $todayFollowups->count();
 
         return [
             'summary' => [
-                'meetings'  => (int) $meetingsCount,
+                'meetings'  => 0,
                 'followups' => (int) $followupsCount,
                 'total'     => $calendar->count(),
             ],
             'today_calendar' => $calendar,
             'calendar_date' => $todayStart->toDateString(),
             'show_us_features' => false,
-            'show_meetings' => true,
+            'show_meetings' => false,
         ];
     }
 
@@ -884,6 +823,47 @@ class DashboardController extends Controller
         }
 
         abort(401);
+    }
+
+    protected function abortUnlessDashboardRole(string $variant): void
+    {
+        if ($this->isPrimaryAdminUser()) {
+            abort(403);
+        }
+
+        $sourceAccessService = app(SourceAccessService::class);
+
+        $allowed = match ($variant) {
+            'bde'          => $sourceAccessService->isBdeUser(),
+            'sdr'          => $sourceAccessService->isSdrUser(),
+            'lge'          => $sourceAccessService->isLgeUser(),
+            'lead_clouser' => $sourceAccessService->isLeadCloserUser(),
+            default        => false,
+        };
+
+        if (! $allowed) {
+            abort(403);
+        }
+    }
+
+    protected function isPrimaryAdminUser(): bool
+    {
+        $user = auth()->guard('user')->user();
+
+        if (! $user || empty($user->role_id)) {
+            return false;
+        }
+
+        $role = DB::table('roles')->where('id', (int) $user->role_id)->first(['name', 'permission_type']);
+
+        if (! $role) {
+            return false;
+        }
+
+        $roleName = strtolower(trim((string) $role->name));
+
+        return $role->permission_type === 'all'
+            || in_array($roleName, ['admin', 'administrator', 'super admin'], true);
     }
 
     /**

@@ -60,6 +60,8 @@ class LeadController extends Controller
      */
     const SUPPORTED_TYPES = 'pdf,bmp,jpeg,jpg,png,webp';
 
+    protected ?array $importDuplicateIndex = null;
+
     /**
      * Create a new controller instance.
      *
@@ -3848,7 +3850,7 @@ class LeadController extends Controller
     }
 
     /**
-     * Skip when company + email + phone all match a prior row or an existing lead.
+     * Skip when any duplicate company, email, or phone is found.
      *
      * @param  array<int, string>  $seenDuplicateKeys
      */
@@ -3861,13 +3863,13 @@ class LeadController extends Controller
         }
 
         if (array_intersect($keys, $seenDuplicateKeys)) {
-            return 'skipped duplicate lead (same company, email, and phone in this file).';
+            return 'Duplicate lead skipped: matching company/email/phone already exists in this import file.';
         }
 
-        if ($this->leadExistsWithCompanyEmailPhone($rowData)) {
+        if ($this->leadExistsWithAnyImportIdentity($keys)) {
             array_push($seenDuplicateKeys, ...$keys);
 
-            return 'skipped duplicate lead (same company, email, and phone already exist).';
+            return 'Duplicate lead skipped: matching company/email/phone already exists.';
         }
 
         array_push($seenDuplicateKeys, ...$keys);
@@ -3877,17 +3879,7 @@ class LeadController extends Controller
 
     protected function importDuplicateKeyFromRow(array $rowData): ?string
     {
-        $company = $this->normalizeImportCompanyName(
-            $rowData['companies'] ?? $rowData['title'] ?? $rowData['company'] ?? null
-        );
-        $email = $this->normalizeImportEmail($rowData['email'] ?? null);
-        $phones = ContactPhoneCollection::compareKeys($rowData['phone'] ?? null);
-
-        if ($company === null || $email === null || empty($phones)) {
-            return null;
-        }
-
-        return $company.'|'.$email.'|'.implode(',', $phones);
+        return $this->importDuplicateKeysFromRow($rowData)[0] ?? null;
     }
 
     /**
@@ -3895,20 +3887,25 @@ class LeadController extends Controller
      */
     protected function importDuplicateKeysFromRow(array $rowData): array
     {
+        $keys = [];
+
         $company = $this->normalizeImportCompanyName(
             $rowData['companies'] ?? $rowData['title'] ?? $rowData['company'] ?? null
         );
-        $email = $this->normalizeImportEmail($rowData['email'] ?? null);
-        $phones = ContactPhoneCollection::compareKeys($rowData['phone'] ?? null);
 
-        if ($company === null || $email === null || empty($phones)) {
-            return [];
+        if ($company !== null) {
+            $keys[] = 'company:'.$company;
         }
 
-        return array_map(
-            fn (string $phone) => $company.'|'.$email.'|'.$phone,
-            $phones
-        );
+        foreach ($this->importEmailKeys($rowData['email'] ?? null) as $email) {
+            $keys[] = 'email:'.$email;
+        }
+
+        foreach (ContactPhoneCollection::compareKeys($rowData['phone'] ?? null) as $phone) {
+            $keys[] = 'phone:'.$phone;
+        }
+
+        return array_values(array_unique($keys));
     }
 
     protected function normalizeImportCompanyName($value): ?string
@@ -3948,49 +3945,138 @@ class LeadController extends Controller
         return $digits;
     }
 
-    protected function leadExistsWithCompanyEmailPhone(array $rowData): bool
+    /**
+     * @param  array<int, string>  $keys
+     */
+    protected function leadExistsWithAnyImportIdentity(array $keys): bool
     {
-        $company = $this->normalizeImportCompanyName(
-            $rowData['companies'] ?? $rowData['title'] ?? $rowData['company'] ?? null
-        );
-        $email = $this->normalizeImportEmail($rowData['email'] ?? null);
-        $phones = ContactPhoneCollection::compareKeys($rowData['phone'] ?? null);
-
-        if ($company === null || $email === null || empty($phones)) {
+        if (empty($keys)) {
             return false;
         }
 
-        $organizationIds = DB::table('organizations')
-            ->whereRaw('LOWER(TRIM(name)) = ?', [$company])
-            ->pluck('id');
+        $index = $this->importDuplicateIndex();
 
-        if ($organizationIds->isEmpty()) {
-            return false;
-        }
+        foreach ($keys as $key) {
+            [$type, $value] = array_pad(explode(':', $key, 2), 2, null);
 
-        $candidates = DB::table('leads')
-            ->join('persons', 'leads.person_id', '=', 'persons.id')
-            ->whereNull('leads.deleted_at')
-            ->whereIn('leads.organization_id', $organizationIds->all())
-            ->whereNotNull('leads.person_id')
-            ->select('persons.emails', 'persons.contact_numbers')
-            ->get();
-
-        foreach ($candidates as $candidate) {
-            $emails = $this->decodePersonContactArray($candidate->emails);
-
-            $candidatePhones = ContactPhoneCollection::compareKeys(
-                $this->decodePersonContactArray($candidate->contact_numbers)
-            );
-
-            $candidateEmail = $this->normalizeImportEmail($emails[0]['value'] ?? null);
-
-            if ($candidateEmail === $email && array_intersect($phones, $candidatePhones)) {
+            if ($value !== null && isset($index[$type][$value])) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    protected function importDuplicateIndex(): array
+    {
+        if ($this->importDuplicateIndex !== null) {
+            return $this->importDuplicateIndex;
+        }
+
+        $index = [
+            'company' => [],
+            'email'   => [],
+            'phone'   => [],
+        ];
+
+        DB::table('organizations')
+            ->whereNotNull('name')
+            ->orderBy('id')
+            ->select('id', 'name')
+            ->chunkById(500, function ($organizations) use (&$index) {
+                foreach ($organizations as $organization) {
+                    $company = $this->normalizeImportCompanyName($organization->name);
+
+                    if ($company !== null) {
+                        $index['company'][$company] = true;
+                    }
+                }
+            });
+
+        DB::table('leads')
+            ->whereNull('deleted_at')
+            ->whereNull('organization_id')
+            ->whereNotNull('title')
+            ->orderBy('id')
+            ->select('id', 'title')
+            ->chunkById(500, function ($leads) use (&$index) {
+                foreach ($leads as $lead) {
+                    $company = $this->normalizeImportCompanyName($lead->title);
+
+                    if ($company !== null) {
+                        $index['company'][$company] = true;
+                    }
+                }
+            });
+
+        DB::table('persons')
+            ->where(function ($query) {
+                $query->whereNotNull('emails')
+                    ->orWhereNotNull('contact_numbers');
+            })
+            ->orderBy('id')
+            ->select('id', 'emails', 'contact_numbers')
+            ->chunkById(500, function ($persons) use (&$index) {
+                foreach ($persons as $person) {
+                    foreach ($this->importEmailKeys($this->decodePersonContactArray($person->emails)) as $email) {
+                        $index['email'][$email] = true;
+                    }
+
+                    foreach (ContactPhoneCollection::compareKeys($this->decodePersonContactArray($person->contact_numbers)) as $phone) {
+                        $index['phone'][$phone] = true;
+                    }
+                }
+            });
+
+        return $this->importDuplicateIndex = $index;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function importEmailKeys($value): array
+    {
+        if (is_string($value)) {
+            $values = preg_split('/[,;]+/', $value) ?: [];
+        } elseif (is_array($value)) {
+            $values = $value;
+        } else {
+            $values = [];
+        }
+
+        return collect($values)
+            ->map(function ($item) {
+                return $this->normalizeImportEmail(is_array($item) ? ($item['value'] ?? null) : $item);
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    protected function leadExistsWithCompanyEmailPhone(array $rowData): bool
+    {
+        $legacyKeys = $this->importDuplicateKeysFromRow($rowData);
+
+        if (empty($legacyKeys)) {
+            return false;
+        }
+
+        $hasCompany = false;
+        $hasEmail = false;
+        $hasPhone = false;
+
+        foreach ($legacyKeys as $key) {
+            if (str_starts_with($key, 'company:')) {
+                $hasCompany = true;
+            } elseif (str_starts_with($key, 'email:')) {
+                $hasEmail = true;
+            } elseif (str_starts_with($key, 'phone:')) {
+                $hasPhone = true;
+            }
+        }
+
+        return $hasCompany && $hasEmail && $hasPhone && $this->leadExistsWithAnyImportIdentity($legacyKeys);
     }
 
     protected function decodePersonContactArray($value): array

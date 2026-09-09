@@ -648,7 +648,7 @@ class SourceAccessService
     }
 
     /**
-     * Leads originated by a role user (BDE/SDR/LGE), including legacy rows without lead_owner_id.
+     * Leads originated by a role user (BDE/SDR/LGE), including legacy rows and handoff history.
      */
     public function applyOriginatingCallingOwnerTableScope(QueryBuilder $query, int $userId): QueryBuilder
     {
@@ -659,7 +659,8 @@ class SourceAccessService
                     $legacyQuery
                         ->whereNull('leads.lead_owner_id')
                         ->where('leads.user_id', $userId);
-                });
+                })
+                ->orWhereExists(fn ($forwardQuery) => $this->applyPreviousOwnerForwardExists($forwardQuery, 'leads', $userId));
         });
     }
 

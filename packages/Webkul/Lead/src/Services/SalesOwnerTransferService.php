@@ -150,25 +150,7 @@ class SalesOwnerTransferService
      */
     protected function allowedTargetRoleNames(UserContract $actor): ?array
     {
-        if ($this->hasUnrestrictedLeadManagement($actor)) {
-            return null;
-        }
-
-        $roleName = $this->activeRoleName($actor);
-
-        if ($roleName === 'lge') {
-            return ['sdr', 'lead closer', 'lead clouser', 'lead closure', 'lead'];
-        }
-
-        if ($roleName === 'sdr') {
-            return ['lge', 'lead closer', 'lead clouser', 'lead closure', 'lead'];
-        }
-
-        if ($this->isBdeRoleName($roleName)) {
-            return null;
-        }
-
-        return [];
+        return null;
     }
 
     protected function hasUnrestrictedLeadManagement(UserContract $actor): bool
