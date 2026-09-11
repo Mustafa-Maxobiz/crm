@@ -880,7 +880,11 @@ class LeadController extends Controller
 
             $this->sourceAccessService->applyLeadQueryScope($query);
 
-            $this->addForwardedOriginFlagForKanban($query);
+            $this->addAssignedByForKanban($query);
+
+            if (in_array(lead_variant(), ['bde', 'sdr', 'lge'], true)) {
+                $this->addForwardedOriginFlagForKanban($query);
+            }
 
             $this->applyKanbanSearch($query, request()->query('lead_search'));
 
@@ -921,12 +925,37 @@ class LeadController extends Controller
         return response()->json($data);
     }
 
-    protected function addForwardedOriginFlagForKanban(mixed $query): void
+    protected function addAssignedByForKanban(mixed $query): void
     {
-        if (! in_array(lead_variant(), ['bde', 'sdr', 'lge'], true)) {
+        $addAssignedBySelect = function ($builder) {
+            return $builder->addSelect([
+                'assigned_by_user_id' => DB::table('lead_forwards')
+                    ->select('lead_forwards.from_user_id')
+                    ->whereColumn('lead_forwards.lead_id', 'leads.id')
+                    ->whereColumn('lead_forwards.to_user_id', 'leads.user_id')
+                    ->orderByDesc('lead_forwards.id')
+                    ->limit(1),
+                'assigned_by_user_name' => DB::table('lead_forwards')
+                    ->join('users as assigned_by_users', 'assigned_by_users.id', '=', 'lead_forwards.from_user_id')
+                    ->select('assigned_by_users.name')
+                    ->whereColumn('lead_forwards.lead_id', 'leads.id')
+                    ->whereColumn('lead_forwards.to_user_id', 'leads.user_id')
+                    ->orderByDesc('lead_forwards.id')
+                    ->limit(1),
+            ]);
+        };
+
+        if (method_exists($query, 'scopeQuery')) {
+            $query->scopeQuery($addAssignedBySelect);
+
             return;
         }
 
+        $addAssignedBySelect($query);
+    }
+
+    protected function addForwardedOriginFlagForKanban(mixed $query): void
+    {
         $userId = (int) auth()->guard('user')->id();
 
         if (! $userId) {
@@ -2604,6 +2633,12 @@ class LeadController extends Controller
                 $this->sourceAccessService->applyLeadOwnerVisibilityScope($query);
 
                 $this->sourceAccessService->applyLeadQueryScope($query);
+
+                $this->addAssignedByForKanban($query);
+
+                if (in_array(lead_variant(), ['bde', 'sdr', 'lge'], true)) {
+                    $this->addForwardedOriginFlagForKanban($query);
+                }
 
                 if ($queryTerm !== '') {
                     $this->applyKanbanSearch($query, $queryTerm);

@@ -23,6 +23,8 @@ class LeadResource extends JsonResource
             'user_id'              => $this->user_id,
             'lead_owner_id'        => $this->lead_owner_id,
             'forwarded_from_current_user' => (bool) ($this->forwarded_from_current_user ?? false),
+            'assigned_by_user_id'  => $this->assigned_by_user_id ? (int) $this->assigned_by_user_id : null,
+            'assigned_by_user_name'=> $this->assigned_by_user_name,
             'lead_pipeline_id'     => $this->lead_pipeline_id,
             'lead_pipeline_stage_id'=> $this->lead_pipeline_stage_id,
             'stage_code'           => $this->stage?->code,
