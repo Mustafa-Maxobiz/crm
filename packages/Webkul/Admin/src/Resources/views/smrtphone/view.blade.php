@@ -63,14 +63,14 @@
                     <div class="grid grid-cols-3 gap-2">
                         <dt class="text-gray-500 dark:text-gray-400">@lang('admin::app.smrtphone.view.started-at')</dt>
                         <dd class="col-span-2 dark:text-white">
-                            {{ $callLog->started_at?->format('M d, Y H:i') ?: '—' }}
+                            {{ $callLog->started_at?->timezone(config('app.timezone') ?: 'UTC')->format('M d, Y H:i') ?: '—' }}
                         </dd>
                     </div>
 
                     <div class="grid grid-cols-3 gap-2">
                         <dt class="text-gray-500 dark:text-gray-400">@lang('admin::app.smrtphone.view.completed-at')</dt>
                         <dd class="col-span-2 dark:text-white">
-                            {{ $callLog->completed_at?->format('M d, Y H:i') ?: '—' }}
+                            {{ $callLog->completed_at?->timezone(config('app.timezone') ?: 'UTC')->format('M d, Y H:i') ?: '—' }}
                         </dd>
                     </div>
 

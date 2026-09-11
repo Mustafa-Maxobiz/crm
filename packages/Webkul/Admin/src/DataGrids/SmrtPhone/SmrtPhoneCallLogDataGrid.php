@@ -2,6 +2,7 @@
 
 namespace Webkul\Admin\DataGrids\SmrtPhone;
 
+use Carbon\Carbon;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Webkul\DataGrid\DataGrid;
@@ -104,9 +105,7 @@ class SmrtPhoneCallLogDataGrid extends DataGrid
             'searchable' => false,
             'filterable' => true,
             'sortable'   => true,
-            'closure'    => fn ($row) => $row->started_at
-                ? \Carbon\Carbon::parse($row->started_at)->format('M d, Y H:i')
-                : '—',
+            'closure'    => fn ($row) => $this->formatDateTimeForDisplay($row->started_at),
         ]);
 
         $this->addColumn([
@@ -116,9 +115,7 @@ class SmrtPhoneCallLogDataGrid extends DataGrid
             'searchable' => false,
             'filterable' => true,
             'sortable'   => true,
-            'closure'    => fn ($row) => $row->completed_at
-                ? \Carbon\Carbon::parse($row->completed_at)->format('M d, Y H:i')
-                : '—',
+            'closure'    => fn ($row) => $this->formatDateTimeForDisplay($row->completed_at),
         ]);
 
         $this->addColumn([
@@ -155,6 +152,17 @@ class SmrtPhoneCallLogDataGrid extends DataGrid
                 'url'    => fn ($row) => route('admin.smrtphone.delete', $row->id),
             ]);
         }
+    }
+
+    protected function formatDateTimeForDisplay(mixed $value): string
+    {
+        if (! $value) {
+            return '—';
+        }
+
+        return Carbon::parse($value)
+            ->timezone(config('app.timezone') ?: 'UTC')
+            ->format('M d, Y H:i');
     }
 
     public function prepareMassActions(): void

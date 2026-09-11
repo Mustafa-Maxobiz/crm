@@ -77,7 +77,7 @@ class CallLogProcessorService
                 return null;
             }
 
-            $merged = $this->mergeAttributes($existing->toArray(), $attributes);
+            $merged = $this->mergeAttributes($existing->getAttributes(), $attributes);
             $this->callLogRepository->update($merged, $existing->id);
             $callLog = $this->callLogRepository->find($existing->id);
         } else {
@@ -140,16 +140,16 @@ class CallLogProcessorService
                 'recordingLink',
             ])),
             'is_dialer'        => $isDialer,
-            'called_at'        => $calledAt,
+            'called_at'        => $this->formatDateTimeForStorage($calledAt),
             'raw_payload'      => $payload,
         ];
 
         if ($this->isInitiatedEvent($event)) {
-            $attributes['started_at'] = $calledAt;
+            $attributes['started_at'] = $this->formatDateTimeForStorage($calledAt);
         }
 
         if ($this->isCompletedEvent($event)) {
-            $attributes['completed_at'] = $calledAt;
+            $attributes['completed_at'] = $this->formatDateTimeForStorage($calledAt);
         }
 
         if ($this->configService->saveAiSummary()) {
@@ -273,12 +273,13 @@ class CallLogProcessorService
             ?? $payload['timestamp']
             ?? $payload['createdAt']['date']
             ?? null;
+        $timezone = config('app.timezone') ?: 'UTC';
 
         try {
             if ($this->hasReliablePayloadTime($raw)) {
                 $datetime = is_numeric($raw)
-                    ? Carbon::createFromTimestamp(strlen((string) $raw) >= 13 ? (int) floor(((int) $raw) / 1000) : (int) $raw)
-                    : Carbon::parse($raw);
+                    ? Carbon::createFromTimestamp(strlen((string) $raw) >= 13 ? (int) floor(((int) $raw) / 1000) : (int) $raw)->timezone($timezone)
+                    : Carbon::parse($raw, $timezone);
 
                 return [
                     'datetime'          => $datetime,
@@ -291,7 +292,7 @@ class CallLogProcessorService
         }
 
         return [
-            'datetime'          => now(),
+            'datetime'          => now($timezone),
             'used_receive_time' => true,
             'has_reliable_time' => false,
         ];
@@ -319,6 +320,14 @@ class CallLogProcessorService
 
         return preg_match('/\d{1,2}:\d{2}/', $raw) === 1
             || str_contains($raw, 'T');
+    }
+
+    protected function formatDateTimeForStorage(Carbon $dateTime): string
+    {
+        return $dateTime
+            ->copy()
+            ->timezone(config('app.timezone') ?: 'UTC')
+            ->format('Y-m-d H:i:s');
     }
 
     protected function nullableString(mixed $value): ?string
@@ -359,8 +368,9 @@ class CallLogProcessorService
         }
 
         try {
-            $startedAt = Carbon::parse($startedAt);
-            $completedAt = Carbon::parse($completedAt);
+            $timezone = config('app.timezone') ?: 'UTC';
+            $startedAt = Carbon::parse($startedAt, $timezone);
+            $completedAt = Carbon::parse($completedAt, $timezone);
         } catch (\Throwable) {
             return null;
         }
