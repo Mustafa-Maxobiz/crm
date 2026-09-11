@@ -364,6 +364,11 @@ return [
         'route' => ['admin.smrtphone.delete', 'admin.smrtphone.mass_delete'],
         'sort'  => 2,
     ], [
+        'key'   => 'smrtphone.settings',
+        'name'  => 'admin::app.acl.settings',
+        'route' => ['admin.smrtphone.settings', 'admin.smrtphone.settings.update'],
+        'sort'  => 3,
+    ], [
         'key'   => 'quotes',
         'name'  => 'admin::app.acl.quotes',
         'route' => 'admin.quotes.index',

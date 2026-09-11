@@ -16,6 +16,7 @@ class CallLogProcessorService
         protected SmrtPhoneCallLogRepository $callLogRepository,
         protected PhoneMatcherService $phoneMatcher,
         protected ActivityRepository $activityRepository,
+        protected SmrtPhoneConfigService $configService,
     ) {}
 
     /**
@@ -27,6 +28,28 @@ class CallLogProcessorService
 
         if (! in_array($event, SmrtPhoneCallLog::CALL_EVENTS, true)) {
             Log::info('SmrtPhone webhook ignored non-call event.', ['event' => $event]);
+
+            return null;
+        }
+
+        if (! $this->isOutboundSmrtDialerLifecycleEvent($event)) {
+            Log::info('SmrtPhone webhook ignored non-outbound smrtDialer lifecycle event.', ['event' => $event]);
+
+            return null;
+        }
+
+        $direction = $this->resolveDirection(
+            $event,
+            (string) ($this->firstFilledPayloadValue($payload, ['from', 'from_number', 'fromNumber']) ?? ''),
+            (string) ($this->firstFilledPayloadValue($payload, ['to', 'to_number', 'toNumber']) ?? ''),
+        );
+
+        if (! $this->configService->shouldAcceptCallPayload($payload, $direction)) {
+            Log::info('SmrtPhone webhook ignored: business number not allowed.', [
+                'event' => $event,
+                'from'  => $payload['from'] ?? $payload['from_number'] ?? $payload['fromNumber'] ?? null,
+                'to'    => $payload['to'] ?? $payload['to_number'] ?? $payload['toNumber'] ?? null,
+            ]);
 
             return null;
         }
@@ -44,6 +67,16 @@ class CallLogProcessorService
         $attributes = $this->mapPayload($payload, $event, $externalCallId);
 
         if ($existing) {
+            if (! $this->customerPhoneMatches($existing, $attributes)) {
+                Log::warning('SmrtPhone webhook call id matched but customer phone differed.', [
+                    'external_call_id' => $externalCallId,
+                    'existing_phone'   => $existing->contact_phone ?: $existing->to_number,
+                    'incoming_phone'   => $attributes['contact_phone'] ?? $attributes['to_number'] ?? null,
+                ]);
+
+                return null;
+            }
+
             $merged = $this->mergeAttributes($existing->toArray(), $attributes);
             $this->callLogRepository->update($merged, $existing->id);
             $callLog = $this->callLogRepository->find($existing->id);
@@ -51,8 +84,10 @@ class CallLogProcessorService
             $callLog = $this->callLogRepository->create($attributes);
         }
 
-        $this->linkPersonAndLead($callLog);
-        $this->syncActivity($callLog->fresh(['person', 'lead', 'activity']));
+        if ($this->isCompletedEvent($event)) {
+            $this->linkPersonAndLead($callLog);
+            $this->syncActivity($callLog->fresh(['person', 'lead', 'activity']));
+        }
 
         return $callLog->fresh(['person', 'lead', 'activity']);
     }
@@ -72,13 +107,14 @@ class CallLogProcessorService
 
     protected function mapPayload(array $payload, string $event, string $externalCallId): array
     {
-        $from = (string) ($payload['from'] ?? '');
-        $to = (string) ($payload['to'] ?? '');
+        $from = (string) ($this->firstFilledPayloadValue($payload, ['from', 'from_number', 'fromNumber']) ?? '');
+        $to = (string) ($this->firstFilledPayloadValue($payload, ['to', 'to_number', 'toNumber']) ?? '');
         $isDialer = str_contains(strtolower($event), 'smrtdialer');
         $direction = $this->resolveDirection($event, $from, $to);
         $contactPhone = $this->resolveContactPhone($direction, $from, $to);
+        $calledAt = $this->parseCalledAt($payload);
 
-        return array_filter([
+        $attributes = [
             'external_call_id' => $externalCallId,
             'event'            => $event,
             'direction'        => $direction,
@@ -91,15 +127,51 @@ class CallLogProcessorService
             'device'           => $payload['device'] ?? null,
             'call_status'      => $payload['callStatus'] ?? null,
             'call_outcome'     => $payload['callOutcome'] ?? null,
-            'call_notes'       => $this->nullableString($payload['callNotes'] ?? null),
-            'recording_url'    => $payload['recordingUrl'] ?? null,
-            'ai_summary'       => $payload['ai_summary'] ?? ($payload['summary'] ?? null),
-            'ai_transcript'    => $payload['ai_transcript'] ?? ($payload['transcript'] ?? null),
-            'ai_keywords'      => $payload['ai_keywords'] ?? ($payload['ai_keyword'] ?? null),
+            'call_notes'       => $this->nullableString($this->firstFilledPayloadValue($payload, [
+                'callNotes',
+                'call_notes',
+                'notes',
+                'note',
+            ])),
+            'recording_url'    => $this->nullableString($this->firstFilledPayloadValue($payload, [
+                'recordingUrl',
+                'recording_url',
+                'recording',
+                'recordingLink',
+            ])),
             'is_dialer'        => $isDialer,
-            'called_at'        => $this->parseCalledAt($payload),
+            'called_at'        => $calledAt,
             'raw_payload'      => $payload,
-        ], fn ($value) => $value !== null && $value !== '');
+        ];
+
+        if ($this->isInitiatedEvent($event)) {
+            $attributes['started_at'] = $calledAt;
+        }
+
+        if ($this->isCompletedEvent($event)) {
+            $attributes['completed_at'] = $calledAt;
+        }
+
+        if ($this->configService->saveAiSummary()) {
+            $attributes['ai_summary'] = $this->nullableString($this->firstFilledPayloadValue($payload, [
+                'ai_summary',
+                'aiSummary',
+                'summary',
+                'callSummary',
+            ]));
+            $attributes['ai_transcript'] = $this->firstFilledPayloadValue($payload, [
+                'ai_transcript',
+                'aiTranscript',
+                'transcript',
+            ]);
+            $attributes['ai_keywords'] = $this->firstFilledPayloadValue($payload, [
+                'ai_keywords',
+                'aiKeywords',
+                'ai_keyword',
+            ]);
+        }
+
+        return array_filter($attributes, fn ($value) => $value !== null && $value !== '');
     }
 
     protected function mergeAttributes(array $existing, array $incoming): array
@@ -125,6 +197,11 @@ class CallLogProcessorService
             $existing[$key] = $value;
         }
 
+        $existing['duration_seconds'] = $this->calculateDurationSeconds(
+            $existing['started_at'] ?? null,
+            $existing['completed_at'] ?? null,
+        );
+
         if (! empty($incoming['raw_payload']) && is_array($incoming['raw_payload'])) {
             $existing['raw_payload'] = array_merge(
                 is_array($existing['raw_payload'] ?? null) ? $existing['raw_payload'] : [],
@@ -135,13 +212,17 @@ class CallLogProcessorService
         return Arr::only($existing, (new SmrtPhoneCallLog)->getFillable());
     }
 
+    protected function customerPhoneMatches(SmrtPhoneCallLog $existing, array $incoming): bool
+    {
+        $existingPhone = $this->normalizePhoneNumber($existing->contact_phone ?: $existing->to_number);
+        $incomingPhone = $this->normalizePhoneNumber($incoming['contact_phone'] ?? $incoming['to_number'] ?? null);
+
+        return $this->phoneNumbersMatch($existingPhone, $incomingPhone);
+    }
+
     protected function resolveDirection(string $event, string $from, string $to): string
     {
-        if (str_contains(strtolower($event), 'incoming')) {
-            return 'inbound';
-        }
-
-        if (str_contains(strtolower($event), 'initiated') || str_contains(strtolower($event), 'outgoing')) {
+        if ($this->isOutboundSmrtDialerLifecycleEvent($event)) {
             return 'outbound';
         }
 
@@ -150,37 +231,94 @@ class CallLogProcessorService
 
     protected function resolveContactPhone(string $direction, string $from, string $to): ?string
     {
-        if ($direction === 'inbound') {
-            return $from ?: $to ?: null;
-        }
-
         if ($direction === 'outbound') {
             return $to ?: $from ?: null;
         }
 
-        return $from ?: $to ?: null;
+        return $to ?: $from ?: null;
     }
 
-    protected function parseCalledAt(array $payload): ?Carbon
+    protected function isOutboundSmrtDialerLifecycleEvent(string $event): bool
+    {
+        return in_array($event, [
+            'callInitiatedSmrtDialer',
+            'callCompletedSmrtDialer',
+        ], true);
+    }
+
+    protected function isInitiatedEvent(string $event): bool
+    {
+        return $event === 'callInitiatedSmrtDialer';
+    }
+
+    protected function isCompletedEvent(string $event): bool
+    {
+        return $event === 'callCompletedSmrtDialer';
+    }
+
+    /**
+     * CRM receive time is used as fallback when smrtPhone does not provide a reliable event time.
+     */
+    protected function parseCalledAt(array $payload): Carbon
+    {
+        return $this->parsePayloadDateWithFallback($payload)['datetime'];
+    }
+
+    /**
+     * @return array{datetime: Carbon, used_receive_time: bool, has_reliable_time: bool}
+     */
+    protected function parsePayloadDateWithFallback(array $payload): array
     {
         $raw = $payload['date']
             ?? $payload['timestamp']
             ?? $payload['createdAt']['date']
             ?? null;
 
-        if (! $raw) {
-            return now();
-        }
-
         try {
-            if (is_numeric($raw) && strlen((string) $raw) === 8) {
-                return Carbon::createFromFormat('Ymd', (string) $raw)->startOfDay();
-            }
+            if ($this->hasReliablePayloadTime($raw)) {
+                $datetime = is_numeric($raw)
+                    ? Carbon::createFromTimestamp(strlen((string) $raw) >= 13 ? (int) floor(((int) $raw) / 1000) : (int) $raw)
+                    : Carbon::parse($raw);
 
-            return Carbon::parse($raw);
+                return [
+                    'datetime'          => $datetime,
+                    'used_receive_time' => false,
+                    'has_reliable_time' => true,
+                ];
+            }
         } catch (\Throwable) {
-            return now();
+            //
         }
+
+        return [
+            'datetime'          => now(),
+            'used_receive_time' => true,
+            'has_reliable_time' => false,
+        ];
+    }
+
+    protected function hasReliablePayloadTime(mixed $raw): bool
+    {
+        if ($raw === null || $raw === '' || $raw === 'null') {
+            return false;
+        }
+
+        $raw = trim((string) $raw);
+
+        if (preg_match('/^\d{8}$/', $raw)) {
+            return false;
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) {
+            return false;
+        }
+
+        if (is_numeric($raw)) {
+            return strlen($raw) >= 10;
+        }
+
+        return preg_match('/\d{1,2}:\d{2}/', $raw) === 1
+            || str_contains($raw, 'T');
     }
 
     protected function nullableString(mixed $value): ?string
@@ -189,11 +327,79 @@ class CallLogProcessorService
             return null;
         }
 
-        return (string) $value;
+        if (is_array($value)) {
+            return json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: null;
+        }
+
+        return trim((string) $value);
+    }
+
+    /**
+     * @param  array<int, string>  $keys
+     */
+    protected function firstFilledPayloadValue(array $payload, array $keys): mixed
+    {
+        foreach ($keys as $key) {
+            $value = Arr::get($payload, $key);
+
+            if ($value === null || $value === '' || $value === 'null') {
+                continue;
+            }
+
+            return $value;
+        }
+
+        return null;
+    }
+
+    protected function calculateDurationSeconds(mixed $startedAt, mixed $completedAt): ?int
+    {
+        if (! $startedAt || ! $completedAt) {
+            return null;
+        }
+
+        try {
+            $startedAt = Carbon::parse($startedAt);
+            $completedAt = Carbon::parse($completedAt);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if ($completedAt->lessThan($startedAt)) {
+            return null;
+        }
+
+        return $startedAt->diffInSeconds($completedAt);
+    }
+
+    protected function normalizePhoneNumber(?string $number): string
+    {
+        return preg_replace('/\D+/', '', (string) $number) ?: '';
+    }
+
+    protected function phoneNumbersMatch(string $firstNumber, string $secondNumber): bool
+    {
+        if ($firstNumber === '' || $secondNumber === '') {
+            return false;
+        }
+
+        if ($firstNumber === $secondNumber) {
+            return true;
+        }
+
+        if (strlen($firstNumber) >= 10 && strlen($secondNumber) >= 10) {
+            return substr($firstNumber, -10) === substr($secondNumber, -10);
+        }
+
+        return false;
     }
 
     protected function linkPersonAndLead(SmrtPhoneCallLog $callLog): void
     {
+        if (! $this->configService->autoMatchLead()) {
+            return;
+        }
+
         if ($callLog->person_id && $callLog->lead_id) {
             return;
         }
@@ -218,29 +424,36 @@ class CallLogProcessorService
 
     protected function syncActivity(SmrtPhoneCallLog $callLog): void
     {
-        if (! config('smrtphone.create_activities', true)) {
+        if (! $this->configService->createActivities()) {
             return;
         }
 
-        if (! $callLog->lead_id && ! $callLog->person_id) {
+        if (! $this->configService->autoMatchLead()) {
+            return;
+        }
+
+        if (
+            $this->configService->createActivityOnlyWhenMatched()
+            && ! $callLog->lead_id
+            && ! $callLog->person_id
+        ) {
             return;
         }
 
         $title = trim(($callLog->direction === 'inbound' ? 'Inbound' : 'Outbound').' call via smrtPhone');
         $commentParts = array_filter([
-            $callLog->call_notes,
+            $callLog->call_notes ? 'Call Notes: '.$callLog->call_notes : null,
             $callLog->call_status ? 'Status: '.$callLog->call_status : null,
-            $callLog->call_outcome ? 'Outcome: '.$callLog->call_outcome : null,
             $callLog->recording_url ? 'Recording: '.$callLog->recording_url : null,
-            $callLog->ai_summary ? 'AI Summary: '.$callLog->ai_summary : null,
+            $this->configService->saveAiSummary() && $callLog->ai_summary ? 'AI Summary: '.$callLog->ai_summary : null,
         ]);
 
         $data = [
             'title'         => $title,
             'type'          => 'call',
             'comment'       => implode("\n", $commentParts) ?: null,
-            'schedule_from' => $callLog->called_at ?: now(),
-            'schedule_to'   => $callLog->called_at ?: now(),
+            'schedule_from' => $callLog->started_at ?: $callLog->called_at ?: now(),
+            'schedule_to'   => $callLog->completed_at ?: $callLog->called_at ?: now(),
             'is_done'       => 1,
             'call_status'   => $this->mapCallStatus($callLog),
             'additional'    => json_encode([

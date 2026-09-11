@@ -9,10 +9,7 @@
                 <x-admin::breadcrumbs name="smrtphone.view" :entity="$callLog" />
 
                 <h1 class="text-xl font-bold dark:text-white">
-                    @lang('admin::app.smrtphone.view.heading', [
-                        'direction' => trans('admin::app.smrtphone.directions.'.($callLog->direction ?: 'unknown')),
-                        'id' => $callLog->id,
-                    ])
+                    @lang('admin::app.smrtphone.view.heading', ['id' => $callLog->id])
                 </h1>
 
                 <p class="text-sm text-gray-600 dark:text-gray-400">
@@ -21,37 +18,6 @@
             </div>
 
             <div class="flex items-center gap-2">
-                @if ($callLog->lead_id && bouncer()->hasPermission('leads.view'))
-                    <a
-                        href="{{ route('admin.leads.view', $callLog->lead_id) }}"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="secondary-button"
-                    >
-                        @lang('admin::app.smrtphone.view.open-crm-lead')
-                    </a>
-                @endif
-
-                @if ($callLog->person_id && bouncer()->hasPermission('contacts.persons.view'))
-                    <a
-                        href="{{ route('admin.contacts.persons.view', $callLog->person_id) }}"
-                        class="secondary-button"
-                    >
-                        @lang('admin::app.smrtphone.view.open-person')
-                    </a>
-                @endif
-
-                @if ($callLog->recording_url)
-                    <a
-                        href="{{ $callLog->recording_url }}"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="primary-button"
-                    >
-                        @lang('admin::app.smrtphone.view.play-recording')
-                    </a>
-                @endif
-
                 @if (bouncer()->hasPermission('smrtphone.delete'))
                     <form
                         method="POST"
@@ -79,33 +45,39 @@
                     @foreach ([
                         'external_call_id' => trans('admin::app.smrtphone.view.external-call-id'),
                         'event' => trans('admin::app.smrtphone.view.event'),
-                        'direction' => trans('admin::app.smrtphone.index.datagrid.direction'),
                         'from_number' => trans('admin::app.smrtphone.view.from'),
                         'to_number' => trans('admin::app.smrtphone.view.to'),
-                        'contact_phone' => trans('admin::app.smrtphone.index.datagrid.phone'),
+                        'contact_phone' => trans('admin::app.smrtphone.index.datagrid.matched-phone'),
                         'contact_name' => trans('admin::app.smrtphone.index.datagrid.contact'),
                         'caller_id_name' => trans('admin::app.smrtphone.view.caller-id'),
-                        'user_name' => trans('admin::app.smrtphone.index.datagrid.agent'),
-                        'device' => trans('admin::app.smrtphone.view.device'),
                         'call_status' => trans('admin::app.smrtphone.index.datagrid.status'),
-                        'call_outcome' => trans('admin::app.smrtphone.index.datagrid.outcome'),
                     ] as $field => $label)
                         <div class="grid grid-cols-3 gap-2">
                             <dt class="text-gray-500 dark:text-gray-400">{{ $label }}</dt>
                             <dd class="col-span-2 break-all dark:text-white">
-                                @if ($field === 'direction')
-                                    {{ trans('admin::app.smrtphone.directions.'.($callLog->direction ?: 'unknown')) }}
-                                @else
-                                    {{ $callLog->{$field} ?: '—' }}
-                                @endif
+                                {{ $callLog->{$field} ?: '—' }}
                             </dd>
                         </div>
                     @endforeach
 
                     <div class="grid grid-cols-3 gap-2">
-                        <dt class="text-gray-500 dark:text-gray-400">@lang('admin::app.smrtphone.index.datagrid.called-at')</dt>
+                        <dt class="text-gray-500 dark:text-gray-400">@lang('admin::app.smrtphone.view.started-at')</dt>
                         <dd class="col-span-2 dark:text-white">
-                            {{ $callLog->called_at?->format('M d, Y H:i') ?: '—' }}
+                            {{ $callLog->started_at?->format('M d, Y H:i') ?: '—' }}
+                        </dd>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2">
+                        <dt class="text-gray-500 dark:text-gray-400">@lang('admin::app.smrtphone.view.completed-at')</dt>
+                        <dd class="col-span-2 dark:text-white">
+                            {{ $callLog->completed_at?->format('M d, Y H:i') ?: '—' }}
+                        </dd>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2">
+                        <dt class="text-gray-500 dark:text-gray-400">@lang('admin::app.smrtphone.view.duration')</dt>
+                        <dd class="col-span-2 dark:text-white">
+                            {{ $callLog->duration_seconds !== null ? gmdate('H:i:s', (int) $callLog->duration_seconds) : '—' }}
                         </dd>
                     </div>
 
@@ -144,7 +116,7 @@
                         <dd class="col-span-2 dark:text-white">
                             @if ($callLog->lead_id)
                                 <a
-                                    href="{{ route('admin.leads.view', $callLog->lead_id) }}"
+                                    href="{{ lead_route_for_user('view', $callLog->lead_id) }}"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     class="text-blue-600 hover:underline"
