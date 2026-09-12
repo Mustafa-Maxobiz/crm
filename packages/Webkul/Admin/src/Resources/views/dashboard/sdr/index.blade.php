@@ -309,7 +309,7 @@
                         </p>
 
                         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                            @{{ summary.outcomes.won_percent }}% of outcomes
+                            Won in selected period
                         </p>
                     </div>
 
@@ -323,7 +323,7 @@
                         </p>
 
                         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                            @{{ summary.outcomes.lost_percent }}% of outcomes
+                            Lost in selected period
                         </p>
                     </div>
                 </div>
@@ -356,7 +356,7 @@
                         </p>
 
                         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                            @{{ summary.linkedin.acceptance_rate }}% of requests
+                            Accepted in selected period
                         </p>
                     </div>
 
@@ -370,7 +370,7 @@
                         </p>
 
                         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                            @{{ summary.linkedin.response_rate }}% of requests
+                            Leads in selected period
                         </p>
                     </div>
 
@@ -398,7 +398,7 @@
                         </p>
 
                         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                            @{{ summary.meetings.percent }}% of responses
+                            Meetings in selected period
                         </p>
                     </div>
 
@@ -456,7 +456,7 @@
                         </p>
 
                         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                            @{{ summary.meetings.attend_rate }}% of assigned
+                            Attended in selected period
                         </p>
                     </div>
 
@@ -517,7 +517,7 @@
                         </p>
 
                         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                            @{{ summary.calls.answered }} answered · @{{ summary.calls.answer_rate }}%
+                            @{{ summary.calls.answered }} answered
                         </p>
                     </div>
 

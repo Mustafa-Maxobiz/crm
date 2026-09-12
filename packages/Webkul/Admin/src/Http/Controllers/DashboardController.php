@@ -271,8 +271,8 @@ class DashboardController extends Controller
             'outcomes' => [
                 'won'         => $wonLeads,
                 'lost'        => $lostLeads,
-                'won_percent' => $outcomeLeads ? round(($wonLeads / $outcomeLeads) * 100, 1) : 0,
-                'lost_percent'=> $outcomeLeads ? round(($lostLeads / $outcomeLeads) * 100, 1) : 0,
+                'won_percent' => $outcomeLeads ? round(($wonLeads / $outcomeLeads) * 100) : 0,
+                'lost_percent'=> $outcomeLeads ? round(($lostLeads / $outcomeLeads) * 100) : 0,
             ],
             'meetings' => [
                 'booked'       => $bookedMeetings,
@@ -347,8 +347,8 @@ class DashboardController extends Controller
             'outcomes' => [
                 'won'         => $wonLeads,
                 'lost'        => $lostLeads,
-                'won_percent' => $outcomeLeads ? round(($wonLeads / $outcomeLeads) * 100, 1) : 0,
-                'lost_percent'=> $outcomeLeads ? round(($lostLeads / $outcomeLeads) * 100, 1) : 0,
+                'won_percent' => $outcomeLeads ? round(($wonLeads / $outcomeLeads) * 100) : 0,
+                'lost_percent'=> $outcomeLeads ? round(($lostLeads / $outcomeLeads) * 100) : 0,
             ],
             'meetings' => [
                 'booked'       => $bookedMeetings,
@@ -438,8 +438,8 @@ class DashboardController extends Controller
             'outcomes' => [
                 'won'         => $wonLeads,
                 'lost'        => $lostLeads,
-                'won_percent' => $outcomeLeads ? round(($wonLeads / $outcomeLeads) * 100, 1) : 0,
-                'lost_percent'=> $outcomeLeads ? round(($lostLeads / $outcomeLeads) * 100, 1) : 0,
+                'won_percent' => $outcomeLeads ? round(($wonLeads / $outcomeLeads) * 100) : 0,
+                'lost_percent'=> $outcomeLeads ? round(($lostLeads / $outcomeLeads) * 100) : 0,
             ],
             'meetings' => [
                 'booked'       => $meetingsBooked,
@@ -517,6 +517,7 @@ class DashboardController extends Controller
 
         $wonLeads = (int) ($outcomeStats->won_leads ?? 0);
         $lostLeads = (int) ($outcomeStats->lost_leads ?? 0);
+        $outcomeLeads = $wonLeads + $lostLeads;
 
         $meetingCount = DB::table('activities')
             ->join('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
@@ -552,8 +553,8 @@ class DashboardController extends Controller
             'outcomes' => [
                 'won'          => $wonLeads,
                 'lost'         => $lostLeads,
-                'won_percent'  => $responses ? round(($wonLeads / $responses) * 100, 1) : 0,
-                'lost_percent' => $responses ? round(($lostLeads / $responses) * 100, 1) : 0,
+                'won_percent'  => $outcomeLeads ? round(($wonLeads / $outcomeLeads) * 100) : 0,
+                'lost_percent' => $outcomeLeads ? round(($lostLeads / $outcomeLeads) * 100) : 0,
             ],
         ];
     }
