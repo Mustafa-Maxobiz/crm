@@ -163,7 +163,7 @@
                                             </span>
 
                                             <span
-                                                class="max-w-full truncate rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700"
+                                                class="max-w-full truncate rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800"
                                                 v-if="element.assigned_by_user_name && Number(element.user_id || 0) === Number(currentUserId)"
                                                 :title="'Assigned by: ' + element.assigned_by_user_name"
                                             >

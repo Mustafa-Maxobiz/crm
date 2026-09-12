@@ -32,6 +32,10 @@ class CallLogProcessorService
             return null;
         }
 
+        if ($event === 'aiTools') {
+            return $this->processAiToolsPayload($payload);
+        }
+
         if (! $this->isOutboundSmrtDialerLifecycleEvent($event)) {
             Log::info('SmrtPhone webhook ignored non-outbound smrtDialer lifecycle event.', ['event' => $event]);
 
@@ -88,6 +92,42 @@ class CallLogProcessorService
             $this->linkPersonAndLead($callLog);
             $this->syncActivity($callLog->fresh(['person', 'lead', 'activity']));
         }
+
+        return $callLog->fresh(['person', 'lead', 'activity']);
+    }
+
+    protected function processAiToolsPayload(array $payload): ?SmrtPhoneCallLog
+    {
+        $callId = $payload['callId'] ?? null;
+
+        if (! $callId) {
+            Log::info('SmrtPhone AI Tools webhook ignored: missing callId.');
+
+            return null;
+        }
+
+        $callLog = SmrtPhoneCallLog::query()
+            ->where('external_call_id', (string) $callId)
+            ->first();
+
+        if (! $callLog) {
+            Log::info('SmrtPhone AI Tools webhook ignored: no matching call log.', [
+                'call_id' => $callId,
+            ]);
+
+            return null;
+        }
+
+        $callLog->update([
+            'ai_summary'    => $payload['ai_summary'] ?? null,
+            'ai_transcript' => $payload['ai_transcript'] ?? null,
+            'ai_keywords'   => $payload['ai_keywords'] ?? null,
+        ]);
+
+        Log::info('SmrtPhone AI Tools data updated.', [
+            'call_log_id' => $callLog->id,
+            'call_id'     => $callId,
+        ]);
 
         return $callLog->fresh(['person', 'lead', 'activity']);
     }

@@ -170,6 +170,19 @@ if (! function_exists('lead_url')) {
     }
 }
 
+if (! function_exists('dashboard_route_for_user')) {
+    /**
+     * Dashboard URL for the authenticated user's active role.
+     */
+    function dashboard_route_for_user($user = null): string
+    {
+        $user = $user ?? auth()->guard('user')->user();
+        $activeRoleService = app(\Webkul\User\Services\ActiveRoleService::class);
+
+        return route($activeRoleService->dashboardRouteForRole($activeRoleService->getActiveRole($user)));
+    }
+}
+
 if (! function_exists('admin_menu_items')) {
     /**
      * Sidebar menu for the current user.
