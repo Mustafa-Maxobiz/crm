@@ -170,6 +170,11 @@
                     type: Array,
                     default: () => [],
                 },
+
+                excludedUserIds: {
+                    type: Array,
+                    default: () => [],
+                },
             },
 
             data: function () {
@@ -345,6 +350,14 @@
                                     return participant.id !== addedParticipant.id;
                                 });
                             });
+
+                            if (userType === 'users' && self.excludedUserIds.length) {
+                                const excludedIds = self.excludedUserIds.map(id => Number(id));
+
+                                response.data.data = response.data.data.filter(function(participant) {
+                                    return ! excludedIds.includes(Number(participant.id));
+                                });
+                            }
 
                             self.searchedParticipants[userType] = response.data.data;
 

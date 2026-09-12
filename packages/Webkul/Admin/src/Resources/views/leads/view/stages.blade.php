@@ -368,8 +368,10 @@
                                         <x-admin::form.control-group.control
                                             type="select"
                                             name="assigned_user_id"
+                                            v-model="selectedMeetingOwnerId"
                                             rules="required"
                                             label="Assigned Owner"
+                                            ::disabled="!! closureMeetingTransferOwner"
                                         >
                                             <option value="">Select Admin / Lead User</option>
 
@@ -400,6 +402,7 @@
                                         :show-all-users="true"
                                         :users-only="true"
                                         :user-role-names="['administrator', 'lead', 'lead clouser', 'lead closer']"
+                                        :excluded-user-ids="[selectedMeetingOwnerId].filter(Boolean)"
                                     ></v-activity-participants>
 
                                     <p
@@ -542,6 +545,8 @@
 
                     meetingOwnerOptions: @json($meetingOwnerOptions ?? []),
                     meetingOwnersEmpty: @json(empty($meetingOwnerOptions ?? [])),
+                    selectedMeetingOwnerId: '',
+                    closureMeetingTransferOwner: null,
 
                     pendingHandoffStage: null,
 
@@ -568,7 +573,46 @@
                 }
             },
 
+            mounted() {
+                this.$emitter.on('open-closure-meeting-transfer', this.openClosureMeetingTransfer);
+            },
+
             methods: {
+                openClosureMeetingTransfer(owner) {
+                    const meetingStage = this.stages.find(stage => stage.code === 'meeting');
+
+                    if (! meetingStage) {
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: 'Meeting stage was not found for this lead pipeline.',
+                        });
+
+                        return;
+                    }
+
+                    this.pendingMeetingStage = meetingStage;
+                    this.closureMeetingTransferOwner = owner;
+                    this.selectedMeetingOwnerId = String(owner.id);
+                    this.meetingScheduleFrom = '';
+                    this.meetingScheduleTo = '';
+                    this.meetingErrors = {};
+
+                    if (! this.meetingOwnerOptions.some(user => Number(user.id) === Number(owner.id))) {
+                        this.meetingOwnerOptions = [
+                            {
+                                id: Number(owner.id),
+                                name: owner.name || owner.label || 'Selected owner',
+                                email: owner.email || '',
+                                role_name: owner.role_name || '',
+                            },
+                            ...this.meetingOwnerOptions,
+                        ];
+                    }
+
+                    this.meetingOwnersEmpty = false;
+                    this.$refs.meetingActivityModal.open();
+                },
+
                 openModal(stage) {
                     if (this.currentStage.code == stage.code) {
                         return;
@@ -960,6 +1004,77 @@
 
                     const pendingStage = this.pendingMeetingStage;
                     const payload = this.convertMeetingScheduleToPakistan(params);
+
+                    if (this.closureMeetingTransferOwner) {
+                        this.$axios
+                            .post("{{ lead_route('change_sales_owner', $lead->id) }}", {
+                                user_id: Number(this.closureMeetingTransferOwner.id),
+                                closure_assignment_mode: 'meeting',
+                                meeting: {
+                                    schedule_from: payload.schedule_from,
+                                    schedule_to: payload.schedule_to,
+                                    comment: payload.comment,
+                                    location: payload.location,
+                                    participants: payload.participants || {},
+                                },
+                            }, {
+                                headers: {
+                                    Accept: 'application/json',
+                                    'X-Requested-With': 'XMLHttpRequest',
+                                },
+                            })
+                            .then((response) => {
+                                this.isMeetingStoring = false;
+                                this.hasMeetingActivity = true;
+
+                                this.$emitter.emit('add-flash', {
+                                    type: 'success',
+                                    message: response.data.message || 'Meeting scheduled and sales owner changed successfully.',
+                                });
+
+                                this.$refs.meetingActivityModal.close();
+
+                                this.pendingMeetingStage = null;
+                                this.closureMeetingTransferOwner = null;
+                                this.selectedMeetingOwnerId = '';
+                                this.meetingScheduleFrom = '';
+                                this.meetingScheduleTo = '';
+
+                                if (pendingStage) {
+                                    this.currentStage = pendingStage;
+                                }
+
+                                window.location.reload();
+                            })
+                            .catch((error) => {
+                                this.isMeetingStoring = false;
+
+                                if (error.response?.status === 422) {
+                                    const errors = error.response.data.errors || {};
+                                    const validationMessage = Object.values(errors)?.[0]?.[0] || error.response.data.message || 'Meeting could not be saved.';
+
+                                    setErrors(errors);
+
+                                    this.meetingErrors = {
+                                        participants: errors?.participants?.[0],
+                                    };
+
+                                    this.$emitter.emit('add-flash', {
+                                        type: 'error',
+                                        message: validationMessage,
+                                    });
+
+                                    return;
+                                }
+
+                                this.$emitter.emit('add-flash', {
+                                    type: 'error',
+                                    message: error.response?.data?.message || 'Meeting could not be saved.',
+                                });
+                            });
+
+                        return;
+                    }
 
                     this.$axios
                         .post("{{ route('admin.activities.store') }}", {

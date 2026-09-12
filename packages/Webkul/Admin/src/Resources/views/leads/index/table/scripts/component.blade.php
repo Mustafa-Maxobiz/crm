@@ -36,6 +36,13 @@
                     openSalesOwnerRecord: null,
                     salesOwnerDropdownStyle: {},
                     salesOwnerTriggerRefs: {},
+                    closureTransferRecord: null,
+                    closureTransferOwner: null,
+                    closureTransferError: '',
+                    isClosureTransferSaving: false,
+                    closureMeetingTransferRecord: null,
+                    closureMeetingTransferOwner: null,
+                    selectedMeetingOwnerId: '',
                     pipelineOptions: @json($pipelineOptions),
                     isEditLoading: false,
                     isEditSaving: false,
@@ -820,11 +827,24 @@
                 },
 
                 selectSalesOwner(record, ownerId) {
+                    const owner = this.salesOwnerSelectOptions(record).find(option => {
+                        return Number(option.id ?? option.value ?? 0) === Number(ownerId);
+                    });
+
                     this.closeSalesOwnerDropdown();
+
+                    if (owner?.is_closure_user) {
+                        this.closureTransferRecord = record;
+                        this.closureTransferOwner = owner;
+                        this.closureTransferError = '';
+
+                        return;
+                    }
+
                     this.changeSalesOwner(record, Number(ownerId));
                 },
 
-                changeSalesOwner(record, ownerId) {
+                changeSalesOwner(record, ownerId, extraPayload = {}) {
                     const previousOwnerId = Number(record.user_id || 0);
 
                     if (! ownerId || Number(ownerId) === previousOwnerId) {
@@ -833,6 +853,7 @@
 
                     this.$axios.post(`{{ lead_url() }}/${record.id}/change-sales-owner`, {
                         user_id: ownerId,
+                        ...extraPayload,
                     }, {
                         headers: {
                             Accept: 'application/json',
@@ -853,6 +874,90 @@
 
                         this.$refs.datagrid.get();
                     });
+                },
+
+                assignClosureDirectly() {
+                    if (! this.closureTransferRecord || ! this.closureTransferOwner) {
+                        return;
+                    }
+
+                    this.isClosureTransferSaving = true;
+                    this.closureTransferError = '';
+
+                    this.$axios.post(`{{ lead_url() }}/${this.closureTransferRecord.id}/change-sales-owner`, {
+                        user_id: Number(this.closureTransferOwner.id ?? this.closureTransferOwner.value),
+                        closure_assignment_mode: 'direct',
+                    }, {
+                        headers: {
+                            Accept: 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    }).then(response => {
+                        this.$emitter.emit('add-flash', {
+                            type: 'success',
+                            message: response.data.message || 'Sales owner changed successfully.',
+                        });
+
+                        this.cancelClosureTransfer();
+                        this.$refs.datagrid.get();
+                    }).catch(error => {
+                        this.isClosureTransferSaving = false;
+                        this.closureTransferError = error.response?.data?.message || error.response?.data?.errors?.user_id?.[0] || 'Unable to change sales owner.';
+                    });
+                },
+
+                openClosureMeetingTransfer() {
+                    if (! this.closureTransferRecord || ! this.closureTransferOwner) {
+                        return;
+                    }
+
+                    const record = this.closureTransferRecord;
+                    const owner = this.closureTransferOwner;
+
+                    this.closureMeetingTransferRecord = record;
+                    this.closureMeetingTransferOwner = owner;
+                    this.selectedMeetingOwnerId = String(owner.id ?? owner.value);
+                    this.pendingStageLeadId = record.id;
+                    this.pendingStageId = null;
+                    this.meetingErrors = {};
+                    this.meetingScheduleFrom = '';
+                    this.meetingScheduleTo = '';
+                    this.closureTransferError = '';
+
+                    this.loadEligibleMeetingOwners(record.id).then(() => {
+                        const ownerId = Number(owner.id ?? owner.value);
+                        const hasOwnerOption = this.meetingOwnerOptions.some(user => Number(user.id) === ownerId);
+
+                        if (! hasOwnerOption) {
+                            this.meetingOwnerOptions = [
+                                {
+                                    id: ownerId,
+                                    name: owner.name || owner.label || 'Selected owner',
+                                    email: owner.email || '',
+                                    role_name: owner.role_name || '',
+                                },
+                                ...this.meetingOwnerOptions,
+                            ];
+                        }
+
+                        this.meetingOwnersEmpty = false;
+                        this.selectedMeetingOwnerId = String(ownerId);
+                        this.cancelClosureTransfer(false);
+                        this.$refs.meetingActivityModal.open();
+                    });
+                },
+
+                cancelClosureTransfer(clearMeetingTransfer = true) {
+                    this.closureTransferRecord = null;
+                    this.closureTransferOwner = null;
+                    this.closureTransferError = '';
+                    this.isClosureTransferSaving = false;
+
+                    if (clearMeetingTransfer) {
+                        this.closureMeetingTransferRecord = null;
+                        this.closureMeetingTransferOwner = null;
+                        this.selectedMeetingOwnerId = '';
+                    }
                 },
 
                 gridRowStyle(available) {
@@ -1353,6 +1458,9 @@
                     this.meetingOwnersEmpty = false;
                     this.meetingScheduleFrom = '';
                     this.meetingScheduleTo = '';
+                    this.selectedMeetingOwnerId = this.closureMeetingTransferOwner
+                        ? String(this.closureMeetingTransferOwner.id ?? this.closureMeetingTransferOwner.value)
+                        : '';
                     this.setSchedulingContext();
 
                     return this.$axios.get(`{{ lead_url() }}/${leadId}/eligible-meeting-owners`)
@@ -1377,6 +1485,68 @@
                     this.isMeetingSaving = true;
                     const payload = this.convertMeetingScheduleToPakistan(params);
 
+                    if (this.closureMeetingTransferRecord && this.closureMeetingTransferOwner) {
+                        this.$axios.post(`{{ lead_url() }}/${this.closureMeetingTransferRecord.id}/change-sales-owner`, {
+                            user_id: Number(this.closureMeetingTransferOwner.id ?? this.closureMeetingTransferOwner.value),
+                            closure_assignment_mode: 'meeting',
+                            meeting: {
+                                schedule_from: payload.schedule_from,
+                                schedule_to: payload.schedule_to,
+                                comment: payload.comment,
+                                location: payload.location,
+                                participants: payload.participants || {},
+                            },
+                        }, {
+                            headers: {
+                                Accept: 'application/json',
+                                'X-Requested-With': 'XMLHttpRequest',
+                            },
+                        }).then(response => {
+                            this.isMeetingSaving = false;
+                            this.$refs.meetingActivityModal.close();
+                            this.meetingScheduleFrom = '';
+                            this.meetingScheduleTo = '';
+                            this.selectedMeetingOwnerId = '';
+                            this.setSchedulingContext();
+                            this.pendingStageLeadId = null;
+                            this.pendingStageId = null;
+                            this.closureMeetingTransferRecord = null;
+                            this.closureMeetingTransferOwner = null;
+
+                            this.$emitter.emit('add-flash', {
+                                type: 'success',
+                                message: response.data.message || 'Meeting scheduled and sales owner changed successfully.',
+                            });
+                            this.$refs.datagrid.get();
+                        }).catch(error => {
+                            this.isMeetingSaving = false;
+
+                            if (error.response?.status === 422) {
+                                const errors = error.response.data.errors || {};
+                                const validationMessage = Object.values(errors)?.[0]?.[0] || error.response.data.message || 'Meeting could not be saved.';
+
+                                setErrors(errors);
+                                this.meetingErrors = {
+                                    participants: errors?.participants?.[0],
+                                };
+
+                                this.$emitter.emit('add-flash', {
+                                    type: 'error',
+                                    message: validationMessage,
+                                });
+
+                                return;
+                            }
+
+                            this.$emitter.emit('add-flash', {
+                                type: 'error',
+                                message: error.response?.data?.message || 'Meeting could not be saved.',
+                            });
+                        });
+
+                        return;
+                    }
+
                     this.$axios.post("{{ route('admin.activities.store') }}", {
                         ...payload,
                         type: 'meeting',
@@ -1389,6 +1559,7 @@
                         this.$refs.meetingActivityModal.close();
                         this.meetingScheduleFrom = '';
                         this.meetingScheduleTo = '';
+                        this.selectedMeetingOwnerId = '';
                         this.setSchedulingContext();
                         this.pendingStageLeadId = null;
                         this.pendingStageId = null;

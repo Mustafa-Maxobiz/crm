@@ -78,7 +78,10 @@ class SalesOwnerTransferService
             $oldOwnerLabel = $this->ownerLabel($oldOwnerId);
             $newOwnerLabel = $this->formatOwnerLabel($target);
 
-            $lockedLead->forceFill(['user_id' => $newOwnerId])->saveQuietly();
+            $lockedLead->forceFill([
+                'user_id'       => $newOwnerId,
+                'lead_owner_id' => $newOwnerId,
+            ])->saveQuietly();
 
             Lead::storeSystemActivityWithLabels(
                 $lockedLead,
@@ -138,6 +141,34 @@ class SalesOwnerTransferService
         return (string) ($this->usersWithRoles(null, null, false)->firstWhere('id', $userId)?->role_name ?? '');
     }
 
+    public function isClosureUserId(int $userId): bool
+    {
+        if (! $userId) {
+            return false;
+        }
+
+        $roleNames = $this->closureRoleNames();
+
+        if (Schema::hasTable('user_roles')) {
+            $hasPivotRole = DB::table('users')
+                ->join('user_roles', 'users.id', '=', 'user_roles.user_id')
+                ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                ->where('users.id', $userId)
+                ->whereIn(DB::raw('LOWER(TRIM(roles.name))'), $roleNames)
+                ->exists();
+
+            if ($hasPivotRole) {
+                return true;
+            }
+        }
+
+        return DB::table('users')
+            ->join('roles', 'users.role_id', '=', 'roles.id')
+            ->where('users.id', $userId)
+            ->whereIn(DB::raw('LOWER(TRIM(roles.name))'), $roleNames)
+            ->exists();
+    }
+
     public function formatOwnerLabel(object $user): string
     {
         $roleName = trim((string) ($user->role_name ?? ''));
@@ -169,6 +200,21 @@ class SalesOwnerTransferService
         }
 
         return function_exists('bouncer') && bouncer()->hasPermission('leads.edit');
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function closureRoleNames(): array
+    {
+        return [
+            'lead',
+            'lead closer',
+            'lead clouser',
+            'lead closure',
+            'closure',
+            'closer',
+        ];
     }
 
     /**

@@ -1572,7 +1572,8 @@ class LeadController extends Controller
                     'email'      => $user->email,
                     'role_id'    => (int) $user->role_id,
                     'role_name'  => $user->role_name,
-                    'label'      => $this->salesOwnerTransferService->formatOwnerLabel($user),
+                    'label'           => $this->salesOwnerTransferService->formatOwnerLabel($user),
+                    'is_closure_user' => $this->salesOwnerTransferService->isClosureUserId((int) $user->id),
                 ];
             })->values(),
         ]);
@@ -1592,13 +1593,46 @@ class LeadController extends Controller
         }
 
         $data = request()->validate([
-            'user_id' => ['required', 'integer', 'exists:users,id'],
+            'user_id'                  => ['required', 'integer', 'exists:users,id'],
+            'closure_assignment_mode'  => ['nullable', Rule::in(['direct', 'meeting'])],
+            'meeting.schedule_from'    => ['required_if:closure_assignment_mode,meeting', 'nullable', 'date'],
+            'meeting.schedule_to'      => ['required_if:closure_assignment_mode,meeting', 'nullable', 'date', 'after:meeting.schedule_from'],
+            'meeting.comment'          => ['required_if:closure_assignment_mode,meeting', 'nullable', 'string', 'max:500'],
+            'meeting.location'         => ['required_if:closure_assignment_mode,meeting', 'nullable', 'string'],
+            'meeting.participants'     => ['nullable', 'array'],
         ]);
 
         $newOwnerId = (int) $data['user_id'];
+        $assignmentMode = $data['closure_assignment_mode'] ?? 'direct';
 
         try {
-            $lead = $this->salesOwnerTransferService->transfer($lead, $newOwnerId, $currentUser);
+            if ($assignmentMode === 'meeting') {
+                if (! $this->salesOwnerTransferService->isClosureUserId($newOwnerId)) {
+                    return response()->json([
+                        'message' => 'Meeting scheduling is only available when assigning to a Closure user.',
+                    ], 422);
+                }
+
+                $meetingData = $data['meeting'] ?? [];
+
+                $lead = $this->meetingHandoffService->completeSalesOwnerTransferWithMeeting(
+                    $currentUser,
+                    $lead->id,
+                    $newOwnerId,
+                    [
+                        'title'         => 'Meeting'.($lead->title ? ' - '.$lead->title : ''),
+                        'type'          => 'meeting',
+                        'comment'       => $meetingData['comment'] ?? null,
+                        'schedule_from' => $meetingData['schedule_from'] ?? null,
+                        'schedule_to'   => $meetingData['schedule_to'] ?? null,
+                        'location'      => $meetingData['location'] ?? null,
+                        'participants'  => $meetingData['participants'] ?? [],
+                        'lead_id'       => $lead->id,
+                    ],
+                );
+            } else {
+                $lead = $this->salesOwnerTransferService->transfer($lead, $newOwnerId, $currentUser);
+            }
         } catch (AuthorizationException $exception) {
             return response()->json(['message' => $exception->getMessage()], 403);
         } catch (\Illuminate\Validation\ValidationException $exception) {
@@ -1611,13 +1645,16 @@ class LeadController extends Controller
         $lead->loadMissing('user');
 
         return response()->json([
-            'message' => 'Sales owner changed successfully.',
+            'message' => $assignmentMode === 'meeting'
+                ? 'Meeting scheduled and sales owner changed successfully.'
+                : 'Sales owner changed successfully.',
             'lead' => [
                 'id'         => $lead->id,
                 'user_id'    => $lead->user_id,
                 'user_name'  => $lead->user?->name ?? '',
                 'user_role'  => $this->salesOwnerTransferService->ownerRoleName((int) $lead->user_id),
                 'user_label' => $this->salesOwnerTransferService->ownerLabel((int) $lead->user_id),
+                'lead_pipeline_stage_id' => $lead->lead_pipeline_stage_id,
             ],
         ]);
     }

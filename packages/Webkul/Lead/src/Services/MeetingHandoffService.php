@@ -2,6 +2,7 @@
 
 namespace Webkul\Lead\Services;
 
+use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -93,58 +94,56 @@ class MeetingHandoffService
 
             $this->assertCanCompleteHandoff($lead, $actor, $stageId, $assignedUserId);
 
-            $activityData = $this->withAssignedOwnerParticipant($activityData, $assignedUserId, (int) $actor->id);
+            $stage = $lead->pipeline->stages->firstWhere('id', $stageId);
 
-            Event::dispatch('activity.create.before');
+            return $this->createMeetingAndTransfer($lead, $stage, $assignedUserId, $activityData, (int) $actor->id);
+        });
+    }
 
-            $activity = $this->activityRepository->create(array_merge($activityData, [
-                'type'    => 'meeting',
-                'user_id' => $assignedUserId,
-            ]));
+    /**
+     * Manual Sales Owner transfer with a meeting is available to any user who can edit the lead.
+     */
+    public function completeSalesOwnerTransferWithMeeting(
+        UserContract $actor,
+        int $leadId,
+        int $assignedUserId,
+        array $activityData,
+    ): Lead {
+        return DB::transaction(function () use ($actor, $leadId, $assignedUserId, $activityData) {
+            $lead = Lead::query()
+                ->with(['pipeline.stages', 'stage'])
+                ->lockForUpdate()
+                ->findOrFail($leadId);
 
-            if (! empty($activityData['lead_id'])) {
-                $activity->leads()->sync([(int) $activityData['lead_id']]);
+            if (! $this->sourceAccessService->canEditLead($lead, $actor)) {
+                throw new AuthorizationException('You do not have permission to change the sales owner of this lead.');
             }
 
-            Event::dispatch('activity.create.after', $activity);
+            $stage = $lead->pipeline?->stages?->firstWhere('code', 'meeting');
 
-            $stage = $lead->pipeline->stages->firstWhere('id', $stageId);
-            $oldSalesOwnerId = $lead->user_id ? (int) $lead->user_id : null;
+            if (! $stage) {
+                $stage = $lead->pipeline?->stages?->first(
+                    fn ($stage) => strtolower(trim((string) $stage->name)) === 'meeting'
+                );
+            }
 
-            Event::dispatch('lead.update.before', $leadId);
-
-            $payload = [
-                'entity_type'            => 'leads',
-                'lead_pipeline_stage_id' => $stage->id,
-                'user_id'                => $assignedUserId,
-                'lead_owner_id'          => $assignedUserId,
-            ];
-
-            $attributes = ['lead_pipeline_stage_id', 'user_id', 'lead_owner_id'];
-
-            $lead = $this->leadRepository->update(
-                $payload,
-                $leadId,
-                array_values(array_unique($attributes)),
-            );
-
-            if ($oldSalesOwnerId && $oldSalesOwnerId !== $assignedUserId) {
-                $now = now();
-
-                DB::table('lead_forwards')->insert([
-                    'lead_id'      => $lead->id,
-                    'from_user_id' => $oldSalesOwnerId,
-                    'to_user_id'   => $assignedUserId,
-                    'forward_type' => SalesOwnerTransferService::TYPE_SALES_OWNER_TRANSFER,
-                    'forwarded_at' => $now,
-                    'created_at'   => $now,
-                    'updated_at'   => $now,
+            if (! $stage) {
+                throw ValidationException::withMessages([
+                    'lead_pipeline_stage_id' => ['Meeting stage was not found for this lead pipeline.'],
                 ]);
             }
 
-            Event::dispatch('lead.update.after', $lead);
+            if (! $this->isEligibleMeetingOwnerForLead($lead, $assignedUserId)) {
+                $message = empty($this->getLeadServiceIds($lead))
+                    ? 'Please select a valid Admin or Lead user.'
+                    : 'The selected owner is not assigned to handle this lead\'s services.';
 
-            return $lead->fresh(['pipeline.stages', 'stage']);
+                throw ValidationException::withMessages([
+                    'assigned_user_id' => [$message],
+                ]);
+            }
+
+            return $this->createMeetingAndTransfer($lead, $stage, $assignedUserId, $activityData, (int) $actor->id);
         });
     }
 
@@ -321,6 +320,77 @@ class MeetingHandoffService
         $activityData['participants'] = $participants;
 
         return $activityData;
+    }
+
+    protected function createMeetingAndTransfer(
+        LeadContract $lead,
+        object $stage,
+        int $assignedUserId,
+        array $activityData,
+        int $actorId,
+    ): Lead {
+        $activityData = $this->withAssignedOwnerParticipant($activityData, $assignedUserId, $actorId);
+
+        Event::dispatch('activity.create.before');
+
+        $activity = $this->activityRepository->create(array_merge($activityData, [
+            'type'    => 'meeting',
+            'user_id' => $assignedUserId,
+        ]));
+
+        if (! empty($activityData['lead_id'])) {
+            $activity->leads()->sync([(int) $activityData['lead_id']]);
+        }
+
+        Event::dispatch('activity.create.after', $activity);
+
+        $oldSalesOwnerId = $lead->user_id ? (int) $lead->user_id : null;
+
+        Event::dispatch('lead.update.before', $lead->id);
+
+        $payload = [
+            'entity_type'            => 'leads',
+            'lead_pipeline_stage_id' => $stage->id,
+            'user_id'                => $assignedUserId,
+            'lead_owner_id'          => $assignedUserId,
+        ];
+
+        $lead = $this->leadRepository->update(
+            $payload,
+            $lead->id,
+            ['lead_pipeline_stage_id', 'user_id', 'lead_owner_id'],
+        );
+
+        if ($oldSalesOwnerId && $oldSalesOwnerId !== $assignedUserId) {
+            $now = now();
+            $latestForward = DB::table('lead_forwards')
+                ->where('lead_id', $lead->id)
+                ->orderByDesc('id')
+                ->first();
+
+            $isImmediateDuplicate = $latestForward
+                && (int) $latestForward->from_user_id === $oldSalesOwnerId
+                && (int) $latestForward->to_user_id === $assignedUserId
+                && $latestForward->forward_type === SalesOwnerTransferService::TYPE_SALES_OWNER_TRANSFER
+                && $latestForward->created_at
+                && Carbon::parse($latestForward->created_at)->greaterThanOrEqualTo($now->copy()->subSeconds(10));
+
+            if (! $isImmediateDuplicate) {
+                DB::table('lead_forwards')->insert([
+                    'lead_id'      => $lead->id,
+                    'from_user_id' => $oldSalesOwnerId,
+                    'to_user_id'   => $assignedUserId,
+                    'forward_type' => SalesOwnerTransferService::TYPE_SALES_OWNER_TRANSFER,
+                    'forwarded_at' => $now,
+                    'created_at'   => $now,
+                    'updated_at'   => $now,
+                ]);
+            }
+        }
+
+        Event::dispatch('lead.update.after', $lead);
+
+        return $lead->fresh(['pipeline.stages', 'stage']);
     }
 
     /**

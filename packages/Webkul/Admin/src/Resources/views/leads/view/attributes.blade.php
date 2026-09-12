@@ -161,11 +161,14 @@
                                 </div>
 
                                 <div class="min-h-0 flex-1 overflow-y-auto overscroll-y-contain border-b px-4 py-2.5 dark:border-gray-800">
-                                    <p class="mb-4 text-sm text-gray-600 dark:text-gray-300">
+                                    <p
+                                        v-if="closureStep === 'select'"
+                                        class="mb-4 text-sm text-gray-600 dark:text-gray-300"
+                                    >
                                         Select a new sales owner for this lead.
                                     </p>
 
-                                    <div>
+                                    <div v-if="closureStep === 'select'">
                                         <label class="mb-1 block text-sm font-medium text-gray-800 dark:text-white required">
                                             New Sales Owner
                                         </label>
@@ -188,13 +191,33 @@
                                             </option>
                                         </select>
 
-                                        <p
-                                            v-if="errorMessage"
-                                            class="mt-1 text-xs text-red-600"
-                                        >
-                                            @{{ errorMessage }}
-                                        </p>
                                     </div>
+
+                                    <div
+                                        v-if="closureStep === 'choice'"
+                                        class="grid gap-4"
+                                    >
+                                        <div>
+                                            <h4 class="text-base font-semibold text-gray-800 dark:text-white">
+                                                Assign to Closure
+                                            </h4>
+
+                                            <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                                                Do you want to schedule a meeting before assigning this lead to Closure?
+                                            </p>
+                                        </div>
+
+                                        <div class="rounded border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-gray-700 dark:border-yellow-900 dark:bg-yellow-950 dark:text-gray-200">
+                                            Selected user: <span class="font-medium">@{{ pendingClosureUser?.label }}</span>
+                                        </div>
+                                    </div>
+
+                                    <p
+                                        v-if="errorMessage"
+                                        class="mt-3 text-xs text-red-600"
+                                    >
+                                        @{{ errorMessage }}
+                                    </p>
                                 </div>
 
                                 <div class="flex flex-shrink-0 justify-end border-t border-gray-200 px-4 py-3 dark:border-gray-800">
@@ -209,6 +232,27 @@
                                         </button>
 
                                         <button
+                                            v-if="closureStep === 'choice'"
+                                            type="button"
+                                            class="secondary-button"
+                                            @click="assignClosureDirectly"
+                                            :disabled="isSubmitting"
+                                        >
+                                            Assign Directly
+                                        </button>
+
+                                        <button
+                                            v-if="closureStep === 'choice'"
+                                            type="button"
+                                            class="primary-button"
+                                            @click="openClosureMeetingForm"
+                                            :disabled="isSubmitting"
+                                        >
+                                            Schedule Meeting
+                                        </button>
+
+                                        <button
+                                            v-if="closureStep === 'select'"
                                             type="button"
                                             class="primary-button"
                                             @click="changeSalesOwner"
@@ -255,6 +299,8 @@
                         isSubmitting: false,
                         errorMessage: '',
                         isOpen: false,
+                        closureStep: 'select',
+                        pendingClosureUser: null,
                     };
                 },
 
@@ -290,11 +336,46 @@
                             .catch(error => {
                                 this.errorMessage = error.message || 'Failed to load users.';
                                 this.isLoading = false;
-                                console.error('Error fetching eligible users:', error);
-                            });
-                    },
+                                            console.error('Error fetching eligible users:', error);
+                                        });
+                                    },
 
                     changeSalesOwner() {
+                        if (!this.selectedUserId) {
+                            this.errorMessage = 'Please select a user.';
+                            return;
+                        }
+
+                        const selectedUser = this.eligibleUsers.find(user => Number(user.id) === Number(this.selectedUserId));
+
+                        if (selectedUser?.is_closure_user) {
+                            this.pendingClosureUser = selectedUser;
+                            this.closureStep = 'choice';
+
+                            return;
+                        }
+
+                        this.submitSalesOwnerChange({
+                            closure_assignment_mode: 'direct',
+                        });
+                    },
+
+                    assignClosureDirectly() {
+                        this.submitSalesOwnerChange({
+                            closure_assignment_mode: 'direct',
+                        });
+                    },
+
+                    openClosureMeetingForm() {
+                        if (! this.pendingClosureUser) {
+                            return;
+                        }
+
+                        this.$emitter.emit('open-closure-meeting-transfer', this.pendingClosureUser);
+                        this.closeModal();
+                    },
+
+                    submitSalesOwnerChange(extraPayload = {}) {
                         if (!this.selectedUserId) {
                             this.errorMessage = 'Please select a user.';
                             return;
@@ -310,13 +391,25 @@
                                 'Accept': 'application/json',
                                 'X-CSRF-TOKEN': this.csrfToken
                             },
-                            body: JSON.stringify({ user_id: this.selectedUserId })
+                            body: JSON.stringify({
+                                user_id: this.selectedUserId,
+                                ...extraPayload,
+                            })
                         })
                         .then(async response => {
                             const data = await response.json();
 
                             if (! response.ok) {
-                                throw new Error(data.message || data.errors?.user_id?.[0] || 'Failed to change sales owner.');
+                                throw new Error(
+                                    data.message
+                                    || data.errors?.user_id?.[0]
+                                    || data.errors?.['meeting.schedule_from']?.[0]
+                                    || data.errors?.['meeting.schedule_to']?.[0]
+                                    || data.errors?.['meeting.comment']?.[0]
+                                    || data.errors?.['meeting.location']?.[0]
+                                    || data.errors?.assigned_user_id?.[0]
+                                    || 'Failed to change sales owner.'
+                                );
                             }
 
                             return data;
@@ -338,6 +431,8 @@
 
                     closeModal() {
                         this.selectedUserId = '';
+                        this.pendingClosureUser = null;
+                        this.closureStep = 'select';
                         this.errorMessage = '';
                         this.isOpen = false;
                         this.isSubmitting = false;

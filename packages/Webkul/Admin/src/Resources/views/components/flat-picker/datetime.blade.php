@@ -128,7 +128,6 @@
                             });
                         });
                     };
-
                     return {
                         allowInput: this.allowInput ?? true,
                         disable: this.disable ?? [],

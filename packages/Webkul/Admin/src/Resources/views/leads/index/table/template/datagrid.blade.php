@@ -220,3 +220,75 @@
                     </div>
                 </template>
             </Teleport>
+
+            <Teleport to="body">
+                <div v-if="closureTransferRecord">
+                    <div class="fixed inset-0 z-[100050] bg-gray-500 bg-opacity-50"></div>
+
+                    <div class="fixed inset-0 z-[100051] flex items-center justify-center overflow-hidden p-4">
+                        <div
+                            class="box-shadow isolate flex max-h-full w-full max-w-[525px] flex-col overflow-hidden rounded-lg bg-white dark:bg-gray-900"
+                        >
+                            <div class="flex flex-shrink-0 items-center justify-between gap-2.5 border-b px-4 py-3 dark:border-gray-800">
+                                <h3 class="text-base font-semibold dark:text-white">
+                                    Assign to Closure
+                                </h3>
+
+                                <span
+                                    class="icon-cross-large cursor-pointer text-3xl hover:rounded-md hover:bg-gray-100 dark:hover:bg-gray-950"
+                                    @click="cancelClosureTransfer"
+                                ></span>
+                            </div>
+
+                            <div class="min-h-0 flex-1 overflow-y-auto overscroll-y-contain border-b px-4 py-2.5 dark:border-gray-800">
+                                <p class="text-sm text-gray-600 dark:text-gray-300">
+                                    Do you want to schedule a meeting before assigning this lead to Closure?
+                                </p>
+
+                                <div class="mt-4 rounded border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-gray-700 dark:border-yellow-900 dark:bg-yellow-950 dark:text-gray-200">
+                                    Selected user: <span class="font-medium">@{{ closureTransferOwner?.label || closureTransferOwner?.name }}</span>
+                                </div>
+
+                                <p
+                                    v-if="closureTransferError"
+                                    class="mt-3 text-xs text-red-600"
+                                >
+                                    @{{ closureTransferError }}
+                                </p>
+                            </div>
+
+                            <div class="flex flex-shrink-0 justify-end border-t border-gray-200 px-4 py-3 dark:border-gray-800">
+                                <div class="flex items-center justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        class="secondary-button"
+                                        @click="cancelClosureTransfer"
+                                        :disabled="isClosureTransferSaving"
+                                    >
+                                        Cancel
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        class="secondary-button"
+                                        @click="assignClosureDirectly"
+                                        :disabled="isClosureTransferSaving"
+                                    >
+                                        Assign Directly
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        class="primary-button"
+                                        @click="openClosureMeetingTransfer"
+                                        :disabled="isClosureTransferSaving"
+                                    >
+                                        Schedule Meeting
+                                    </button>
+
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </Teleport>
