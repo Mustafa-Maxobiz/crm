@@ -5,7 +5,7 @@
         $showMeetings = $showMeetings ?? ($dashboardVariant === 'lead_clouser');
         $dashboardRoleLabel = match ($dashboardVariant) {
             'bde' => 'BDE',
-            'lge' => 'LGE',
+            'lge' => 'Lead Gen Executive',
             'lead_clouser' => 'Closer',
             default => 'SDR',
         };
@@ -80,7 +80,7 @@
                                 @if ($dashboardVariant === 'bde')
                                     Daily, weekly, and monthly BD Executive lead work.
                                 @elseif ($dashboardVariant === 'lge')
-                                    Daily, weekly, and monthly LGE activity.
+                                    Daily, weekly, and monthly Lead Gen Executive activity.
                                 @elseif ($dashboardVariant === 'lead_clouser')
                                     Daily, weekly, and monthly closer meeting performance.
                                 @else
@@ -194,7 +194,7 @@
                             @{{ isBdeDashboard
                                 ? `${periodLabel} BD Executive lead work.`
                                 : (isLgeDashboard
-                                ? `${periodLabel} LGE activity.`
+                                ? `${periodLabel} Lead Gen Executive activity.`
                                 : (isCloserDashboard
                                     ? `${periodLabel} closer meeting performance.`
                                     : `${periodLabel} ${roleLabel} call performance.`)) }}

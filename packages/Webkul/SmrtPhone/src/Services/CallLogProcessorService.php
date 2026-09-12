@@ -120,8 +120,8 @@ class CallLogProcessorService
 
         $callLog->update([
             'ai_summary'    => $payload['ai_summary'] ?? null,
-            'ai_transcript' => $payload['ai_transcript'] ?? null,
-            'ai_keywords'   => $payload['ai_keywords'] ?? null,
+            'ai_transcript' => $this->normalizeAiTranscript($payload['ai_transcript'] ?? null),
+            'ai_keywords'   => $this->normalizeAiKeywords($payload['ai_keywords'] ?? null),
         ]);
 
         Log::info('SmrtPhone AI Tools data updated.', [
@@ -199,16 +199,16 @@ class CallLogProcessorService
                 'summary',
                 'callSummary',
             ]));
-            $attributes['ai_transcript'] = $this->firstFilledPayloadValue($payload, [
+            $attributes['ai_transcript'] = $this->normalizeAiTranscript($this->firstFilledPayloadValue($payload, [
                 'ai_transcript',
                 'aiTranscript',
                 'transcript',
-            ]);
-            $attributes['ai_keywords'] = $this->firstFilledPayloadValue($payload, [
+            ]));
+            $attributes['ai_keywords'] = $this->normalizeAiKeywords($this->firstFilledPayloadValue($payload, [
                 'ai_keywords',
                 'aiKeywords',
                 'ai_keyword',
-            ]);
+            ]));
         }
 
         return array_filter($attributes, fn ($value) => $value !== null && $value !== '');
@@ -381,6 +381,85 @@ class CallLogProcessorService
         }
 
         return trim((string) $value);
+    }
+
+    protected function normalizeAiTranscript(mixed $transcript): ?array
+    {
+        if (! $transcript) {
+            return null;
+        }
+
+        if (is_string($transcript)) {
+            return [[
+                'timestamp' => null,
+                'speaker'   => null,
+                'message'   => trim($transcript),
+            ]];
+        }
+
+        if (! is_array($transcript)) {
+            return null;
+        }
+
+        $items = array_is_list($transcript) ? $transcript : [$transcript];
+
+        return collect($items)
+            ->map(function ($item) {
+                if (is_string($item)) {
+                    return [
+                        'timestamp' => null,
+                        'speaker'   => null,
+                        'message'   => trim($item),
+                    ];
+                }
+
+                if (! is_array($item)) {
+                    return null;
+                }
+
+                $message = $item['message']
+                    ?? $item['segment']
+                    ?? $item['text']
+                    ?? $item['content']
+                    ?? null;
+
+                if (! filled($message)) {
+                    return null;
+                }
+
+                return [
+                    'timestamp' => $item['timestamp'] ?? $item['time'] ?? null,
+                    'speaker'   => $item['speaker'] ?? $item['role'] ?? null,
+                    'message'   => trim((string) $message),
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all() ?: null;
+    }
+
+    protected function normalizeAiKeywords(mixed $keywords): ?array
+    {
+        if (! $keywords) {
+            return null;
+        }
+
+        if (is_string($keywords)) {
+            return array_values(array_filter(array_map('trim', explode(',', $keywords))));
+        }
+
+        if (! is_array($keywords)) {
+            return null;
+        }
+
+        if (array_is_list($keywords)) {
+            return array_values(array_filter(array_map(
+                fn ($keyword) => is_scalar($keyword) ? trim((string) $keyword) : null,
+                $keywords
+            )));
+        }
+
+        return array_keys(array_filter($keywords, fn ($count) => (int) $count > 0));
     }
 
     /**

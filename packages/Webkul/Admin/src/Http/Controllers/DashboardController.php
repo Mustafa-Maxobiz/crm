@@ -125,7 +125,7 @@ class DashboardController extends Controller
 
         return view('admin::dashboard.sdr.index')->with([
             'stateTimezones' => [],
-            'dashboardTitle' => 'LGE Dashboard',
+            'dashboardTitle' => 'Lead Gen Executive Dashboard',
             'showUsFeatures' => false,
             'dashboardVariant' => 'lge',
         ]);

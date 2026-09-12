@@ -162,32 +162,68 @@
                     @lang('admin::app.smrtphone.view.ai-insights')
                 </h2>
 
-                <dl class="grid gap-3 text-sm">
-                    <div class="grid grid-cols-3 gap-2">
-                        <dt class="text-gray-500 dark:text-gray-400">@lang('admin::app.smrtphone.view.ai-summary')</dt>
-                        <dd class="col-span-2 whitespace-pre-wrap dark:text-white">{{ $callLog->ai_summary ?: '—' }}</dd>
-                    </div>
+                <div class="grid gap-4 lg:grid-cols-2">
+                    <dl class="grid content-start gap-3 text-sm">
+                        <div class="grid gap-1">
+                            <dt class="text-gray-500 dark:text-gray-400">@lang('admin::app.smrtphone.view.ai-summary')</dt>
+                            <dd class="whitespace-pre-wrap dark:text-white">{{ $callLog->ai_summary ?: '—' }}</dd>
+                        </div>
 
-                    <div class="grid grid-cols-3 gap-2">
-                        <dt class="text-gray-500 dark:text-gray-400">@lang('admin::app.smrtphone.view.ai-keywords')</dt>
-                        <dd class="col-span-2 dark:text-white">
-                            @if (is_array($callLog->ai_keywords) && count($callLog->ai_keywords))
-                                {{ implode(', ', $callLog->ai_keywords) }}
-                            @else
-                                —
-                            @endif
-                        </dd>
-                    </div>
-
-                    @if ($callLog->ai_transcript)
-                        <div class="grid grid-cols-3 gap-2">
-                            <dt class="text-gray-500 dark:text-gray-400">@lang('admin::app.smrtphone.view.ai-transcript')</dt>
-                            <dd class="col-span-2">
-                                <pre class="overflow-x-auto rounded bg-gray-50 p-3 text-xs dark:bg-gray-800 dark:text-gray-200">{{ json_encode($callLog->ai_transcript, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                        <div class="grid gap-1">
+                            <dt class="text-gray-500 dark:text-gray-400">@lang('admin::app.smrtphone.view.ai-keywords')</dt>
+                            <dd class="dark:text-white">
+                                @if (is_array($callLog->ai_keywords) && count($callLog->ai_keywords))
+                                    {{ implode(', ', $callLog->ai_keywords) }}
+                                @else
+                                    —
+                                @endif
                             </dd>
                         </div>
-                    @endif
-                </dl>
+                    </dl>
+
+                    <div class="grid content-start gap-2 text-sm">
+                        <p class="text-gray-500 dark:text-gray-400">@lang('admin::app.smrtphone.view.ai-transcript')</p>
+
+                        @if ($callLog->ai_transcript)
+                            <div>
+                                <div class="grid max-h-96 gap-2 overflow-y-auto rounded bg-gray-50 p-3 dark:bg-gray-800">
+                                    @foreach ((array) $callLog->ai_transcript as $message)
+                                        @php
+                                            $message = is_array($message) ? $message : ['message' => (string) $message];
+                                            $speaker = strtolower(trim((string) ($message['speaker'] ?? '')));
+                                            $timestamp = $message['timestamp'] ?? null;
+                                            $text = $message['message'] ?? $message['segment'] ?? $message['text'] ?? null;
+                                            $isCustomer = str_contains($speaker, 'customer')
+                                                || str_contains($speaker, 'client')
+                                                || str_contains($speaker, 'prospect');
+                                            $speakerLabel = $speaker ?: ($isCustomer ? 'customer' : 'agent');
+                                        @endphp
+
+                                        @continue(! filled($text))
+
+                                        <div class="flex {{ $isCustomer ? 'justify-end' : 'justify-start' }}">
+                                            <div class="{{ $isCustomer ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/40' : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900' }} max-w-[85%] rounded-lg border px-3 py-2 text-sm shadow-sm">
+                                            <div class="mb-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                                <span class="font-semibold text-gray-700 dark:text-gray-200">
+                                                        {{ $speakerLabel }}
+                                                </span>
+
+                                                @if ($timestamp)
+                                                    <span>{{ $timestamp }}</span>
+                                                @endif
+                                            </div>
+
+                                            <p class="whitespace-pre-wrap text-gray-800 dark:text-white">{{ $text }}</p>
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @else
+                            <p class="dark:text-white">—</p>
+                        @endif
+                    </div>
+                </div>
             </div>
         @endif
 

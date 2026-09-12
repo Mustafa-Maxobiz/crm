@@ -75,7 +75,7 @@
                                     <div class="flex flex-col gap-1">
                                         <i class="icon-leads text-2xl text-gray-600"></i>
 
-                                        <span class="font-medium dark:text-gray-300">LGE Lead</span>
+                                        <span class="font-medium dark:text-gray-300">Lead Gen Executive Lead</span>
                                     </div>
                                 </a>
                             </div>
@@ -87,7 +87,7 @@
                                     <div class="flex flex-col gap-1">
                                         <i class="icon-download text-2xl text-gray-600"></i>
 
-                                        <span class="font-medium dark:text-gray-300">LGE Import</span>
+                                        <span class="font-medium dark:text-gray-300">Lead Gen Executive Import</span>
                                     </div>
                                 </a>
                             </div>

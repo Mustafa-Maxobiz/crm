@@ -366,7 +366,7 @@
                                             </select>
 
                                             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                                Cold Lead entries created by LGE must be forwarded to an active SDR.
+                                                Cold Lead entries created by Lead Gen Executive must be forwarded to an active SDR.
                                             </p>
 
                                             <x-admin::form.control-group.error control-name="cold_lead_sdr_user_id" />
