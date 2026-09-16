@@ -81,6 +81,7 @@ class DashboardController extends Controller
             'showUsFeatures' => true,
             'dashboardVariant' => 'sdr',
             'showMeetings' => false,
+            'showDashboardCalendar' => $this->canViewDashboardCalendar(),
         ]);
     }
 
@@ -97,6 +98,7 @@ class DashboardController extends Controller
             'showUsFeatures' => false,
             'dashboardVariant' => 'bde',
             'showMeetings' => false,
+            'showDashboardCalendar' => $this->canViewDashboardCalendar(),
         ]);
     }
 
@@ -113,6 +115,7 @@ class DashboardController extends Controller
             'showUsFeatures' => true,
             'dashboardVariant' => 'lead_clouser',
             'showMeetings' => true,
+            'showDashboardCalendar' => $this->canViewDashboardCalendar(),
         ]);
     }
 
@@ -128,6 +131,7 @@ class DashboardController extends Controller
             'dashboardTitle' => 'Lead Gen Executive Dashboard',
             'showUsFeatures' => false,
             'dashboardVariant' => 'lge',
+            'showDashboardCalendar' => $this->canViewDashboardCalendar(),
         ]);
     }
 
@@ -185,6 +189,48 @@ class DashboardController extends Controller
         }
 
         return response()->json($this->sdrCallSummary($startDate, $endDate, $userId, $sourceAccessService));
+    }
+
+    /**
+     * Returns week/month meeting and follow-up events for role dashboards.
+     */
+    public function calendarEvents(): JsonResponse
+    {
+        $this->ensureDashboardCalendarAccess();
+
+        $data = request()->validate([
+            'variant'   => ['nullable', 'in:bde,sdr,lge,lead_clouser'],
+            'view_type' => ['nullable', 'in:week,month'],
+            'date'      => ['nullable', 'date'],
+        ]);
+
+        $variant = $data['variant'] ?? 'sdr';
+
+        $this->abortUnlessDashboardRole($variant);
+
+        [$startDate, $endDate] = $this->dashboardCalendarRange(
+            $data['view_type'] ?? 'week',
+            $data['date'] ?? null,
+        );
+
+        $userId = auth()->guard('user')->id();
+        $showUsFeatures = in_array($variant, ['sdr', 'lead_clouser'], true);
+
+        $meetings = $this->dashboardCalendarMeetings($userId, $startDate, $endDate, $showUsFeatures);
+        $followups = $this->dashboardCalendarFollowups($userId, $startDate, $endDate, $showUsFeatures);
+
+        $events = $meetings
+            ->merge($followups)
+            ->sortBy('sort_at')
+            ->values();
+
+        return response()->json([
+            'events' => $events,
+            'period' => [
+                'start' => $startDate->toDateString(),
+                'end'   => $endDate->toDateString(),
+            ],
+        ]);
     }
 
     /**
@@ -792,6 +838,181 @@ class DashboardController extends Controller
         ];
     }
 
+    protected function dashboardCalendarRange(string $viewType, ?string $date): array
+    {
+        $selectedDate = $date
+            ? Carbon::parse($date, config('app.timezone'))
+            : Carbon::now(config('app.timezone'));
+
+        if ($viewType === 'month') {
+            return [
+                $selectedDate->copy()->startOfMonth()->startOfDay(),
+                $selectedDate->copy()->endOfMonth()->endOfDay(),
+            ];
+        }
+
+        return [
+            $selectedDate->copy()->startOfWeek()->startOfDay(),
+            $selectedDate->copy()->endOfWeek()->endOfDay(),
+        ];
+    }
+
+    protected function dashboardCalendarMeetings(
+        int $userId,
+        Carbon $startDate,
+        Carbon $endDate,
+        bool $showUsFeatures,
+    ) {
+        $query = DB::table('activities')
+            ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
+            ->leftJoin('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
+            ->leftJoin('leads', 'lead_activities.lead_id', '=', 'leads.id')
+            ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
+            ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
+            ->where('activities.type', 'meeting')
+            ->where(function ($query) use ($startDate, $endDate) {
+                $query
+                    ->whereBetween('activities.schedule_from', [$startDate, $endDate])
+                    ->orWhereBetween('activities.schedule_to', [$startDate, $endDate])
+                    ->orWhere(function ($query) use ($startDate, $endDate) {
+                        $query
+                            ->where('activities.schedule_from', '<=', $startDate)
+                            ->where('activities.schedule_to', '>=', $endDate);
+                    });
+            })
+            ->where(function ($query) use ($userId) {
+                $query
+                    ->where('activities.user_id', $userId)
+                    ->orWhere('activity_participants.user_id', $userId);
+            });
+
+        $this->applyVisibleLeadJoinScope($query);
+
+        return $query
+            ->select(
+                'activities.id',
+                'activities.title',
+                'activities.comment',
+                'activities.schedule_from',
+                'activities.schedule_to',
+                'activities.location',
+                'leads.id as lead_id',
+                'leads.title as lead_title',
+                'persons.name as person_name',
+                'persons.city as person_city',
+                'persons.state as person_state',
+                'persons.country as person_country',
+                'persons.timezone as person_timezone',
+                'lead_sources.name as source_name'
+            )
+            ->orderBy('activities.schedule_from')
+            ->get()
+            ->unique('id')
+            ->values()
+            ->map(function ($activity) use ($showUsFeatures) {
+                $leadUrl = $activity->lead_id ? lead_route_for_user('view', $activity->lead_id) : null;
+                $startsAt = Carbon::parse($activity->schedule_from, config('app.timezone'));
+                $endsAt = $activity->schedule_to
+                    ? Carbon::parse($activity->schedule_to, config('app.timezone'))
+                    : $startsAt->copy()->addHour();
+
+                $item = $this->mapDashboardCalendarItem([
+                    'id'            => 'meeting-'.$activity->id,
+                    'type'          => 'Meeting',
+                    'source'        => $activity->source_name,
+                    'title'         => $activity->lead_title ?: ($activity->title ?: 'Meeting'),
+                    'person'        => $activity->person_name,
+                    'city'          => $activity->person_city,
+                    'state'         => $activity->person_state,
+                    'country'       => $activity->person_country,
+                    'timezone'      => $activity->person_timezone,
+                    'fallback_meta' => $activity->location ?: 'Scheduled meeting',
+                    'at'            => $activity->schedule_from,
+                    'url'           => route('admin.activities.edit', $activity->id),
+                    'lead_url'      => $leadUrl,
+                ], $showUsFeatures);
+
+                return array_merge($item, [
+                    'activity_id'   => $activity->id,
+                    'lead_id'       => $activity->lead_id,
+                    'lead_title'    => $activity->lead_title,
+                    'description'   => str($activity->comment ?: $activity->location ?: '')->limit(120)->toString(),
+                    'schedule_from' => $startsAt->timezone(config('app.timezone'))->toIso8601String(),
+                    'schedule_to'   => $endsAt->timezone(config('app.timezone'))->toIso8601String(),
+                    'date'          => $startsAt->timezone(config('app.timezone'))->toDateString(),
+                    'time_label'    => $startsAt->timezone(config('app.timezone'))->format('g:i A'),
+                ]);
+            });
+    }
+
+    protected function dashboardCalendarFollowups(
+        int $userId,
+        Carbon $startDate,
+        Carbon $endDate,
+        bool $showUsFeatures,
+    ) {
+        $sourceAccessService = app(SourceAccessService::class);
+
+        $query = DB::table('leads')
+            ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
+            ->leftJoin('organizations', 'persons.organization_id', '=', 'organizations.id')
+            ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
+            ->whereNull('leads.deleted_at')
+            ->where('leads.user_id', $userId)
+            ->whereNotNull('leads.next_followup_date')
+            ->whereBetween('leads.next_followup_date', [$startDate, $endDate]);
+
+        $sourceAccessService->applyLeadTableScope($query);
+
+        return $query
+            ->select(
+                'leads.id',
+                'leads.title',
+                'leads.next_followup_date',
+                'leads.followup_notes',
+                'persons.name as person_name',
+                'persons.city as person_city',
+                'persons.state as person_state',
+                'persons.country as person_country',
+                'persons.timezone as person_timezone',
+                'organizations.name as organization_name',
+                'lead_sources.name as source_name'
+            )
+            ->orderBy('leads.next_followup_date')
+            ->get()
+            ->map(function ($lead) use ($showUsFeatures) {
+                $leadUrl = lead_route_for_user('view', $lead->id);
+                $startsAt = Carbon::parse($lead->next_followup_date, config('app.timezone'));
+
+                $item = $this->mapDashboardCalendarItem([
+                    'id'            => 'followup-'.$lead->id,
+                    'type'          => 'Follow-up',
+                    'source'        => $lead->source_name,
+                    'title'         => $lead->title,
+                    'person'        => $lead->person_name,
+                    'city'          => $lead->person_city,
+                    'state'         => $lead->person_state,
+                    'country'       => $lead->person_country,
+                    'timezone'      => $lead->person_timezone,
+                    'fallback_meta' => $lead->organization_name ?: 'Lead follow-up',
+                    'at'            => $lead->next_followup_date,
+                    'url'           => $leadUrl,
+                    'lead_url'      => $leadUrl,
+                ], $showUsFeatures);
+
+                return array_merge($item, [
+                    'activity_id'   => null,
+                    'lead_id'       => $lead->id,
+                    'lead_title'    => $lead->title,
+                    'description'   => str($lead->followup_notes ?: $lead->organization_name ?: '')->limit(120)->toString(),
+                    'schedule_from' => $startsAt->timezone(config('app.timezone'))->toIso8601String(),
+                    'schedule_to'   => null,
+                    'date'          => $startsAt->timezone(config('app.timezone'))->toDateString(),
+                    'time_label'    => $startsAt->timezone(config('app.timezone'))->format('g:i A'),
+                ]);
+            });
+    }
+
     /**
      * Show all US state times.
      */
@@ -824,6 +1045,20 @@ class DashboardController extends Controller
         }
 
         abort(401);
+    }
+
+    protected function ensureDashboardCalendarAccess(): void
+    {
+        if ($this->canViewDashboardCalendar()) {
+            return;
+        }
+
+        abort(403);
+    }
+
+    protected function canViewDashboardCalendar(): bool
+    {
+        return bouncer()->hasPermission('role_dashboard_calendar_view');
     }
 
     protected function abortUnlessDashboardRole(string $variant): void

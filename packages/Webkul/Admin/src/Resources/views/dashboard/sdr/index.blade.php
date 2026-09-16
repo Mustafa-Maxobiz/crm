@@ -3,6 +3,7 @@
         $dashboardVariant = $dashboardVariant ?? 'sdr';
         $showUsFeatures = $showUsFeatures ?? true;
         $showMeetings = $showMeetings ?? ($dashboardVariant === 'lead_clouser');
+        $showDashboardCalendar = $showDashboardCalendar ?? false;
         $dashboardRoleLabel = match ($dashboardVariant) {
             'bde' => 'BDE',
             'lge' => 'Lead Gen Executive',
@@ -106,6 +107,26 @@
             @endif
         </div>
     </div>
+
+    @if ($showDashboardCalendar)
+        <div class="mt-4">
+            <v-sdr-dashboard-calendar
+                calendar-url="{{ route('admin.dashboard.calendar_events', ['variant' => $dashboardVariant]) }}"
+                dashboard-variant="{{ $dashboardVariant }}"
+            >
+                <div class="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+                    <div class="mb-4 flex items-center justify-between gap-4">
+                        <div class="grid gap-1">
+                            <div class="light-shimmer-bg dark:shimmer h-5 w-28 rounded-md"></div>
+                            <div class="light-shimmer-bg dark:shimmer h-4 w-52 rounded-md"></div>
+                        </div>
+                    </div>
+
+                    <div class="light-shimmer-bg dark:shimmer h-[360px] rounded-md"></div>
+                </div>
+            </v-sdr-dashboard-calendar>
+        </div>
+    @endif
 
     {!! view_render_event('admin.dashboard.sdr.index.content.after') !!}
 
@@ -564,6 +585,186 @@
 
         <script
             type="text/x-template"
+            id="v-sdr-dashboard-calendar-template"
+        >
+            <div class="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                <div class="flex items-center justify-between gap-3 border-b border-gray-200 p-3 dark:border-gray-800 max-lg:flex-wrap">
+                    <div class="grid gap-1">
+                        <p class="text-lg font-semibold text-gray-800 dark:text-white">
+                            Calendar
+                        </p>
+
+                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                            @{{ calendarSubtitle }}
+                        </p>
+                    </div>
+
+                    <div class="flex items-center gap-2 max-lg:flex-wrap">
+                        <div class="flex overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
+                            <button
+                                v-for="option in viewOptions"
+                                :key="option.value"
+                                type="button"
+                                class="px-3 py-2 text-sm font-semibold transition-all"
+                                :class="viewType === option.value
+                                    ? 'bg-brandColor text-white'
+                                    : 'bg-white text-gray-600 hover:bg-brandColor hover:text-white dark:bg-gray-900 dark:text-gray-300'"
+                                @click="setViewType(option.value)"
+                            >
+                                @{{ option.label }}
+                            </button>
+                        </div>
+
+                        <button
+                            type="button"
+                            class="secondary-button !min-h-[37px] !min-w-[37px] !px-2"
+                            title="Previous"
+                            @click="movePeriod(-1)"
+                        >
+                            &lt;
+                        </button>
+
+                        <button
+                            type="button"
+                            class="secondary-button !min-h-[37px] !px-3"
+                            :title="periodLabel"
+                            @click="resetToday"
+                        >
+                            <span class="icon-calendar text-xl"></span>
+                            <span>@{{ periodLabel }}</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            class="secondary-button !min-h-[37px] !min-w-[37px] !px-2"
+                            title="Next"
+                            @click="movePeriod(1)"
+                        >
+                            &gt;
+                        </button>
+                    </div>
+                </div>
+
+                <div class="p-3">
+                    <div
+                        v-if="events.length || isLoading"
+                        class="sdr-dashboard-calendar-scroll"
+                    >
+                        <div class="sdr-dashboard-calendar-board">
+                            <div
+                                v-if="viewType === 'month'"
+                                class="sdr-dashboard-calendar-weekday-row"
+                            >
+                                <div
+                                    v-for="weekday in weekdays"
+                                    :key="weekday"
+                                    class="sdr-dashboard-calendar-weekday"
+                                >
+                                    @{{ weekday }}
+                                </div>
+                            </div>
+
+                            <div class="sdr-dashboard-calendar-grid">
+                                <div
+                                    v-for="day in calendarDays"
+                                    :key="day.key"
+                                    class="sdr-dashboard-calendar-day"
+                                    :class="{
+                                        'sdr-dashboard-calendar-day-week': viewType === 'week',
+                                        'sdr-dashboard-calendar-day-month': viewType === 'month',
+                                        'sdr-dashboard-calendar-day-muted': ! day.inPeriod,
+                                        'bg-white dark:bg-gray-900': day.inPeriod,
+                                    }"
+                                >
+                                    <div class="sdr-dashboard-calendar-day-header">
+                                        <div class="flex min-w-0 items-center gap-2">
+                                            <span
+                                                v-if="viewType === 'week'"
+                                                class="truncate text-xs font-semibold uppercase text-gray-500 dark:text-gray-400"
+                                            >
+                                                @{{ day.weekday }}
+                                            </span>
+
+                                            <span
+                                                class="flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold"
+                                                :class="day.isToday ? 'bg-brandColor text-white' : 'text-gray-700 dark:text-gray-300'"
+                                            >
+                                                @{{ day.dayNumber }}
+                                            </span>
+                                        </div>
+
+                                        <span
+                                            v-if="eventsByDate[day.date]?.length"
+                                            class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                                            v-tooltip="{
+                                                content: tooltipForDay(day),
+                                                html: true,
+                                                placement: 'top',
+                                                trigger: 'hover',
+                                                delay: { show: 200, hide: 100 }
+                                            }"
+                                        >
+                                            @{{ eventsByDate[day.date].length }}
+                                        </span>
+                                    </div>
+
+                                    <div class="sdr-dashboard-calendar-events">
+                                        <button
+                                            v-for="event in visibleEvents(day)"
+                                            :key="event.id"
+                                            type="button"
+                                            class="sdr-dashboard-calendar-event"
+                                            :class="event.type === 'Meeting' ? 'meeting' : 'followup'"
+                                            v-tooltip="{
+                                                content: tooltipForEvent(event),
+                                                html: true,
+                                                placement: 'top',
+                                                trigger: 'hover',
+                                                delay: { show: 200, hide: 100 }
+                                            }"
+                                            @click="openEvent(event)"
+                                        >
+                                            <span class="event-time-type">
+                                                @{{ event.time_label }} @{{ event.type }}
+                                            </span>
+
+                                            <span class="event-title">
+                                                @{{ event.lead_title || event.title }}
+                                            </span>
+                                        </button>
+
+                                        <button
+                                            v-if="hiddenEventCount(day) > 0"
+                                            type="button"
+                                            class="rounded-md bg-gray-100 px-2 py-1 text-left text-xs font-semibold text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                                            v-tooltip="{
+                                                content: tooltipForDay(day),
+                                                html: true,
+                                                placement: 'top',
+                                                trigger: 'hover',
+                                                delay: { show: 200, hide: 100 }
+                                            }"
+                                        >
+                                            +@{{ hiddenEventCount(day) }} more
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div
+                        v-if="! events.length && ! isLoading"
+                        class="rounded-md border border-dashed border-gray-200 p-4 text-center text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400"
+                    >
+                        No meetings or follow-ups found for this period.
+                    </div>
+                </div>
+            </div>
+        </script>
+
+        <script
+            type="text/x-template"
             id="v-sdr-lead-sections-template"
         >
             <div class="grid grid-cols-1 gap-4">
@@ -814,6 +1015,242 @@
         </script>
 
         <script type="module">
+            app.component('v-sdr-dashboard-calendar', {
+                template: '#v-sdr-dashboard-calendar-template',
+
+                props: {
+                    calendarUrl: {
+                        type: String,
+                        required: true,
+                    },
+                    dashboardVariant: {
+                        type: String,
+                        default: 'sdr',
+                    },
+                },
+
+                data() {
+                    return {
+                        viewType: 'week',
+                        currentDate: this.formatDateForInput(new Date()),
+                        events: [],
+                        period: {
+                            start: '',
+                            end: '',
+                        },
+                        isLoading: false,
+                        viewOptions: [
+                            { label: 'Week', value: 'week' },
+                            { label: 'Month', value: 'month' },
+                        ],
+                        weekdays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                    };
+                },
+
+                computed: {
+                    eventsByDate() {
+                        return this.events.reduce((grouped, event) => {
+                            if (! grouped[event.date]) {
+                                grouped[event.date] = [];
+                            }
+
+                            grouped[event.date].push(event);
+
+                            return grouped;
+                        }, {});
+                    },
+
+                    calendarDays() {
+                        if (! this.period.start || ! this.period.end) {
+                            return [];
+                        }
+
+                        const start = new Date(`${this.period.start}T00:00:00`);
+                        const end = new Date(`${this.period.end}T00:00:00`);
+                        const cursor = new Date(start);
+                        const days = [];
+
+                        if (this.viewType === 'month') {
+                            const startDay = start.getDay() || 7;
+                            cursor.setDate(start.getDate() - startDay + 1);
+                        }
+
+                        const today = this.formatDateForInput(new Date());
+                        const finalDate = new Date(end);
+
+                        if (this.viewType === 'month') {
+                            const endDay = finalDate.getDay() || 7;
+                            finalDate.setDate(end.getDate() + (7 - endDay));
+                        }
+
+                        while (cursor <= finalDate) {
+                            const date = this.formatDateForInput(cursor);
+
+                            days.push({
+                                key: date,
+                                date,
+                                weekday: this.weekdays[(cursor.getDay() + 6) % 7],
+                                dayNumber: cursor.getDate(),
+                                inPeriod: cursor >= start && cursor <= end,
+                                isToday: date === today,
+                            });
+
+                            cursor.setDate(cursor.getDate() + 1);
+                        }
+
+                        return days;
+                    },
+
+                    periodLabel() {
+                        if (! this.period.start || ! this.period.end) {
+                            return 'Calendar';
+                        }
+
+                        if (this.viewType === 'month') {
+                            return new Intl.DateTimeFormat('en-US', {
+                                month: 'long',
+                                year: 'numeric',
+                            }).format(new Date(`${this.period.start}T00:00:00`));
+                        }
+
+                        return `${this.shortDate(this.period.start)} - ${this.shortDate(this.period.end)}`;
+                    },
+
+                    calendarSubtitle() {
+                        return 'Meetings and follow-ups';
+                    },
+                },
+
+                mounted() {
+                    this.getEvents();
+                },
+
+                methods: {
+                    setViewType(viewType) {
+                        if (this.viewType === viewType) {
+                            return;
+                        }
+
+                        this.viewType = viewType;
+                        this.getEvents();
+                    },
+
+                    movePeriod(direction) {
+                        const date = new Date(`${this.currentDate}T00:00:00`);
+
+                        if (this.viewType === 'month') {
+                            date.setMonth(date.getMonth() + direction);
+                        } else {
+                            date.setDate(date.getDate() + (direction * 7));
+                        }
+
+                        this.currentDate = this.formatDateForInput(date);
+                        this.getEvents();
+                    },
+
+                    resetToday() {
+                        this.currentDate = this.formatDateForInput(new Date());
+                        this.getEvents();
+                    },
+
+                    getEvents() {
+                        this.isLoading = true;
+
+                        this.$axios.get(this.calendarUrl, {
+                            params: {
+                                view_type: this.viewType,
+                                date: this.currentDate,
+                            },
+                        })
+                            .then(response => {
+                                this.events = (response.data.events || []).sort((a, b) => (a.sort_at || 0) - (b.sort_at || 0));
+                                this.period = response.data.period || { start: '', end: '' };
+                            })
+                            .catch(error => {
+                                console.log(error);
+
+                                this.events = [];
+                            })
+                            .finally(() => {
+                                this.isLoading = false;
+                            });
+                    },
+
+                    visibleEvents(day) {
+                        return (this.eventsByDate[day.date] || []).slice(0, this.visibleEventLimit());
+                    },
+
+                    hiddenEventCount(day) {
+                        return Math.max(0, (this.eventsByDate[day.date] || []).length - this.visibleEventLimit());
+                    },
+
+                    visibleEventLimit() {
+                        return this.viewType === 'week' ? 4 : 2;
+                    },
+
+                    tooltipForDay(day) {
+                        const events = this.eventsByDate[day.date] || [];
+
+                        if (! events.length) {
+                            return 'No meetings or follow-ups';
+                        }
+
+                        return `
+                            <div class="grid gap-1 text-left">
+                                ${events.map((event) => `
+                                    <div>
+                                        <div class="font-semibold text-white">${this.escapeHtml(event.type)} · ${this.escapeHtml(event.time_label || '')}</div>
+                                        <div class="text-xs text-gray-200">${this.escapeHtml(event.lead_title || event.title || '')}</div>
+                                        ${event.description ? `<div class="text-xs text-gray-300">${this.escapeHtml(event.description)}</div>` : ''}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `;
+                    },
+
+                    tooltipForEvent(event) {
+                        return `
+                            <div class="text-left">
+                                <div class="mb-1 font-semibold text-white">${this.escapeHtml(event.type)} · ${this.escapeHtml(event.time_label || '')}</div>
+                                <div class="mb-1 text-xs text-gray-200">${this.escapeHtml(event.lead_title || event.title || '')}</div>
+                                ${event.description ? `<div class="text-xs text-gray-300">${this.escapeHtml(event.description)}</div>` : ''}
+                            </div>
+                        `;
+                    },
+
+                    openEvent(event) {
+                        if (event.url) {
+                            window.location.href = event.url;
+                        }
+                    },
+
+                    formatDateForInput(date) {
+                        const value = new Date(date);
+                        const year = value.getFullYear();
+                        const month = `${value.getMonth() + 1}`.padStart(2, '0');
+                        const day = `${value.getDate()}`.padStart(2, '0');
+
+                        return `${year}-${month}-${day}`;
+                    },
+
+                    shortDate(date) {
+                        return new Intl.DateTimeFormat('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                        }).format(new Date(`${date}T00:00:00`));
+                    },
+
+                    escapeHtml(value) {
+                        return String(value || '')
+                            .replace(/&/g, '&amp;')
+                            .replace(/</g, '&lt;')
+                            .replace(/>/g, '&gt;')
+                            .replace(/"/g, '&quot;')
+                            .replace(/'/g, '&#039;');
+                    },
+                },
+            });
+
             app.component('v-sdr-lead-sections', {
                 template: '#v-sdr-lead-sections-template',
 
@@ -1624,6 +2061,129 @@
                 color: #1d4ed8;
             }
 
+            .sdr-dashboard-calendar-day {
+                border-bottom: 1px solid #e5e7eb;
+                border-right: 1px solid #e5e7eb;
+                min-width: 0;
+                overflow: hidden;
+                padding: 8px;
+            }
+
+            .sdr-dashboard-calendar-scroll {
+                overflow-x: auto;
+                padding-bottom: 2px;
+            }
+
+            .sdr-dashboard-calendar-board {
+                border-left: 1px solid #e5e7eb;
+                border-top: 1px solid #e5e7eb;
+                min-width: 900px;
+            }
+
+            .sdr-dashboard-calendar-grid {
+                display: grid;
+                grid-template-columns: repeat(7, minmax(0, 1fr));
+                width: 100%;
+            }
+
+            .sdr-dashboard-calendar-weekday-row {
+                background: #f3f4f6;
+                border-bottom: 1px solid #e5e7eb;
+                display: grid;
+                grid-template-columns: repeat(7, minmax(0, 1fr));
+                width: 100%;
+            }
+
+            .sdr-dashboard-calendar-weekday {
+                border-right: 1px solid #e5e7eb;
+                color: #4b5563;
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 0;
+                padding: 8px;
+                text-align: center;
+                text-transform: uppercase;
+            }
+
+            .sdr-dashboard-calendar-day-header {
+                align-items: center;
+                display: flex;
+                gap: 8px;
+                justify-content: space-between;
+                margin-bottom: 8px;
+            }
+
+            .sdr-dashboard-calendar-day-month {
+                min-height: 92px;
+            }
+
+            .sdr-dashboard-calendar-day-muted {
+                background: #e5e7eb;
+                color: #6b7280;
+            }
+
+            .sdr-dashboard-calendar-day-week {
+                min-height: 235px;
+            }
+
+            .sdr-dashboard-calendar-events {
+                display: grid;
+                gap: 6px;
+                min-width: 0;
+            }
+
+            .sdr-dashboard-calendar-event {
+                box-sizing: border-box;
+                border-radius: 6px;
+                display: grid;
+                font-size: 12px;
+                gap: 2px;
+                grid-template-columns: minmax(0, 1fr);
+                line-height: 1.25;
+                max-width: 100%;
+                min-height: 26px;
+                min-width: 0;
+                overflow: hidden;
+                padding: 5px 7px;
+                text-align: left;
+                transition: all 160ms ease;
+                width: 100%;
+            }
+
+            .sdr-dashboard-calendar-event span {
+                max-width: 100%;
+                min-width: 0;
+                overflow: hidden;
+            }
+
+            .sdr-dashboard-calendar-event .event-time-type {
+                font-weight: 700;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .sdr-dashboard-calendar-event .event-title {
+                display: -webkit-box;
+                line-height: 1.2;
+                overflow-wrap: anywhere;
+                -webkit-box-orient: vertical;
+                -webkit-line-clamp: 2;
+            }
+
+            .sdr-dashboard-calendar-event.meeting {
+                background: #dbeafe;
+                color: #1d4ed8;
+            }
+
+            .sdr-dashboard-calendar-event.followup {
+                background: #fee2e2;
+                color: #b91c1c;
+            }
+
+            .sdr-dashboard-calendar-event:hover {
+                filter: brightness(0.97);
+            }
+
             .dark .sdr-section-count {
                 background: #111827;
                 border-color: #1f2937;
@@ -1683,6 +2243,36 @@
                 background: rgba(30, 64, 175, 0.28);
                 border-color: rgba(147, 197, 253, 0.35);
                 color: #93c5fd;
+            }
+
+            .dark .sdr-dashboard-calendar-board,
+            .dark .sdr-dashboard-calendar-day,
+            .dark .sdr-dashboard-calendar-weekday-row,
+            .dark .sdr-dashboard-calendar-weekday {
+                border-color: #1f2937;
+            }
+
+            .dark .sdr-dashboard-calendar-weekday-row {
+                background: #111827;
+            }
+
+            .dark .sdr-dashboard-calendar-weekday {
+                color: #d1d5db;
+            }
+
+            .dark .sdr-dashboard-calendar-day-muted {
+                background: #1f2937;
+                color: #9ca3af;
+            }
+
+            .dark .sdr-dashboard-calendar-event.meeting {
+                background: rgba(30, 64, 175, 0.35);
+                color: #bfdbfe;
+            }
+
+            .dark .sdr-dashboard-calendar-event.followup {
+                background: rgba(127, 29, 29, 0.35);
+                color: #fca5a5;
             }
 
             @media (max-width: 1279px) {

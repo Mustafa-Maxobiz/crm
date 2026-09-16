@@ -59,6 +59,7 @@ return [
         'dashboard-bde'    => 'BD Executive Dashboard',
         'dashboard-lead-clouser' => 'Lead Closer Dashboard',
         'dashboard-lge'    => 'Lead Gen Executive Dashboard',
+        'role-dashboard-calendar' => 'Role Dashboard Calendar',
         'data-transfer'    => 'Data Transfer',
         'imports'          => 'Imports',
         'import'           => 'Import',

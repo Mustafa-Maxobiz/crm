@@ -27,10 +27,15 @@ return [
         'route' => 'admin.dashboard.lge',
         'sort'  => 5,
     ], [
+        'key'   => 'role_dashboard_calendar_view',
+        'name'  => 'admin::app.acl.role-dashboard-calendar',
+        'route' => 'admin.dashboard.calendar_events',
+        'sort'  => 6,
+    ], [
         'key'   => 'leads',
         'name'  => 'admin::app.acl.leads',
         'route' => 'admin.leads.index',
-        'sort'  => 6,
+        'sort'  => 7,
     ], [
         'key'   => 'leads.create',
         'name'  => 'admin::app.acl.create',

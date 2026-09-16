@@ -25,6 +25,8 @@ Route::controller(DashboardController::class)->prefix('dashboard')->group(functi
 
     Route::get('call-summary', 'callSummary')->name('admin.dashboard.call_summary');
 
+    Route::get('calendar-events', 'calendarEvents')->name('admin.dashboard.calendar_events');
+
     Route::get('lead-sections', 'leadSections')->name('admin.dashboard.lead_sections');
 
     Route::get('us-timezones', 'usTimezones')->name('admin.dashboard.us_timezones');
