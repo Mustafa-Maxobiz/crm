@@ -28,4 +28,21 @@ class SourceRepository extends Repository
 
         return $query->get(['name as label', 'id as value'])->toArray();
     }
+
+    public function isLinkedInSource(int $sourceId): bool
+    {
+        $name = $this->getModel()->newQuery()->whereKey($sourceId)->value('name');
+
+        return strtolower(trim((string) $name)) === 'linkedin';
+    }
+
+    public function getAllowedLinkedInSourceIds(): array
+    {
+        return collect($this->getRootDropdownOptions())
+            ->filter(fn ($source) => strtolower(trim($source['label'])) === 'linkedin')
+            ->pluck('value')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+    }
 }

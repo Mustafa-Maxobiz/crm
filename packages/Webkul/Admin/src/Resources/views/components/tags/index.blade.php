@@ -633,19 +633,6 @@
                             self.refreshAfterTagChange();
                         })
                         .catch(error => {
-                            if (
-                                error.response?.status === 409
-                                && error.response?.data?.requires_call_activity
-                                && this.isNotAnswerTag(params)
-                            ) {
-                                self.pendingNotAnswerTag = params;
-                                self.notAnswerErrors = {};
-                                self.isStoring = false;
-                                self.openNotAnswerModal();
-
-                                return;
-                            }
-
                             self.$emitter.emit('add-flash', { type: 'error', message: error.response.data.message });
 
                             self.isStoring = false;

@@ -12,6 +12,8 @@
             'industry',
         ];
 
+        $usesMainLeadFields = in_array(lead_variant(), ['main', 'bde'], true);
+
         $valueAndPricingAttributeCodes = ['lead_value', 'pricing_type'];
 
         $detailsExcludedAttributeCodes = [
@@ -33,7 +35,7 @@
             'organization_id',
         ];
 
-        if (lead_variant() === 'main') {
+        if ($usesMainLeadFields) {
             $detailsExcludedAttributeCodes[] = 'title';
         }
 
@@ -162,7 +164,7 @@
                         <div class="w-1/2 max-md:w-full">
                             {!! view_render_event('admin.leads.edit.lead_details.attributes.before', ['lead' => $lead]) !!}
 
-                            @if (lead_variant() === 'main')
+                            @if ($usesMainLeadFields)
                                 <x-admin::form.control-group>
                                     <x-admin::form.control-group.label class="required">
                                         @lang('admin::app.leads.create.title-field')
@@ -458,23 +460,15 @@
                      */
                     handleSourceChange(event) {
                         const sourceId = parseInt(event.target.value);
-                        
-                        console.log('Source changed to:', sourceId);
-                        
+
                         if (sourceId) {
-                            // Fetch sub-sources for the selected source
-                            console.log('Fetching sub-sources from:', `/admin/settings/api/sources/${sourceId}/sub-sources`);
-                            
                             this.$axios.get(`/admin/settings/api/sources/${sourceId}/sub-sources`)
                                 .then(response => {
-                                    console.log('Sub-sources response:', response.data);
                                     this.availableSubSources = response.data.sub_sources || [];
                                     this.showSubSourceDropdown = this.availableSubSources.length > 0;
                                     this.selectedSubSource = '';
-                                    console.log('Show dropdown:', this.showSubSourceDropdown, 'Available:', this.availableSubSources);
                                 })
                                 .catch(error => {
-                                    console.error('Error fetching sub-sources:', error);
                                     this.availableSubSources = [];
                                     this.showSubSourceDropdown = false;
                                 });

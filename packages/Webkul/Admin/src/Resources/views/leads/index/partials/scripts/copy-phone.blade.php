@@ -27,7 +27,6 @@
                         button.textContent = originalLabel;
                     }, 1500);
                 } catch (error) {
-                    console.log(error);
                 }
             };
         </script>

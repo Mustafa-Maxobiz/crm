@@ -17,6 +17,7 @@ class LeadForwardService
 
     public function __construct(
         protected TagRepository $tagRepository,
+        protected SalesOwnerTransferService $salesOwnerTransferService,
     ) {}
 
     public function coldLeadTagId(): ?int
@@ -268,10 +269,24 @@ class LeadForwardService
             : (int) $toUserId;
 
         return DB::transaction(function () use ($lead, $fromUserId, $toUserId) {
+            $lead = Lead::query()->lockForUpdate()->findOrFail($lead->id);
+            $oldOwnerId = $lead->user_id ? (int) $lead->user_id : null;
+            $oldOwnerLabel = $this->salesOwnerTransferService->ownerLabel($oldOwnerId);
+            $newOwnerLabel = $this->salesOwnerTransferService->ownerLabel($toUserId);
+
             $lead->forceFill([
                 'user_id'       => $toUserId,
                 'lead_owner_id' => $toUserId,
-            ])->save();
+            ])->saveQuietly();
+
+            Lead::storeSystemActivityWithLabels(
+                $lead,
+                'Sales Owner',
+                $oldOwnerId,
+                $oldOwnerLabel,
+                $toUserId,
+                $newOwnerLabel
+            );
 
             DB::table('lead_forwards')->insert([
                 'lead_id'      => $lead->id,

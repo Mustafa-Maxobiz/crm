@@ -14,9 +14,14 @@ class UserResource extends JsonResource
      */
     public function toArray($request)
     {
+        $roleName = $this->relationLoaded('role') ? $this->role?->name : null;
+        $label = trim((string) $this->name).($roleName ? ' — '.$roleName : '');
+
         return [
             'id'         => $this->id,
             'name'       => $this->name,
+            'role_name'  => $roleName,
+            'label'      => $label,
             'email'      => $this->email,
             'image'      => $this->image,
             'created_at' => $this->created_at,

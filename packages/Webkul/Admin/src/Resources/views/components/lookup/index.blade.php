@@ -157,7 +157,12 @@
                 preload: {
                     type: Boolean,
                     default: false,
-                }
+                },
+
+                createUrl: {
+                    type: String,
+                    default: '',
+                },
             },
 
             emits: ['on-selected'],
@@ -260,6 +265,12 @@
                  * @return {void}
                  */
                 selectItem(item) {
+                    // If this is an "Add as New" item (empty ID with a name), create it via AJAX
+                    if (this.canAddNew && item.name && !item.id && this.createUrl) {
+                        this.createNewItem(item.name);
+                        return;
+                    }
+
                     this.showPopup = false;
 
                     this.searchTerm = '';
@@ -267,6 +278,71 @@
                     this.selectedItem = item;
 
                     this.$emit('on-selected', item);
+                },
+
+                /**
+                 * Create a new lookup entity via AJAX
+                 *
+                 * @param {string} name
+                 *
+                 * @return {void}
+                 */
+                createNewItem(name) {
+                    if (!this.createUrl) {
+                        console.error('No create URL provided for Add as New functionality');
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: 'Cannot create new item: No create URL configured'
+                        });
+                        return;
+                    }
+
+                    this.isSearching = true;
+
+                    this.$axios.post(this.createUrl, {
+                            name: name,
+                        })
+                        .then(response => {
+                            const createdItem = response.data.data;
+                            
+                            // Add to search results so it appears in future searches
+                            this.searchedResults.unshift(createdItem);
+                            
+                            // Select the newly created item
+                            this.selectedItem = {
+                                id: createdItem.id,
+                                name: createdItem.name,
+                                is_newly_created: true,
+                                emails: Array.isArray(createdItem.emails) && createdItem.emails.length
+                                    ? createdItem.emails
+                                    : [{ value: '', label: 'work' }],
+                                contact_numbers: Array.isArray(createdItem.contact_numbers) && createdItem.contact_numbers.length
+                                    ? createdItem.contact_numbers
+                                    : [{ value: '', label: 'work' }],
+                            };
+                            
+                            this.showPopup = false;
+                            this.searchTerm = '';
+                            
+                            this.$emit('on-selected', this.selectedItem);
+                            
+                            // Show success message
+                            this.$emitter.emit('add-flash', {
+                                type: 'success',
+                                message: response.data.message || 'Created successfully'
+                            });
+                        })
+                        .catch(error => {
+                            console.error("Failed to create new item:", error);
+                            
+                            this.$emitter.emit('add-flash', {
+                                type: 'error',
+                                message: error.response?.data?.message || 'Failed to create. Please try again.'
+                            });
+                        })
+                        .finally(() => {
+                            this.isSearching = false;
+                        });
                 },
 
                 /**

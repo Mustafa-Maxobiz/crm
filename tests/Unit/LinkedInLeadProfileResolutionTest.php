@@ -57,6 +57,7 @@ class LinkedInLeadProfileResolutionTest extends TestCase
 
     protected function invokeApplyLinkedInProfile(array $data, ?int $batchProfileId = null): array
     {
+        $data['lead_source_id'] ??= DB::table('lead_sources')->insertGetId(['name' => 'LinkedIn']);
         $controller = app(LeadController::class);
         $method = new \ReflectionMethod($controller, 'applyLinkedInProfileToLeadData');
         $method->setAccessible(true);

@@ -154,12 +154,22 @@
                                             </div>
                                         </div>
 
-                                        <span
-                                            class="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-800"
-                                            v-if="isHandoffLead(element)"
-                                        >
-                                            Assigned
-                                        </span>
+                                        <div class="flex max-w-[46%] flex-col items-end gap-1">
+                                            <span
+                                                class="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-800"
+                                                v-if="Number(element.user_id || 0) !== Number(currentUserId)"
+                                            >
+                                                Assigned
+                                            </span>
+
+                                            <span
+                                                class="max-w-full truncate rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800"
+                                                v-if="element.assigned_by_user_name && Number(element.user_id || 0) === Number(currentUserId)"
+                                                :title="'Assigned by: ' + element.assigned_by_user_name"
+                                            >
+                                                Assigned by: @{{ element.assigned_by_user_name }}
+                                            </span>
+                                        </div>
                                     </div>
 
                                     {!! view_render_event('admin.leads.index.kanban.content.stage.body.card.header.after') !!}

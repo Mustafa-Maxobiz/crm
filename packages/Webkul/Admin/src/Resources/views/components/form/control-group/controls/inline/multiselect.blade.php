@@ -79,7 +79,7 @@
             <div class="flex min-h-[38px] w-full flex-wrap items-center gap-1 rounded border border-gray-200 px-2.5 py-1.5 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-400 dark:focus:border-gray-400 ltr:pr-16 rtl:pl-16">
                 <ul class="flex flex-wrap items-center gap-1">
                     <li
-                        v-for="option in tempOptions"
+                        v-for="option in selectedDisplayOptions"
                         :key="option.id"
                         class="flex items-center gap-1 rounded-md bg-slate-100 pl-2 dark:bg-gray-800 dark:text-white"
                     >
@@ -93,6 +93,7 @@
                 </ul>
 
                 <input
+                    v-if="! isOtherSelected"
                     type="text"
                     v-model="searchTerm"
                     class="min-w-[100px] flex-1 border-0 bg-transparent p-0 text-sm outline-none dark:bg-transparent"
@@ -105,25 +106,58 @@
             <div
                 class="absolute z-50 w-full origin-top transform rounded-lg border bg-white shadow-lg dark:border-gray-800 dark:bg-gray-800"
                 :class="dropdownPosition === 'bottom' ? 'top-full mt-1' : 'bottom-full mb-1'"
-                v-if="filteredOptions.length || (canAddNew && searchableNewLabel)"
+                v-if="filteredOptions.length || (canAddNew && isOtherSelected)"
             >
                 <ul class="max-h-40 divide-gray-100 overflow-y-auto p-0.5">
-                    <li 
-                        v-for="option in filteredOptions" 
+                    <template
+                        v-for="option in filteredOptions"
                         :key="option.id"
-                        class="cursor-pointer rounded px-4 py-2 text-gray-800 transition-colors hover:bg-blue-100 dark:text-white dark:hover:bg-gray-950"
-                        @click="addOption(option)"
                     >
-                        @{{ option.name }}
-                    </li>
+                        <li
+                            class="flex cursor-pointer items-center gap-2 rounded px-4 py-2 text-gray-800 transition-colors hover:bg-blue-100 dark:text-white dark:hover:bg-gray-950"
+                            @click="addOption(option)"
+                        >
+                            <span
+                                class="flex h-4 w-4 shrink-0 items-center justify-center rounded border"
+                                :class="isSelectedOption(option)
+                                    ? 'border-brandColor bg-brandColor text-white'
+                                    : 'border-gray-300 bg-white'"
+                            >
+                                <i
+                                    v-if="isSelectedOption(option)"
+                                    class="icon-tick text-xs"
+                                ></i>
+                            </span>
 
-                    <li
-                        v-if="canAddNew && searchableNewLabel"
-                        class="cursor-pointer rounded border-t border-gray-100 px-4 py-2 font-medium text-brandColor hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-950"
-                        @click="createOption"
-                    >
-                        @{{ isCreating ? creatingLabel : addButtonLabel }}
-                    </li>
+                            <span class="truncate">@{{ option.name }}</span>
+                        </li>
+
+                        <li
+                            v-if="canAddNew && isOtherOption(option) && isOtherSelected"
+                            class="border-y border-gray-100 px-3 py-2 dark:border-gray-700"
+                        >
+                            <div class="flex gap-2">
+                                <input
+                                    ref="newOptionInput"
+                                    type="text"
+                                    v-model="newOptionName"
+                                    class="min-w-0 flex-1 rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-brandColor dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300"
+                                    :placeholder="placeholder"
+                                    @keydown.enter.prevent="createOption"
+                                />
+
+                                <button
+                                    v-if="newOptionName.trim()"
+                                    type="button"
+                                    class="rounded bg-brandColor px-3 py-1.5 text-sm font-semibold text-white"
+                                    :disabled="isCreating"
+                                    @click="createOption"
+                                >
+                                    @{{ isCreating ? creatingLabel : 'Add' }}
+                                </button>
+                            </div>
+                        </li>
+                    </template>
                 </ul>
             </div>
                 
@@ -228,6 +262,8 @@
                     options: [],
                     tempOptions: [],
                     searchTerm: '',
+                    newOptionName: '',
+                    isAddingOther: false,
                     isCreating: false,
                     isDropdownOpen: false,
                     dropdownPosition: 'bottom',
@@ -258,19 +294,36 @@
                 },
 
                 selectedValue() {
-                    if (this.tempOptions.length === 0) {
+                    if (this.selectedDisplayOptions.length === 0) {
                         return null;
                     }
 
-                    return this.tempOptions.map(data => data.name).join(', ');
+                    return this.selectedDisplayOptions.map(data => data.name).join(', ');
+                },
+
+                selectedDisplayOptions() {
+                    return this.tempOptions.filter(option => ! this.isOtherOption(option));
                 },
 
                 filteredOptions() {
                     const term = this.searchTerm.trim().toLowerCase();
+                    const otherOption = this.otherOption;
+                    const otherId = otherOption ? Number(otherOption.id) : null;
 
-                    return this.options.filter(option => {
+                    if (this.isOtherSelected && ! term && otherOption) {
+                        return [otherOption];
+                    }
+
+                    return this.allOptions.filter(option => {
+                        const optionId = Number(option.id);
+                        const isSelected = this.tempOptions.some(data => Number(data.id) === optionId);
+
+                        if (isSelected && optionId !== otherId) {
+                            return false;
+                        }
+
                         if (! term) {
-                            return true;
+                            return option.is_show !== false;
                         }
 
                         return String(option.name).toLowerCase().includes(term);
@@ -278,7 +331,7 @@
                 },
 
                 searchableNewLabel() {
-                    const term = this.searchTerm.trim();
+                    const term = this.newOptionName.trim();
 
                     if (! term) {
                         return '';
@@ -293,6 +346,20 @@
 
                 addButtonLabel() {
                     return this.addLabel.replace(':name', this.searchableNewLabel);
+                },
+
+                otherOption() {
+                    return this.allOptions.find(
+                        option => String(option.name || '').trim().toLowerCase() === 'other'
+                    );
+                },
+
+                isOtherSelected() {
+                    if (! this.otherOption) {
+                        return false;
+                    }
+
+                    return this.isAddingOther || this.tempOptions.some(option => Number(option.id) === Number(this.otherOption.id));
                 },
             },
 
@@ -346,10 +413,24 @@
                 cancel() {
                     this.isEditing = false;
                     this.searchTerm = '';
+                    this.newOptionName = '';
+                    this.isAddingOther = false;
                     this.syncFromValue();
                 },
 
                 addOption(option) {
+                    if (this.isOtherOption(option)) {
+                        this.isAddingOther = true;
+                        this.unselectOtherOption(false);
+                        this.searchTerm = '';
+
+                        this.$nextTick(() => {
+                            this.$refs.newOptionInput?.focus();
+                        });
+
+                        return;
+                    }
+
                     if (! this.tempOptions.some(data => Number(data.id) === Number(option.id))) {
                         this.tempOptions.push(option);
                         this.options = this.options.filter(data => Number(data.id) !== Number(option.id));
@@ -362,16 +443,16 @@
                         this.options.push(option);
                         this.tempOptions = this.tempOptions.filter(data => Number(data.id) !== Number(option.id));
                     }
+
+                    if (this.isOtherOption(option)) {
+                        this.newOptionName = '';
+                    }
                 },
 
                 handleEnter() {
                     if (this.filteredOptions.length) {
                         this.addOption(this.filteredOptions[0]);
                         return;
-                    }
-
-                    if (this.canAddNew && this.searchableNewLabel) {
-                        this.createOption();
                     }
                 },
 
@@ -386,13 +467,48 @@
                         name: this.searchableNewLabel,
                     }).then(response => {
                         const option = response.data.data;
-
-                        this.allOptions.push({
+                        const normalizedOption = {
                             id: option.id,
                             name: option.name,
-                        });
+                            is_show: option.is_show ?? false,
+                        };
 
-                        this.addOption(option);
+                        this.allOptions.push(normalizedOption);
+
+                        this.addOption(normalizedOption);
+                        this.unselectOtherOption();
+                        this.newOptionName = '';
+
+                        const selectedIds = this.tempOptions.map(data => data.id);
+                        this.inputValue = selectedIds.join(',');
+
+                        if (this.url) {
+                            this.$axios.put(this.url, {
+                                [this.name]: selectedIds,
+                            }).then(() => {
+                                this.isEditing = false;
+
+                                this.$emit('options-updated', {
+                                    name: this.name,
+                                    value: selectedIds,
+                                });
+
+                                this.$emitter.emit('add-flash', {
+                                    type: 'success',
+                                    message: response.data.message,
+                                });
+                            }).catch(error => {
+                                this.inputValue = this.value;
+                                this.syncFromValue();
+
+                                this.$emitter.emit('add-flash', {
+                                    type: 'error',
+                                    message: error.response?.data?.message || 'Update failed.',
+                                });
+                            });
+
+                            return;
+                        }
 
                         this.$emitter.emit('add-flash', {
                             type: 'success',
@@ -408,6 +524,31 @@
                     }).finally(() => {
                         this.isCreating = false;
                     });
+                },
+
+                unselectOtherOption(clearAddMode = true) {
+                    if (! this.otherOption) {
+                        return;
+                    }
+
+                    const otherId = Number(this.otherOption.id);
+                    this.tempOptions = this.tempOptions.filter(option => Number(option.id) !== otherId);
+
+                    if (! this.options.some(option => Number(option.id) === otherId)) {
+                        this.options.push(this.otherOption);
+                    }
+
+                    if (clearAddMode) {
+                        this.isAddingOther = false;
+                    }
+                },
+
+                isOtherOption(option) {
+                    return String(option?.name || '').trim().toLowerCase() === 'other';
+                },
+
+                isSelectedOption(option) {
+                    return this.tempOptions.some(data => Number(data.id) === Number(option.id));
                 },
 
                 setDropdownPosition() {

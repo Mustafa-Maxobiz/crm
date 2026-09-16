@@ -15,6 +15,8 @@ Route::controller(DashboardController::class)->prefix('dashboard')->group(functi
 
     Route::get('sdr', 'sdr')->name('admin.dashboard.sdr');
 
+    Route::get('bde', 'bde')->name('admin.dashboard.bde');
+
     Route::get('lead-clouser', 'leadClouser')->name('admin.dashboard.lead_clouser');
 
     Route::get('lge', 'lge')->name('admin.dashboard.lge');
@@ -22,6 +24,8 @@ Route::controller(DashboardController::class)->prefix('dashboard')->group(functi
     Route::get('stats', 'stats')->name('admin.dashboard.stats');
 
     Route::get('call-summary', 'callSummary')->name('admin.dashboard.call_summary');
+
+    Route::get('calendar-events', 'calendarEvents')->name('admin.dashboard.calendar_events');
 
     Route::get('lead-sections', 'leadSections')->name('admin.dashboard.lead_sections');
 

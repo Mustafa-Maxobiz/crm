@@ -16,6 +16,12 @@
                     @lang('admin::app.smrtphone.index.subtitle')
                 </p>
             </div>
+
+            @if (bouncer()->hasPermission('smrtphone.settings'))
+                <a href="{{ route('admin.smrtphone.settings') }}" class="secondary-button">
+                    @lang('admin::app.smrtphone.index.settings')
+                </a>
+            @endif
         </div>
 
         <x-admin::datagrid :src="route('admin.smrtphone.index')">

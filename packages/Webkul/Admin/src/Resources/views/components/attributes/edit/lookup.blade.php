@@ -8,6 +8,7 @@
         :validations="'{{ $validations }}'"
         :value="{{ json_encode($lookUpEntityData)}}"
         can-add-new="{{ $canAddNew ?? false }}"
+        create-url="{{ $createUrl ?? '' }}"
         @lookup-added="handleLookupAdded"
         @lookup-removed="handleLookupRemoved"
     >
@@ -158,7 +159,7 @@
         app.component('v-lookup-component', {
             template: '#v-lookup-component-template',
 
-            props: ['validations', 'isDisabled', 'attribute', 'value', 'canAddNew'],
+            props: ['validations', 'isDisabled', 'attribute', 'value', 'canAddNew', 'createUrl'],
 
             emits: ['lookup-added', 'lookup-removed'],
 
@@ -316,6 +317,12 @@
                 },
 
                 handleResult(result) {
+                    // If this is an "Add as New" result (empty ID with a name), create it via AJAX
+                    if (this.canAddNew && result.name && !result.id && this.createUrl) {
+                        this.createNewEntity(result.name);
+                        return;
+                    }
+
                     this.showPopup = false;
 
                     this.selectedItem = result;
@@ -323,6 +330,64 @@
                     this.searchTerm = '';
 
                     this.$emit('lookup-added', this.selectedItem);
+                },
+
+                /**
+                 * Create a new lookup entity via AJAX
+                 *
+                 * @param {string} name
+                 *
+                 * @return {void}
+                 */
+                createNewEntity(name) {
+                    if (!this.createUrl) {
+                        console.error('No create URL provided for Add as New functionality');
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: 'Cannot create new entity: No create URL configured'
+                        });
+                        return;
+                    }
+
+                    this.isSearching = true;
+
+                    this.$axios.post(this.createUrl, {
+                            name: name,
+                        })
+                        .then(response => {
+                            const createdItem = response.data.data;
+                            
+                            // Add to search results so it appears in future searches
+                            this.searchedResults.unshift(createdItem);
+                            
+                            // Select the newly created item
+                            this.selectedItem = {
+                                id: createdItem.id,
+                                name: createdItem.name
+                            };
+                            
+                            this.showPopup = false;
+                            this.searchTerm = '';
+                            
+                            this.$emit('lookup-added', this.selectedItem);
+                            
+                            // Show success message
+                            this.$emitter.emit('add-flash', {
+                                type: 'success',
+                                message: response.data.message || 'Created successfully'
+                            });
+                        })
+                        .catch(error => {
+                            console.error("Failed to create new entity:", error);
+                            
+                            this.$emitter.emit('add-flash', {
+                                type: 'error',
+                                message: error.response?.data?.message || 'Failed to create. Please try again.'
+                            });
+                        })
+                        .finally(() => {
+                            this.isSearching = false;
+                        });
                 },
 
                 handleFocusOut(e) {

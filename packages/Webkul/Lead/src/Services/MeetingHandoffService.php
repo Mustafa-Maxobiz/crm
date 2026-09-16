@@ -2,6 +2,7 @@
 
 namespace Webkul\Lead\Services;
 
+use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -55,7 +56,7 @@ class MeetingHandoffService
             return false;
         }
 
-        return $this->sourceAccessService->canViewLead($lead, $user);
+        return $this->sourceAccessService->canEditLead($lead, $user);
     }
 
     public function canInitiateMeetingHandoff(LeadContract $lead, ?UserContract $user = null): bool
@@ -70,7 +71,7 @@ class MeetingHandoffService
             return false;
         }
 
-        return $this->sourceAccessService->canViewLead($lead, $user);
+        return $this->sourceAccessService->canEditLead($lead, $user);
     }
 
     /**
@@ -93,51 +94,62 @@ class MeetingHandoffService
 
             $this->assertCanCompleteHandoff($lead, $actor, $stageId, $assignedUserId);
 
-            Event::dispatch('activity.create.before');
-
-            $activity = $this->activityRepository->create(array_merge($activityData, [
-                'type'    => 'meeting',
-                'user_id' => $assignedUserId,
-            ]));
-
-            if (! empty($activityData['lead_id'])) {
-                $activity->leads()->sync([(int) $activityData['lead_id']]);
-            }
-
-            Event::dispatch('activity.create.after', $activity);
-
             $stage = $lead->pipeline->stages->firstWhere('id', $stageId);
 
-            Event::dispatch('lead.update.before', $leadId);
+            return $this->createMeetingAndTransfer($lead, $stage, $assignedUserId, $activityData, (int) $actor->id);
+        });
+    }
 
-            $payload = [
-                'entity_type'            => 'leads',
-                'lead_pipeline_stage_id' => $stage->id,
-                'user_id'                => $assignedUserId,
-            ];
+    /**
+     * Manual Sales Owner transfer with a meeting is available to any user who can edit the lead.
+     */
+    public function completeSalesOwnerTransferWithMeeting(
+        UserContract $actor,
+        int $leadId,
+        int $assignedUserId,
+        array $activityData,
+    ): Lead {
+        return DB::transaction(function () use ($actor, $leadId, $assignedUserId, $activityData) {
+            $lead = Lead::query()
+                ->with(['pipeline.stages', 'stage'])
+                ->lockForUpdate()
+                ->findOrFail($leadId);
 
-            $attributes = ['lead_pipeline_stage_id', 'user_id'];
-
-            if (empty($lead->lead_owner_id)) {
-                $payload['lead_owner_id'] = $actor->id;
-                $attributes[] = 'lead_owner_id';
+            if (! $this->sourceAccessService->canEditLead($lead, $actor)) {
+                throw new AuthorizationException('You do not have permission to change the sales owner of this lead.');
             }
 
-            $lead = $this->leadRepository->update(
-                $payload,
-                $leadId,
-                array_values(array_unique($attributes)),
-            );
+            $stage = $lead->pipeline?->stages?->firstWhere('code', 'meeting');
 
-            Event::dispatch('lead.update.after', $lead);
+            if (! $stage) {
+                $stage = $lead->pipeline?->stages?->first(
+                    fn ($stage) => strtolower(trim((string) $stage->name)) === 'meeting'
+                );
+            }
 
-            return $lead->fresh(['pipeline.stages', 'stage']);
+            if (! $stage) {
+                throw ValidationException::withMessages([
+                    'lead_pipeline_stage_id' => ['Meeting stage was not found for this lead pipeline.'],
+                ]);
+            }
+
+            if (! $this->isEligibleMeetingOwnerForLead($lead, $assignedUserId)) {
+                $message = empty($this->getLeadServiceIds($lead))
+                    ? 'Please select a valid Admin or Lead user.'
+                    : 'The selected owner is not assigned to handle this lead\'s services.';
+
+                throw ValidationException::withMessages([
+                    'assigned_user_id' => [$message],
+                ]);
+            }
+
+            return $this->createMeetingAndTransfer($lead, $stage, $assignedUserId, $activityData, (int) $actor->id);
         });
     }
 
     public function isActiveMeetingOwnerId(int $userId): bool
     {
-        return $this->eligibleOwnerBaseQuery()
+        return $this->eligibleOwnerBaseQuery($this->includeAdminMeetingOwners())
             ->where('users.id', $userId)
             ->exists();
     }
@@ -148,7 +160,7 @@ class MeetingHandoffService
     public function getAllActiveMeetingOwners(): array
     {
         return $this->mapEligibleOwnerRows(
-            $this->eligibleOwnerBaseQuery()
+            $this->eligibleOwnerBaseQuery($this->includeAdminMeetingOwners())
                 ->distinct()
                 ->orderBy('users.name')
                 ->get(['users.id', 'users.name', 'users.email', 'roles.name as role_name'])
@@ -173,7 +185,7 @@ class MeetingHandoffService
         }
 
         return $this->mapEligibleOwnerRows(
-            $this->eligibleOwnerBaseQuery()
+            $this->eligibleOwnerBaseQuery($this->includeAdminMeetingOwners())
                 ->join('service_user', 'service_user.user_id', '=', 'users.id')
                 ->whereIn('service_user.service_id', $serviceIds)
                 ->distinct()
@@ -223,37 +235,162 @@ class MeetingHandoffService
             ->all();
     }
 
-    protected function eligibleOwnerBaseQuery(): Builder
+    protected function eligibleOwnerBaseQuery(bool $includeAdmins = true): Builder
     {
+        $leadCloserRoleNames = [
+            'lead',
+            'lead clouser',
+            'lead closer',
+            'lead closure',
+        ];
+
         $query = DB::table('users')
             ->where('users.status', 1);
 
         if (\Illuminate\Support\Facades\Schema::hasTable('user_roles')) {
-            return $query
+            $query
                 ->join('user_roles', 'users.id', '=', 'user_roles.user_id')
-                ->join('roles', 'user_roles.role_id', '=', 'roles.id')
-                ->where(function ($query) {
-                    $query->where('roles.permission_type', 'all')
-                        ->orWhereIn(DB::raw('LOWER(roles.name)'), [
-                            'lead',
-                            'lead clouser',
-                            'lead closer',
-                            'lead closure',
-                        ]);
+                ->join('roles', 'user_roles.role_id', '=', 'roles.id');
+
+            if (! $includeAdmins) {
+                $query->leftJoin('roles as primary_roles', 'users.role_id', '=', 'primary_roles.id');
+            }
+
+            return $query
+                ->where(function ($query) use ($includeAdmins, $leadCloserRoleNames) {
+                    if ($includeAdmins) {
+                        $query->where('roles.permission_type', 'all')
+                            ->orWhereIn(DB::raw('LOWER(roles.name)'), $leadCloserRoleNames);
+
+                        return;
+                    }
+
+                    $query->whereIn(DB::raw('LOWER(roles.name)'), $leadCloserRoleNames);
+                })
+                ->when(! $includeAdmins, function ($query) {
+                    $query->where(function ($query) {
+                        $query
+                            ->whereNull('primary_roles.id')
+                            ->orWhere(function ($query) {
+                                $query
+                                    ->where('primary_roles.permission_type', '!=', 'all')
+                                    ->whereNotIn(DB::raw('LOWER(TRIM(primary_roles.name))'), [
+                                        'admin',
+                                        'administrator',
+                                        'super admin',
+                                    ]);
+                            });
+                    });
                 });
         }
 
         return $query
             ->join('roles', 'users.role_id', '=', 'roles.id')
-            ->where(function ($query) {
-                $query->where('roles.permission_type', 'all')
-                    ->orWhereIn(DB::raw('LOWER(roles.name)'), [
-                        'lead',
-                        'lead clouser',
-                        'lead closer',
-                        'lead closure',
-                    ]);
+            ->where(function ($query) use ($includeAdmins, $leadCloserRoleNames) {
+                if ($includeAdmins) {
+                    $query->where('roles.permission_type', 'all')
+                        ->orWhereIn(DB::raw('LOWER(roles.name)'), $leadCloserRoleNames);
+
+                    return;
+                }
+
+                $query->whereIn(DB::raw('LOWER(roles.name)'), $leadCloserRoleNames);
             });
+    }
+
+    protected function includeAdminMeetingOwners(?UserContract $actor = null): bool
+    {
+        return true;
+    }
+
+    protected function withAssignedOwnerParticipant(array $activityData, int $assignedUserId, int $actorId): array
+    {
+        $participants = is_array($activityData['participants'] ?? null)
+            ? $activityData['participants']
+            : [];
+
+        $participants['users'] = collect($participants['users'] ?? [])
+            ->map(fn ($userId) => (int) $userId)
+            ->filter(fn ($userId) => $userId > 0 && $userId !== $actorId)
+            ->push($assignedUserId)
+            ->unique()
+            ->values()
+            ->all();
+
+        $activityData['participants'] = $participants;
+
+        return $activityData;
+    }
+
+    protected function createMeetingAndTransfer(
+        LeadContract $lead,
+        object $stage,
+        int $assignedUserId,
+        array $activityData,
+        int $actorId,
+    ): Lead {
+        $activityData = $this->withAssignedOwnerParticipant($activityData, $assignedUserId, $actorId);
+
+        Event::dispatch('activity.create.before');
+
+        $activity = $this->activityRepository->create(array_merge($activityData, [
+            'type'    => 'meeting',
+            'user_id' => $assignedUserId,
+        ]));
+
+        if (! empty($activityData['lead_id'])) {
+            $activity->leads()->sync([(int) $activityData['lead_id']]);
+        }
+
+        Event::dispatch('activity.create.after', $activity);
+
+        $oldSalesOwnerId = $lead->user_id ? (int) $lead->user_id : null;
+
+        Event::dispatch('lead.update.before', $lead->id);
+
+        $payload = [
+            'entity_type'            => 'leads',
+            'lead_pipeline_stage_id' => $stage->id,
+            'user_id'                => $assignedUserId,
+            'lead_owner_id'          => $assignedUserId,
+        ];
+
+        $lead = $this->leadRepository->update(
+            $payload,
+            $lead->id,
+            ['lead_pipeline_stage_id', 'user_id', 'lead_owner_id'],
+        );
+
+        if ($oldSalesOwnerId && $oldSalesOwnerId !== $assignedUserId) {
+            $now = now();
+            $latestForward = DB::table('lead_forwards')
+                ->where('lead_id', $lead->id)
+                ->orderByDesc('id')
+                ->first();
+
+            $isImmediateDuplicate = $latestForward
+                && (int) $latestForward->from_user_id === $oldSalesOwnerId
+                && (int) $latestForward->to_user_id === $assignedUserId
+                && $latestForward->forward_type === SalesOwnerTransferService::TYPE_SALES_OWNER_TRANSFER
+                && $latestForward->created_at
+                && Carbon::parse($latestForward->created_at)->greaterThanOrEqualTo($now->copy()->subSeconds(10));
+
+            if (! $isImmediateDuplicate) {
+                DB::table('lead_forwards')->insert([
+                    'lead_id'      => $lead->id,
+                    'from_user_id' => $oldSalesOwnerId,
+                    'to_user_id'   => $assignedUserId,
+                    'forward_type' => SalesOwnerTransferService::TYPE_SALES_OWNER_TRANSFER,
+                    'forwarded_at' => $now,
+                    'created_at'   => $now,
+                    'updated_at'   => $now,
+                ]);
+            }
+        }
+
+        Event::dispatch('lead.update.after', $lead);
+
+        return $lead->fresh(['pipeline.stages', 'stage']);
     }
 
     /**
@@ -308,7 +445,7 @@ class MeetingHandoffService
         }
 
         if ($this->stageIsBeyondMeeting($lead, $stage)) {
-            throw new AuthorizationException('You can move SDR/LGE leads up to Meeting only.');
+            throw new AuthorizationException('You can move BDE/SDR/LGE leads up to Meeting only.');
         }
 
         if (! $this->isEligibleMeetingOwnerForLead($lead, $assignedUserId)) {
@@ -335,7 +472,8 @@ class MeetingHandoffService
 
     protected function isCallingRoleUser(UserContract $user): bool
     {
-        return $this->sourceAccessService->isSdrUser($user)
+        return $this->sourceAccessService->isBdeUser($user)
+            || $this->sourceAccessService->isSdrUser($user)
             || $this->sourceAccessService->isLgeUser($user);
     }
 }

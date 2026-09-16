@@ -158,18 +158,22 @@ class AttributeValueRepository extends Repository
     /**
      * Removed null values from email and phone fields.
      *
-     * @param  array  $data
+     * @param  array|null  $data
      * @return array
      */
     public function sanitizeEmailAndPhone($data)
     {
+        if (! is_array($data)) {
+            return [];
+        }
+
         foreach ($data as $key => $row) {
-            if (is_null($row['value'])) {
+            if (! is_array($row) || is_null($row['value'] ?? null)) {
                 unset($data[$key]);
             }
         }
 
-        return $data;
+        return array_values($data);
     }
 
     /**

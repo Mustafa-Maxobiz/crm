@@ -5,20 +5,22 @@
         type="text/x-template"
         id="v-flash-group-template"
     >
-        <transition-group
-            tag='div'
-            name="flash-group"
-            enter-from-class="translate-x-full opacity-0"
-            enter-active-class="transform transition duration-300 ease-out"
-            enter-to-class="translate-x-0 opacity-100"
-            leave-from-class="translate-x-0 opacity-100"
-            leave-active-class="transform transition duration-300 ease-in"
-            leave-to-class="translate-x-full opacity-0"
-            class='fixed z-[10003] flex flex-col items-end gap-2.5'
-            style="top: 20px; right: 20px; left: auto; max-width: 400px;"
-        >
-            <x-admin::flash-group.item />
-        </transition-group>
+        <Teleport to="body">
+            <transition-group
+                tag='div'
+                name="flash-group"
+                enter-from-class="translate-x-full opacity-0"
+                enter-active-class="transform transition duration-300 ease-out"
+                enter-to-class="translate-x-0 opacity-100"
+                leave-from-class="translate-x-0 opacity-100"
+                leave-active-class="transform transition duration-300 ease-in"
+                leave-to-class="translate-x-full opacity-0"
+                class='fixed flex flex-col items-end gap-2.5'
+                style="top: 76px; right: 20px; left: auto; z-index: 2147483647; max-width: 400px;"
+            >
+                <x-admin::flash-group.item />
+            </transition-group>
+        </Teleport>
     </script>
 
     <script type="module">

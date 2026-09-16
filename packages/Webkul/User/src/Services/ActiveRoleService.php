@@ -250,6 +250,7 @@ class ActiveRoleService
 
         return match (true) {
             $name === 'sdr' => 'admin.dashboard.sdr',
+            in_array($name, ['bd', 'bde', 'bd executive', 'bd exective', 'bde executive', 'bde exective', 'business development executive'], true) => 'admin.dashboard.bde',
             $name === 'lge' => 'admin.dashboard.lge',
             in_array($name, ['lead', 'lead clouser', 'lead closer', 'lead closure'], true) => 'admin.dashboard.lead_clouser',
             default => 'admin.dashboard.index',

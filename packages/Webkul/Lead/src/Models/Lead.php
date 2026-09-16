@@ -273,4 +273,110 @@ class Lead extends Model implements LeadContract
         $this->last_followup_date = Carbon::now();
         $this->saveQuietly();
     }
+
+    /**
+     * Scope a query to search across all important lead fields and relationships.
+     *
+     * This scope performs a comprehensive OR search across:
+     * - Direct lead fields (title, description, source_link)
+     * - Contact person (name, emails, phone numbers)
+     * - Organization/company (name)
+     * - Services Offered (relationship)
+     * - Sales Owner (user name and role)
+     * - Industry (attribute option)
+     * - Source/Sub Source (names)
+     * - Lead Type/Business Type
+     * - Pricing Type (attribute option)
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @param  string  $searchTerm
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeGlobalSearch($query, string $searchTerm)
+    {
+        $searchTerm = trim($searchTerm);
+
+        if ($searchTerm === '') {
+            return $query;
+        }
+
+        // Escape special LIKE characters
+        $escapedTerm = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $searchTerm);
+        $like = "%{$escapedTerm}%";
+
+        return $query->where(function ($q) use ($like, $searchTerm) {
+            // Direct lead fields
+            $q->orWhere('leads.title', 'LIKE', $like)
+              ->orWhere('leads.description', 'LIKE', $like)
+              ->orWhere('leads.source_link', 'LIKE', $like);
+
+            // Contact Person: name, emails, contact numbers
+            $q->orWhereHas('person', function ($personQuery) use ($like) {
+                $personQuery->where('persons.name', 'LIKE', $like)
+                    ->orWhere('persons.emails', 'LIKE', $like)
+                    ->orWhere('persons.contact_numbers', 'LIKE', $like);
+            });
+
+            // Organization/Company name
+            $q->orWhereHas('organization', function ($orgQuery) use ($like) {
+                $orgQuery->where('organizations.name', 'LIKE', $like);
+            });
+
+            // Services Offered (many-to-many relationship)
+            $q->orWhereHas('services', function ($serviceQuery) use ($like) {
+                $serviceQuery->where('services.name', 'LIKE', $like);
+            });
+
+            // Sales Owner (user name)
+            $q->orWhereHas('user', function ($userQuery) use ($like) {
+                $userQuery->where('users.name', 'LIKE', $like);
+            });
+
+            // Sales Owner Role (e.g., "SDR", "LGE", "Lead Closer")
+            $q->orWhereHas('user.role', function ($roleQuery) use ($like) {
+                $roleQuery->where('roles.name', 'LIKE', $like);
+            });
+
+            // Lead Source
+            $q->orWhereHas('source', function ($sourceQuery) use ($like) {
+                $sourceQuery->where('lead_sources.name', 'LIKE', $like);
+            });
+
+            // Lead Sub Source
+            $q->orWhereHas('subSource', function ($subSourceQuery) use ($like) {
+                $subSourceQuery->where('lead_sources.name', 'LIKE', $like);
+            });
+
+            // Lead Type / Business Type
+            $q->orWhereHas('type', function ($typeQuery) use ($like) {
+                $typeQuery->where('lead_types.name', 'LIKE', $like);
+            });
+
+            // Industry (stored as attribute_values with attribute_options)
+            $q->orWhereExists(function ($existsQuery) use ($like) {
+                $existsQuery->select(\DB::raw(1))
+                    ->from('attribute_values')
+                    ->join('attributes', 'attributes.id', '=', 'attribute_values.attribute_id')
+                    ->join('attribute_options', 'attribute_options.id', '=', 'attribute_values.integer_value')
+                    ->whereColumn('attribute_values.entity_id', 'leads.id')
+                    ->where('attribute_values.entity_type', 'leads')
+                    ->where('attributes.code', 'industry')
+                    ->where('attributes.entity_type', 'leads')
+                    ->where('attribute_options.name', 'LIKE', $like);
+            });
+
+            // Pricing Type (stored as attribute_values with attribute_options)
+            $q->orWhereExists(function ($existsQuery) use ($like) {
+                $existsQuery->select(\DB::raw(1))
+                    ->from('attribute_values')
+                    ->join('attributes', 'attributes.id', '=', 'attribute_values.attribute_id')
+                    ->join('attribute_options', 'attribute_options.id', '=', 'attribute_values.integer_value')
+                    ->whereColumn('attribute_values.entity_id', 'leads.id')
+                    ->where('attribute_values.entity_type', 'leads')
+                    ->where('attributes.code', 'pricing_type')
+                    ->where('attributes.entity_type', 'leads')
+                    ->where('attribute_options.name', 'LIKE', $like);
+            });
+        });
+    }
 }

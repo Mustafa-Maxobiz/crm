@@ -31,7 +31,7 @@ class ActivityController extends Controller
     public function index($id)
     {
         $activities = $this->activityRepository
-            ->with(['files', 'participants'])
+            ->with(['files', 'participants', 'user.role'])
             ->select('activities.*')
             ->leftJoin('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
             ->where('lead_activities.lead_id', $id)
@@ -58,7 +58,10 @@ class ActivityController extends Controller
                 ->findWhereIn('email_id', $emails->pluck('id')->all())
                 ->groupBy('email_id');
 
-        return $activities->concat($emails->map(function ($email) use ($attachmentsByEmailId) {
+        $currentUser = auth()->guard('user')->user();
+        $currentUser?->loadMissing('role');
+
+        return $activities->concat($emails->map(function ($email) use ($attachmentsByEmailId, $currentUser) {
             return (object) [
                 'id'            => $email->id,
                 'parent_id'     => $email->parent_id,
@@ -68,7 +71,7 @@ class ActivityController extends Controller
                 'comment'       => $email->reply,
                 'schedule_from' => null,
                 'schedule_to'   => null,
-                'user'          => auth()->guard('user')->user(),
+                'user'          => $currentUser,
                 'participants'  => [],
                 'location'      => null,
                 'additional'    => [

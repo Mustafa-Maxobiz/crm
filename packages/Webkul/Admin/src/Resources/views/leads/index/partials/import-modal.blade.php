@@ -54,6 +54,8 @@
                                             Choose one or more <strong>SDR users</strong> to own these leads (multiple users share them equally) and an <strong>Industry</strong> for the whole file.
                                         @elseif (lead_variant() === 'lge')
                                             If the selected tag is <strong>Cold Lead</strong>, choose one or more <strong>SDR users</strong> to receive the imported leads.
+                                        @elseif (lead_variant() === 'bde')
+                                            Imported leads are assigned to you automatically as Sales Owner and Lead Owner.
                                         @endif
                                     </p>
 
@@ -93,7 +95,7 @@
                                             Select Lead Source
                                         </option>
                                         @foreach ($importSources as $source)
-                                            <option value="{{ $source['value'] }}">
+                                            <option value="{{ $source['value'] }}" data-linkedin="{{ strtolower(trim($source['label'])) === 'linkedin' ? '1' : '0' }}">
                                                 {{ $source['label'] }}
                                             </option>
                                         @endforeach
@@ -130,12 +132,12 @@
                                     <x-admin::form.control-group.error control-name="import_tag_id" />
                                 </x-admin::form.control-group>
 
-                                @if (lead_variant() === 'lge')
+                                @if (collect($importSources)->contains(fn ($source) => strtolower(trim($source['label'])) === 'linkedin'))
                                     @php
                                         $importLinkedInProfiles = app(\Webkul\Lead\Services\LinkedInProfileAccessService::class)->getFilterOptions();
                                     @endphp
 
-                                    <x-admin::form.control-group>
+                                    <x-admin::form.control-group id="lead-import-linkedin-profile-group" class="hidden">
                                         <x-admin::form.control-group.label class="required">
                                             LinkedIn Working Profile
                                         </x-admin::form.control-group.label>
@@ -143,7 +145,7 @@
                                         <select
                                             id="lead-import-linkedin-profile"
                                             name="import_linkedin_profile_id"
-                                            required
+                                            disabled
                                             class="custom-select w-full rounded border border-gray-200 px-2.5 py-2 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
                                         >
                                             <option value="">Select LinkedIn Profile</option>

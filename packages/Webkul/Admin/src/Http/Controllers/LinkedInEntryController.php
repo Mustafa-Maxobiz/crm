@@ -172,10 +172,18 @@ class LinkedInEntryController extends Controller
         ]);
 
         $url = $this->normalizeUrl($data['url']);
+        $normalizedUrl = $this->normalizeProfileUrlForDuplicateCheck($url);
 
         validator(['url' => $url], [
             'url' => ['required', 'url', 'max:2048'],
         ])->validate();
+
+        if ($this->profileUrlExists($normalizedUrl)) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->withErrors(['url' => 'This LinkedIn profile URL already exists.']);
+        }
 
         $user = auth()->guard('user')->user();
         $isAdmin = app(SourceAccessService::class)->isAdmin($user);
@@ -338,6 +346,7 @@ class LinkedInEntryController extends Controller
         $profileId = $this->resolveImportWorkingProfileId($data, $user, $ownerId);
         $created = 0;
         $errors = [];
+        $seenUrls = [];
         $now = now();
 
         foreach ($rows as $index => $row) {
@@ -359,7 +368,7 @@ class LinkedInEntryController extends Controller
             $url = $this->normalizeUrl((string) $rowData['profile_url']);
             $normalizedUrl = $this->normalizeProfileUrlForDuplicateCheck($url);
 
-            if ($this->profileUrlExists($normalizedUrl)) {
+            if (in_array($normalizedUrl, $seenUrls, true) || $this->profileUrlExists($normalizedUrl)) {
                 $errors[] = 'Row '.$rowNumber.': skipped duplicate profile URL.';
 
                 continue;
@@ -375,6 +384,7 @@ class LinkedInEntryController extends Controller
                 'updated_at'          => $now,
             ]);
 
+            $seenUrls[] = $normalizedUrl;
             $created++;
         }
 
@@ -476,6 +486,7 @@ class LinkedInEntryController extends Controller
             'rows'                => $importRows,
             'created'             => 0,
             'skipped'             => 0,
+            'seen_urls'           => [],
             'errors'              => [],
             'failed_rows'         => [],
         ], JSON_THROW_ON_ERROR));
@@ -527,6 +538,10 @@ class LinkedInEntryController extends Controller
             $payload['failed_rows'] = [];
         }
 
+        if (! isset($payload['seen_urls']) || ! is_array($payload['seen_urls'])) {
+            $payload['seen_urls'] = [];
+        }
+
         foreach ($chunk as $row) {
             $rowData = $row['data'] ?? [];
             $rowErrors = $this->validateImportRow($rowData);
@@ -546,7 +561,7 @@ class LinkedInEntryController extends Controller
             $url = $this->normalizeUrl((string) $rowData['profile_url']);
             $normalizedUrl = $this->normalizeProfileUrlForDuplicateCheck($url);
 
-            if ($this->profileUrlExists($normalizedUrl)) {
+            if (in_array($normalizedUrl, $payload['seen_urls'], true) || $this->profileUrlExists($normalizedUrl)) {
                 $payload['skipped']++;
                 $payload['errors'][] = 'Row '.$row['row_number'].': skipped duplicate profile URL.';
 
@@ -563,6 +578,7 @@ class LinkedInEntryController extends Controller
                 'updated_at'          => $now,
             ]);
 
+            $payload['seen_urls'][] = $normalizedUrl;
             $payload['created']++;
         }
 
@@ -625,6 +641,7 @@ class LinkedInEntryController extends Controller
         $skipped = 0;
         $errors = [];
         $failedRows = [];
+        $seenUrls = [];
         $now = now();
 
         foreach ($data['rows'] as $row) {
@@ -646,7 +663,7 @@ class LinkedInEntryController extends Controller
             $url = $this->normalizeUrl((string) $rowData['profile_url']);
             $normalizedUrl = $this->normalizeProfileUrlForDuplicateCheck($url);
 
-            if ($this->profileUrlExists($normalizedUrl)) {
+            if (in_array($normalizedUrl, $seenUrls, true) || $this->profileUrlExists($normalizedUrl)) {
                 $skipped++;
                 $errors[] = 'Row '.$row['row_number'].': skipped duplicate profile URL.';
 
@@ -663,6 +680,7 @@ class LinkedInEntryController extends Controller
                 'updated_at'          => $now,
             ]);
 
+            $seenUrls[] = $normalizedUrl;
             $created++;
         }
 

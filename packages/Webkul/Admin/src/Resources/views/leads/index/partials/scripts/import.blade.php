@@ -29,6 +29,30 @@
             const coldLeadImportTagId = @json(app(\Webkul\Lead\Services\LeadForwardService::class)->coldLeadTagId());
             let failedImportRows = [];
 
+            const isLinkedInImportSource = () => document.getElementById('lead-import-source')
+                ?.selectedOptions[0]?.dataset.linkedin === '1';
+
+            document.addEventListener('change', (event) => {
+                if (event.target?.id !== 'lead-import-source') {
+                    return;
+                }
+
+                const profile = document.getElementById('lead-import-linkedin-profile');
+                const isLinkedIn = isLinkedInImportSource();
+
+                document.getElementById('lead-import-linkedin-profile-group')?.classList.toggle('hidden', ! isLinkedIn);
+
+                if (profile) {
+                    profile.required = isLinkedIn;
+                    profile.disabled = ! isLinkedIn;
+
+                    if (! isLinkedIn) {
+                        profile.value = '';
+                        importLinkedInProfileId = null;
+                    }
+                }
+            });
+
             const importElements = () => ({
                 form: document.getElementById('lead-import-form'),
                 file: document.getElementById('lead-import-file'),
@@ -334,7 +358,6 @@
                 renderFailedRows([], null);
                 setLeadImportFooterMode('done');
                 flash(skippedCount > 0 ? 'warning' : 'success', result.message);
-                setTimeout(() => window.location.reload(), 900);
             };
 
             document.addEventListener('change', (event) => {
@@ -391,7 +414,9 @@
                     .filter((id) => id > 0);
                 const industrySelect = document.getElementById('lead-import-industry');
 
-                if (isLgeLeadImport) {
+                importLinkedInProfileId = null;
+
+                if (isLinkedInImportSource()) {
                     const profileSelect = document.getElementById('lead-import-linkedin-profile');
 
                     if (! profileSelect?.value) {
@@ -565,7 +590,6 @@
                         setProgress(elements, 100, result.message || 'All failed rows imported successfully.');
                         setLeadImportFooterMode('done');
                         flash(skippedCount > 0 ? 'warning' : 'success', result.message || 'All failed rows imported successfully.');
-                        setTimeout(() => window.location.reload(), 900);
                     }
                 } catch (error) {
                     const message = error.response?.data?.message || 'Retry failed. Please check the rows and try again.';

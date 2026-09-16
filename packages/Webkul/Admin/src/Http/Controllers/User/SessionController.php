@@ -38,6 +38,10 @@ class SessionController extends Controller
             ? $previousUrl
             : route('admin.dashboard.index');
 
+        if ($this->isRoleDashboardUrl($intendedUrl)) {
+            $intendedUrl = route('admin.dashboard.index');
+        }
+
         session()->put('url.intended', $intendedUrl);
 
         return view('admin::sessions.login');
@@ -61,6 +65,8 @@ class SessionController extends Controller
 
         request()->session()->regenerate();
 
+        $this->forgetRoleNavigationState();
+
         if (auth()->guard('user')->user()->status == 0) {
             session()->flash('warning', trans('admin::app.users.activate-warning'));
 
@@ -68,8 +74,6 @@ class SessionController extends Controller
 
             return redirect()->route('admin.session.create');
         }
-
-        $this->activeRoleService->clearActiveRole();
 
         $assignedRoles = $this->activeRoleService->assignedRoles();
 
@@ -79,6 +83,12 @@ class SessionController extends Controller
             auth()->guard('user')->logout();
 
             return redirect()->route('admin.session.create');
+        }
+
+        if ($primaryAdminRole = $this->primaryAdminRole()) {
+            $role = $this->activeRoleService->activateRole((int) $primaryAdminRole->id, null, false);
+
+            return $this->redirectAfterRoleActivation($role);
         }
 
         if ($assignedRoles->count() > 1) {
@@ -193,8 +203,15 @@ class SessionController extends Controller
         $availableNextMenu = $menus?->first();
         $dashboardRoute = $this->activeRoleService->dashboardRouteForRole($role);
 
+        if ($dashboardRoute === 'admin.dashboard.index') {
+            session()->forget('url.intended');
+
+            return $this->redirectAfterLogin(route($dashboardRoute));
+        }
+
         if (! bouncer()->hasPermission('dashboard')
             && ! bouncer()->hasPermission('sdr_dashboard')
+            && ! bouncer()->hasPermission('bde_dashboard')
             && ! bouncer()->hasPermission('lge_dashboard')
             && ! bouncer()->hasPermission('lead_clouser_dashboard')
         ) {
@@ -209,10 +226,18 @@ class SessionController extends Controller
             return $this->redirectAfterLogin($availableNextMenu->getUrl());
         }
 
-        $hasAccessToIntendedUrl = $this->canAccessIntendedUrl($menus, redirect()->getIntendedUrl());
+        $intendedUrl = redirect()->getIntendedUrl();
+
+        if ($this->isRoleDashboardUrl($intendedUrl)) {
+            session()->forget('url.intended');
+
+            return $this->redirectAfterLogin(route($dashboardRoute));
+        }
+
+        $hasAccessToIntendedUrl = $this->canAccessIntendedUrl($menus, $intendedUrl);
 
         if ($hasAccessToIntendedUrl) {
-            return $this->redirectAfterLogin(redirect()->getIntendedUrl() ?? route($dashboardRoute));
+            return $this->redirectAfterLogin($intendedUrl ?? route($dashboardRoute));
         }
 
         return $this->redirectAfterLogin(route($dashboardRoute));
@@ -241,7 +266,7 @@ class SessionController extends Controller
      */
     public function destroy(): RedirectResponse
     {
-        $this->activeRoleService->clearActiveRole();
+        $this->forgetRoleNavigationState(true);
 
         auth()->guard('user')->logout();
 
@@ -249,6 +274,61 @@ class SessionController extends Controller
         request()->session()->regenerateToken();
 
         return redirect()->route('admin.session.create');
+    }
+
+    protected function forgetRoleNavigationState(bool $clearIntended = false): void
+    {
+        $this->activeRoleService->clearActiveRole();
+
+        session()->forget([
+            'lead_variant',
+            'dashboard_route',
+            'active_dashboard_route',
+            'previous_dashboard_route',
+            'previous_role_dashboard',
+        ]);
+
+        if ($clearIntended || $this->isRoleDashboardUrl(session('url.intended'))) {
+            session()->forget('url.intended');
+        }
+    }
+
+    protected function isRoleDashboardUrl(?string $url): bool
+    {
+        if (! $url) {
+            return false;
+        }
+
+        $path = trim((string) parse_url($url, PHP_URL_PATH), '/');
+
+        return in_array($path, [
+            'admin/dashboard/bde',
+            'admin/dashboard/sdr',
+            'admin/dashboard/lge',
+            'admin/dashboard/lead-clouser',
+        ], true);
+    }
+
+    protected function primaryAdminRole(): ?object
+    {
+        $user = auth()->guard('user')->user();
+
+        if (! $user || empty($user->role_id)) {
+            return null;
+        }
+
+        $role = \Webkul\User\Models\Role::query()->find((int) $user->role_id);
+
+        if (! $role) {
+            return null;
+        }
+
+        $roleName = strtolower(trim((string) $role->name));
+
+        return $role->permission_type === 'all'
+            || in_array($roleName, ['admin', 'administrator', 'super admin'], true)
+            ? $role
+            : null;
     }
 
     /**

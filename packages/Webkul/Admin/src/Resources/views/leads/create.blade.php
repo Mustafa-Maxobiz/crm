@@ -6,7 +6,9 @@
     {!! view_render_event('admin.leads.create.form.before') !!}
 
     @php
-        $valueAndPricingAttributeCodes = lead_variant() !== 'main'
+        $usesMainLeadFields = in_array(lead_variant(), ['main', 'bde'], true);
+
+        $valueAndPricingAttributeCodes = ! $usesMainLeadFields
             ? ['pricing_type']
             : ['lead_value', 'pricing_type'];
 
@@ -29,8 +31,8 @@
             'organization_id',
         ];
 
-        // Main create uses Title; company stays under Contact Person for both variants.
-        if (lead_variant() === 'main') {
+        // Main and BDE create use Title; company stays under Contact Person for all variants.
+        if ($usesMainLeadFields) {
             $detailsExcludedAttributeCodes[] = 'title';
         }
 
@@ -192,7 +194,7 @@
                         <div class="w-1/2 max-md:w-full">
                             {!! view_render_event('admin.leads.create.details.attributes.before') !!}
 
-                            @if (lead_variant() === 'main')
+                            @if ($usesMainLeadFields)
                                 <x-admin::form.control-group>
                                     <x-admin::form.control-group.label class="required">
                                         @lang('admin::app.leads.create.title-field')
@@ -306,8 +308,8 @@
                                         ]"
                                     />
 
-                                    @if (lead_variant() === 'lge')
-                                        <x-admin::form.control-group id="lge-linkedin-profile-group">
+                                    @if (! empty($linkedInSourceIds))
+                                        <x-admin::form.control-group v-if="isLinkedInSourceSelected" id="lge-linkedin-profile-group">
                                             <x-admin::form.control-group.label class="required">
                                                 LinkedIn Working Profile
                                             </x-admin::form.control-group.label>
@@ -318,7 +320,7 @@
                                                 id="linkedin_profile_id"
                                                 rules="required"
                                                 :label="'LinkedIn Working Profile'"
-                                                :value="old('linkedin_profile_id')"
+                                                v-model="linkedInSelectedProfileId"
                                             >
                                                 <option value="">Select LinkedIn Profile</option>
 
@@ -334,7 +336,9 @@
 
                                             <x-admin::form.control-group.error control-name="linkedin_profile_id" />
                                         </x-admin::form.control-group>
+                                    @endif
 
+                                    @if (lead_variant() === 'lge')
                                         <x-admin::form.control-group v-show="coldLeadSelected">
                                             <x-admin::form.control-group.label class="required">
                                                 Forward To SDR
@@ -362,7 +366,7 @@
                                             </select>
 
                                             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                                Cold Lead entries created by LGE must be forwarded to an active SDR.
+                                                Cold Lead entries created by Lead Gen Executive must be forwarded to an active SDR.
                                             </p>
 
                                             <x-admin::form.control-group.error control-name="cold_lead_sdr_user_id" />
@@ -392,6 +396,9 @@
                                                 'date_format:yyyy-MM-dd',
                                                 'after:' .  \Carbon\Carbon::yesterday()->format('Y-m-d')
                                             ],
+                                        ]"
+                                        :entity="[
+                                            'user_id' => old('user_id', auth()->guard('user')->id()),
                                         ]"
                                     />
 
@@ -523,6 +530,8 @@
                         },
                         sourceKey: 0,
                         isLgeCreate: @json(lead_variant() === 'lge'),
+                        linkedInSourceIds: @json($linkedInSourceIds ?? []),
+                        isLinkedInSourceSelected: false,
                         linkedInSourceLinkCheckUrl: @json(lead_variant() === 'lge' ? route('admin.leads.lge.source_link.check') : null),
                         linkedInSourceLinkTimer: null,
                         linkedInSourceLinkRequestId: 0,
@@ -538,6 +547,10 @@
                 },
                 
                 mounted() {
+                    this.$nextTick(() => {
+                        this.updateLinkedInSourceState(document.querySelector('[name="lead_source_id"]')?.value);
+                    });
+
                     // Listen for source changes
                     document.addEventListener('change', (e) => {
                         if (e.target.name === 'lead_source_id') {
@@ -576,7 +589,7 @@
                                 return;
                             }
 
-                            if (this.linkedInSourceLinkChecking) {
+                            if (this.isLinkedInSourceSelected && this.linkedInSourceLinkChecking) {
                                 event.preventDefault();
                                 event.stopPropagation();
                                 this.showLinkedInSourceLinkMessage('Please wait while we verify this LinkedIn profile URL.');
@@ -584,7 +597,7 @@
                                 return;
                             }
 
-                            if (this.linkedInRequiresProfileSelection && profileSelect && ! profileSelect.value) {
+                            if (this.isLinkedInSourceSelected && this.linkedInRequiresProfileSelection && profileSelect && ! profileSelect.value) {
                                 event.preventDefault();
                                 event.stopPropagation();
                                 this.showLinkedInProfileMessage('Please select a LinkedIn working profile.');
@@ -706,23 +719,16 @@
                      */
                     handleSourceChange(event) {
                         const sourceId = parseInt(event.target.value);
-                        
-                        console.log('Source changed to:', sourceId);
-                        
+                        this.updateLinkedInSourceState(sourceId);
+
                         if (sourceId) {
-                            // Fetch sub-sources for the selected source
-                            console.log('Fetching sub-sources from:', `/admin/settings/api/sources/${sourceId}/sub-sources`);
-                            
                             this.$axios.get(`/admin/settings/api/sources/${sourceId}/sub-sources`)
                                 .then(response => {
-                                    console.log('Sub-sources response:', response.data);
                                     this.availableSubSources = response.data.sub_sources || [];
                                     this.showSubSourceDropdown = this.availableSubSources.length > 0;
                                     this.selectedSubSource = '';
-                                    console.log('Show dropdown:', this.showSubSourceDropdown, 'Available:', this.availableSubSources);
                                 })
                                 .catch(error => {
-                                    console.error('Error fetching sub-sources:', error);
                                     this.availableSubSources = [];
                                     this.showSubSourceDropdown = false;
                                 });
@@ -733,8 +739,35 @@
                         }
                     },
 
+                    updateLinkedInSourceState(sourceId) {
+                        this.isLinkedInSourceSelected = this.linkedInSourceIds.includes(Number(sourceId));
+                        clearTimeout(this.linkedInSourceLinkTimer);
+                        this.linkedInSourceLinkRequestId++;
+                        this.linkedInSourceLinkChecking = false;
+
+                        if (! this.isLinkedInSourceSelected) {
+                            this.linkedInSelectedProfileId = '';
+                            this.linkedInProfileLocked = false;
+                            this.linkedInRequiresProfileSelection = true;
+                            this.showLinkedInSourceLinkMessage('');
+                        } else if (this.isLgeCreate) {
+                            this.$nextTick(() => {
+                                const input = document.querySelector('[name="source_link"]');
+
+                                if (input?.value?.trim()) {
+                                    this.handleLinkedInSourceLinkInput(input);
+                                }
+                            });
+                        }
+                    },
+
                     handleLinkedInSourceLinkInput(input) {
                         clearTimeout(this.linkedInSourceLinkTimer);
+                        this.linkedInSourceLinkRequestId++;
+
+                        if (! this.isLinkedInSourceSelected) {
+                            return;
+                        }
 
                         const value = input.value.trim();
 
@@ -832,6 +865,7 @@
                     },
 
                     setLinkedInProfileValue(profileId, locked = false) {
+                        this.linkedInSelectedProfileId = String(profileId);
                         const select = document.querySelector('[name="linkedin_profile_id"]');
                         const group = document.getElementById('lge-linkedin-profile-group');
 
@@ -847,6 +881,10 @@
                     },
 
                     resetLinkedInProfileField(clearValue = true) {
+                        if (clearValue) {
+                            this.linkedInSelectedProfileId = '';
+                        }
+
                         const select = document.querySelector('[name="linkedin_profile_id"]');
                         const group = document.getElementById('lge-linkedin-profile-group');
 

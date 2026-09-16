@@ -50,15 +50,21 @@ class SmrtPhoneCallLog extends Model implements SmrtPhoneCallLogContract
         'lead_id',
         'activity_id',
         'called_at',
+        'started_at',
+        'completed_at',
+        'duration_seconds',
         'raw_payload',
     ];
 
     protected $casts = [
-        'is_dialer'     => 'boolean',
-        'ai_transcript' => 'array',
-        'ai_keywords'   => 'array',
-        'raw_payload'   => 'array',
-        'called_at'     => 'datetime',
+        'is_dialer'        => 'boolean',
+        'ai_transcript'    => 'array',
+        'ai_keywords'      => 'array',
+        'raw_payload'      => 'array',
+        'called_at'        => 'datetime',
+        'started_at'       => 'datetime',
+        'completed_at'     => 'datetime',
+        'duration_seconds' => 'integer',
     ];
 
     public function person(): BelongsTo

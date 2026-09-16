@@ -228,6 +228,22 @@ class SourceAccessService
         return strtolower(trim((string) $this->activeRole($user)?->name)) === 'sdr';
     }
 
+    public function isBdeUser(?UserContract $user = null): bool
+    {
+        $user = $this->resolveUser($user);
+        $roleName = strtolower(trim((string) $this->activeRole($user)?->name));
+
+        return in_array($roleName, [
+            'bd',
+            'bde',
+            'bd executive',
+            'bd exective',
+            'bde executive',
+            'bde exective',
+            'business development executive',
+        ], true);
+    }
+
     public function isLgeUser(?UserContract $user = null): bool
     {
         $user = $this->resolveUser($user);
@@ -524,12 +540,11 @@ class SourceAccessService
             return false;
         }
 
-        if ($this->isLeadCloserUser($user)) {
-            return (int) $lead->user_id === (int) $user->id;
-        }
+        $leadAttributes = $lead->getAttributes();
 
-        return (int) $lead->user_id === (int) $user->id
-            || (int) ($lead->lead_owner_id ?? 0) === (int) $user->id;
+        return (int) ($leadAttributes['user_id'] ?? 0) === (int) $user->id
+            || (int) ($leadAttributes['lead_owner_id'] ?? 0) === (int) $user->id
+            || $this->leadWasForwardedFromUser($lead, $user);
     }
 
     /**
@@ -543,26 +558,13 @@ class SourceAccessService
             return $query;
         }
 
-        if (lead_variant() === 'lead_clouser' || $this->isLeadCloserUser()) {
-            return $query->where("{$table}.user_id", auth()->guard('user')->id());
-        }
-
         $userId = auth()->guard('user')->id();
 
         return $query->where(function ($ownerQuery) use ($table, $userId) {
             $ownerQuery
                 ->where("{$table}.user_id", $userId)
-                ->orWhere("{$table}.lead_owner_id", $userId);
-
-            if ($this->isCallingRoleUser()) {
-                $ownerQuery->orWhereExists(function ($forwardQuery) use ($table, $userId) {
-                    $forwardQuery
-                        ->selectRaw('1')
-                        ->from('lead_forwards')
-                        ->whereColumn('lead_forwards.lead_id', "{$table}.id")
-                        ->where('lead_forwards.from_user_id', $userId);
-                });
-            }
+                ->orWhere("{$table}.lead_owner_id", $userId)
+                ->orWhereExists(fn ($forwardQuery) => $this->applyPreviousOwnerForwardExists($forwardQuery, $table, $userId));
         });
     }
 
@@ -575,16 +577,13 @@ class SourceAccessService
             return $query;
         }
 
-        if (lead_variant() === 'lead_clouser' || $this->isLeadCloserUser()) {
-            return $query->where('leads.user_id', auth()->guard('user')->id());
-        }
-
         $userId = auth()->guard('user')->id();
 
         return $query->where(function ($ownerQuery) use ($userId) {
             $ownerQuery
                 ->where('leads.user_id', $userId)
-                ->orWhere('leads.lead_owner_id', $userId);
+                ->orWhere('leads.lead_owner_id', $userId)
+                ->orWhereExists(fn ($forwardQuery) => $this->applyPreviousOwnerForwardExists($forwardQuery, 'leads', $userId));
         });
     }
 
@@ -631,7 +630,7 @@ class SourceAccessService
     ): Builder|QueryBuilder {
         $userId = auth()->guard('user')->id();
 
-        if (! $userId || (! $this->isSdrUser() && ! $this->isLgeUser())) {
+        if (! $userId) {
             return $query->whereIn("{$table}.lead_pipeline_stage_id", $accessible);
         }
 
@@ -644,18 +643,12 @@ class SourceAccessService
                         ->where("{$table}.user_id", '!=', $userId)
                         ->whereNotNull("{$table}.user_id");
                 })
-                ->orWhereExists(function ($forwardQuery) use ($userId, $table) {
-                    $forwardQuery
-                        ->selectRaw('1')
-                        ->from('lead_forwards')
-                        ->whereColumn('lead_forwards.lead_id', "{$table}.id")
-                        ->where('lead_forwards.from_user_id', $userId);
-                });
+                ->orWhereExists(fn ($forwardQuery) => $this->applyPreviousOwnerForwardExists($forwardQuery, $table, $userId));
         });
     }
 
     /**
-     * Leads originated by a calling-role user (SDR/LGE), including legacy rows without lead_owner_id.
+     * Leads originated by a role user (BDE/SDR/LGE), including legacy rows and handoff history.
      */
     public function applyOriginatingCallingOwnerTableScope(QueryBuilder $query, int $userId): QueryBuilder
     {
@@ -666,7 +659,8 @@ class SourceAccessService
                     $legacyQuery
                         ->whereNull('leads.lead_owner_id')
                         ->where('leads.user_id', $userId);
-                });
+                })
+                ->orWhereExists(fn ($forwardQuery) => $this->applyPreviousOwnerForwardExists($forwardQuery, 'leads', $userId));
         });
     }
 
@@ -691,18 +685,17 @@ class SourceAccessService
             return $query;
         }
 
-        return $query
-            ->where('leads.user_id', $userId)
-            ->where(function ($ownerQuery) use ($userId) {
-                $ownerQuery
-                    ->where('leads.lead_owner_id', $userId)
-                    ->orWhereNull('leads.lead_owner_id');
-            });
+        return $query->where(function ($ownerQuery) use ($userId) {
+            $ownerQuery
+                ->where('leads.user_id', $userId)
+                ->orWhere('leads.lead_owner_id', $userId)
+                ->orWhereExists(fn ($forwardQuery) => $this->applyPreviousOwnerForwardExists($forwardQuery, 'leads', $userId));
+        });
     }
 
     public function isCallingRoleUser(?UserContract $user = null): bool
     {
-        return $this->isSdrUser($user) || $this->isLgeUser($user);
+        return $this->isBdeUser($user) || $this->isSdrUser($user) || $this->isLgeUser($user);
     }
 
     public function canAccessSourceId(int $sourceId, ?UserContract $user = null): bool
@@ -776,9 +769,8 @@ class SourceAccessService
 
     /**
      * Whether the user may open/read a lead detail page.
-     * Sales owner (`user_id`) can open the lead. Lead owner (`lead_owner_id`)
-     * may still see the card in pipeline listings through listing scopes, but
-     * cannot open or edit once sales ownership belongs to another user.
+     * Current sales owner can view/edit. Lead owners and previous sales owners
+     * from lead_forwards can view the lead, but canEditLead keeps them read-only.
      */
     public function canViewLead(LeadContract $lead, ?UserContract $user = null): bool
     {
@@ -787,10 +779,6 @@ class SourceAccessService
         }
 
         if ($lead->getAttributes()['lead_disqualification_reason'] ?? null) {
-            return false;
-        }
-
-        if (! $this->leadMatchesSourceScope($lead, $user)) {
             return false;
         }
 
@@ -804,12 +792,21 @@ class SourceAccessService
             return false;
         }
 
-        if ((int) $lead->user_id !== (int) $user->id) {
+        $leadAttributes = $lead->getAttributes();
+        $isCurrentSalesOwner = (int) ($leadAttributes['user_id'] ?? 0) === (int) $user->id;
+        $isLeadOwner = (int) ($leadAttributes['lead_owner_id'] ?? 0) === (int) $user->id;
+        $isPreviousSalesOwner = $this->leadWasForwardedFromUser($lead, $user);
+
+        if (! $isCurrentSalesOwner && ! $isLeadOwner && ! $isPreviousSalesOwner) {
             return false;
         }
 
+        if (! $isCurrentSalesOwner) {
+            return true;
+        }
+
         return $this->canAccessStageId(
-            $lead->lead_pipeline_stage_id ? (int) $lead->lead_pipeline_stage_id : null,
+            ($leadAttributes['lead_pipeline_stage_id'] ?? null) ? (int) $leadAttributes['lead_pipeline_stage_id'] : null,
             $user
         );
     }
@@ -833,7 +830,7 @@ class SourceAccessService
             return false;
         }
 
-        return (int) $lead->user_id === (int) $user->id;
+        return (int) ($lead->getAttributes()['user_id'] ?? 0) === (int) $user->id;
     }
 
     /**
@@ -844,13 +841,38 @@ class SourceAccessService
         return $this->canViewLead($lead, $user);
     }
 
+    protected function leadWasForwardedFromUser(LeadContract $lead, UserContract $user): bool
+    {
+        $leadAttributes = $lead->getAttributes();
+
+        if ((bool) ($leadAttributes['forwarded_from_current_user'] ?? false)) {
+            return true;
+        }
+
+        if (! $lead instanceof \Illuminate\Database\Eloquent\Model || ! $lead->exists) {
+            return false;
+        }
+
+        return DB::table('lead_forwards')
+            ->where('lead_id', $lead->getKey())
+            ->where('from_user_id', $user->id)
+            ->exists();
+    }
+
+    protected function applyPreviousOwnerForwardExists(QueryBuilder $query, string $table, int $userId): QueryBuilder
+    {
+        return $query
+            ->selectRaw('1')
+            ->from('lead_forwards')
+            ->whereColumn('lead_forwards.lead_id', "{$table}.id")
+            ->where('lead_forwards.from_user_id', $userId);
+    }
+
     public function applyLeadQueryScope(Builder $query): Builder
     {
         $query = $this->applyDisqualificationQueryScope($query);
 
         $query = $this->applyAccessibleStageScope($query);
-
-        $query = $this->applySourceQueryScope($query);
 
         return $this->applyOrganizationQueryScope($query);
     }
@@ -860,8 +882,6 @@ class SourceAccessService
         $query = $this->applyDisqualificationTableScope($query);
 
         $query = $this->applyAccessibleStageTableScope($query);
-
-        $query = $this->applySourceTableScope($query);
 
         return $this->applyOrganizationTableScope($query);
     }

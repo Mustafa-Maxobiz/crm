@@ -3,6 +3,7 @@
 namespace Webkul\Admin\Http\Controllers\Lead;
 
 use Carbon\Carbon;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -45,6 +46,7 @@ use Webkul\Lead\Services\LinkedInProfileAccessService;
 use Webkul\Lead\Services\LinkedInUrlNormalizer;
 use Webkul\Lead\Services\MagicAIService;
 use Webkul\Lead\Services\MeetingHandoffService;
+use Webkul\Lead\Services\SalesOwnerTransferService;
 use Webkul\Lead\Services\SourceAccessService;
 use Webkul\Lead\Services\UsStateTimezoneService;
 use Webkul\Tag\StaticTags;
@@ -57,6 +59,8 @@ class LeadController extends Controller
      * Const variable for supported types.
      */
     const SUPPORTED_TYPES = 'pdf,bmp,jpeg,jpg,png,webp';
+
+    protected ?array $importDuplicateIndex = null;
 
     /**
      * Create a new controller instance.
@@ -82,6 +86,7 @@ class LeadController extends Controller
         protected FollowupScheduleService $followupScheduleService,
         protected MeetingHandoffService $meetingHandoffService,
         protected LeadForwardService $leadForwardService,
+        protected SalesOwnerTransferService $salesOwnerTransferService,
         protected UsStateTimezoneService $usStateTimezoneService,
     ) {
         request()->request->add(['entity_type' => 'leads']);
@@ -92,7 +97,19 @@ class LeadController extends Controller
      */
     public function index()
     {
+        if (! $this->sourceAccessService->isAdmin() && $this->canAccessBdeLeadScreen()) {
+            return redirect()->route('admin.leads.bde', request()->query());
+        }
+
         return $this->listIndex('main');
+    }
+
+    /**
+     * BD Executive leads list.
+     */
+    public function bde()
+    {
+        return $this->listIndex('bde');
     }
 
     /**
@@ -181,6 +198,7 @@ class LeadController extends Controller
         }
 
         $allowed = match ($leadVariant) {
+            'bde'          => $this->canAccessBdeLeadScreen(),
             'sdr'          => $this->sourceAccessService->isSdrUser(),
             'lge'          => $this->sourceAccessService->isLgeUser(),
             'lead_clouser' => $this->sourceAccessService->isLeadCloserUser(),
@@ -188,6 +206,13 @@ class LeadController extends Controller
         };
 
         abort_unless($allowed, 403, 'You are not allowed to access this lead screen.');
+    }
+
+    protected function canAccessBdeLeadScreen(): bool
+    {
+        return $this->sourceAccessService->isBdeUser()
+            || bouncer()->hasPermission('bde_leads')
+            || bouncer()->hasPermission('bde_leads.view');
     }
 
     /**
@@ -203,6 +228,8 @@ class LeadController extends Controller
      */
     public function importTemplate(): StreamedResponse
     {
+        $isBdeImport = lead_variant() === 'bde';
+
         $headers = [
             'companies*',
             'lead_value*',
@@ -217,7 +244,6 @@ class LeadController extends Controller
             'state',
             'country',
             'postcode',
-            'sales_owner_email',
             'pipeline',
             'stage',
             'expected_close_date',
@@ -243,7 +269,6 @@ class LeadController extends Controller
             'CA',
             'US',
             '95120',
-            'sdr@example.com',
             'Default Pipeline',
             'New',
             Carbon::now()->addDays(14)->toDateString(),
@@ -254,6 +279,11 @@ class LeadController extends Controller
             '',
             'priority',
         ];
+
+        if (! $isBdeImport) {
+            array_splice($headers, 13, 0, 'sales_owner_email');
+            array_splice($sample, 13, 0, 'sdr@example.com');
+        }
 
         return response()->streamDownload(function () use ($headers, $sample) {
             $stream = fopen('php://output', 'w');
@@ -365,7 +395,7 @@ class LeadController extends Controller
             }
 
             $rowData = $this->mapImportRow($headers, $row);
-            $rowErrors = $this->validateImportRow($rowData, ! empty($assignment['assignee_user_ids']), $batchLinkedInProfileId);
+            $rowErrors = $this->validateImportRow($rowData, ! empty($assignment['assignee_user_ids']), $batchLinkedInProfileId, $sourceId);
 
             if (! empty($rowErrors)) {
                 $errors[] = 'Row '.$rowNumber.': '.implode(' ', $rowErrors);
@@ -588,7 +618,7 @@ class LeadController extends Controller
 
         foreach ($chunk as $row) {
             $rowData = $row['data'] ?? [];
-            $rowErrors = $this->validateImportRow($rowData, ! empty($assigneeUserIds), $batchLinkedInProfileId);
+            $rowErrors = $this->validateImportRow($rowData, ! empty($assigneeUserIds), $batchLinkedInProfileId, $sourceId);
 
             if (! empty($rowErrors)) {
                 $errorMessage = implode(' ', $rowErrors);
@@ -708,7 +738,7 @@ class LeadController extends Controller
         foreach ($data['rows'] as $row) {
             $rowNumber = (int) $row['row_number'];
             $rowData = $this->normalizeRetriedImportRow($row['data'] ?? []);
-            $rowErrors = $this->validateImportRow($rowData, ! empty($assignment['assignee_user_ids']), $batchLinkedInProfileId);
+            $rowErrors = $this->validateImportRow($rowData, ! empty($assignment['assignee_user_ids']), $batchLinkedInProfileId, $sourceId);
 
             if (! empty($rowErrors)) {
                 $failedRows[] = [
@@ -847,9 +877,14 @@ class LeadController extends Controller
                 ]);
 
             $this->sourceAccessService->applyLeadOwnerVisibilityScope($query);
+
             $this->sourceAccessService->applyLeadQueryScope($query);
 
-            $this->addForwardedOriginFlagForKanban($query);
+            $this->addAssignedByForKanban($query);
+
+            if (in_array(lead_variant(), ['bde', 'sdr', 'lge'], true)) {
+                $this->addForwardedOriginFlagForKanban($query);
+            }
 
             $this->applyKanbanSearch($query, request()->query('lead_search'));
 
@@ -890,12 +925,37 @@ class LeadController extends Controller
         return response()->json($data);
     }
 
-    protected function addForwardedOriginFlagForKanban(mixed $query): void
+    protected function addAssignedByForKanban(mixed $query): void
     {
-        if (! in_array(lead_variant(), ['sdr', 'lge'], true)) {
+        $addAssignedBySelect = function ($builder) {
+            return $builder->addSelect([
+                'assigned_by_user_id' => DB::table('lead_forwards')
+                    ->select('lead_forwards.from_user_id')
+                    ->whereColumn('lead_forwards.lead_id', 'leads.id')
+                    ->whereColumn('lead_forwards.to_user_id', 'leads.user_id')
+                    ->orderByDesc('lead_forwards.id')
+                    ->limit(1),
+                'assigned_by_user_name' => DB::table('lead_forwards')
+                    ->join('users as assigned_by_users', 'assigned_by_users.id', '=', 'lead_forwards.from_user_id')
+                    ->select('assigned_by_users.name')
+                    ->whereColumn('lead_forwards.lead_id', 'leads.id')
+                    ->whereColumn('lead_forwards.to_user_id', 'leads.user_id')
+                    ->orderByDesc('lead_forwards.id')
+                    ->limit(1),
+            ]);
+        };
+
+        if (method_exists($query, 'scopeQuery')) {
+            $query->scopeQuery($addAssignedBySelect);
+
             return;
         }
 
+        $addAssignedBySelect($query);
+    }
+
+    protected function addForwardedOriginFlagForKanban(mixed $query): void
+    {
         $userId = (int) auth()->guard('user')->id();
 
         if (! $userId) {
@@ -1009,8 +1069,11 @@ class LeadController extends Controller
     {
         $this->shareLeadVariant();
 
+        $linkedInSourceIds = $this->sourceRepository->getAllowedLinkedInSourceIds();
+
         return view('admin::leads.create', [
-            'linkedInProfiles' => lead_variant() === 'lge'
+            'linkedInSourceIds' => $linkedInSourceIds,
+            'linkedInProfiles' => ! empty($linkedInSourceIds)
                 ? $this->linkedInProfileAccessService->getAssignedProfiles()
                 : collect(),
             'tagOptions'       => $this->leadCreateTagOptions(),
@@ -1098,14 +1161,14 @@ class LeadController extends Controller
             $data['next_followup_date'] = null;
         }
 
-        $isMainCreate = lead_variant() === 'main';
+        $isMainCreate = in_array(lead_variant(), ['main', 'bde'], true);
         $isLgeCreate = lead_variant() === 'lge';
         $isCallingRoleCreate = in_array(lead_variant(), ['lge', 'sdr'], true);
 
-        if ($isLgeCreate) {
+        if ($isLgeCreate || $this->sourceRepository->isLinkedInSource((int) ($data['lead_source_id'] ?? 0))) {
             try {
                 $this->applyLinkedInProfileToLeadData($data);
-                $coldLeadForwardSdrId = $this->validatedColdLeadForwardSdrId($data);
+                $coldLeadForwardSdrId = $isLgeCreate ? $this->validatedColdLeadForwardSdrId($data) : null;
             } catch (\Illuminate\Validation\ValidationException $exception) {
                 if (request()->ajax()) {
                     return response()->json([
@@ -1120,6 +1183,7 @@ class LeadController extends Controller
                     ->withErrors($exception->errors());
             }
         } else {
+            $data['linkedin_profile_id'] = null;
             $coldLeadForwardSdrId = null;
         }
 
@@ -1365,12 +1429,24 @@ class LeadController extends Controller
         $data['quick_add'] = 1;
         $data['tags'] = $lead->tags->pluck('name')->filter()->values()->all();
         $data['person'] = $this->leadPersonFormPayload($lead->person);
+        $data['sales_owner_options'] = collect([$this->salesOwnerTransferService->ownerOption((int) $lead->user_id)])
+            ->filter()
+            ->merge($this->salesOwnerTransferService->eligibleOwnersForLead($lead))
+            ->unique('id')
+            ->map(fn ($user) => [
+                'id'        => (int) $user->id,
+                'name'      => $user->name,
+                'role_name' => $user->role_name,
+                'label'     => $this->salesOwnerTransferService->formatOwnerLabel($user),
+            ])
+            ->values()
+            ->all();
 
         $stages = $lead->pipeline
             ? $this->sourceAccessService->filterAccessibleStages($lead->pipeline->stages)
             : collect();
 
-        if ($lead->pipeline && in_array(lead_variant(), ['sdr', 'lge'], true)) {
+        if ($lead->pipeline && in_array(lead_variant(), ['bde', 'sdr', 'lge'], true)) {
             $meetingStage = $lead->pipeline->stages->firstWhere('code', 'meeting');
 
             if ($meetingStage) {
@@ -1469,6 +1545,174 @@ class LeadController extends Controller
         ]);
     }
 
+    /**
+     * Get eligible users for sales owner change based on current user's role.
+     */
+    public function getEligibleSalesOwners(int $id): JsonResponse
+    {
+        $lead = $this->leadRepository->findOrFail($id);
+
+        $currentUser = auth()->guard('user')->user();
+
+        if (! $currentUser) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        if (! $this->sourceAccessService->canEditLead($lead, $currentUser)) {
+            return response()->json(['message' => 'You do not have permission to change the sales owner of this lead.'], 403);
+        }
+
+        $eligibleUsers = $this->salesOwnerTransferService->eligibleOwnersForLead($lead, $currentUser);
+
+        return response()->json([
+            'users' => $eligibleUsers->map(function ($user) {
+                return [
+                    'id'         => (int) $user->id,
+                    'name'       => $user->name,
+                    'email'      => $user->email,
+                    'role_id'    => (int) $user->role_id,
+                    'role_name'  => $user->role_name,
+                    'label'           => $this->salesOwnerTransferService->formatOwnerLabel($user),
+                    'is_closure_user' => $this->salesOwnerTransferService->isClosureUserId((int) $user->id),
+                ];
+            })->values(),
+        ]);
+    }
+
+    /**
+     * Change the sales owner of a lead.
+     */
+    public function changeSalesOwner(int $id): JsonResponse
+    {
+        $lead = $this->leadRepository->findOrFail($id);
+
+        $currentUser = auth()->guard('user')->user();
+
+        if (! $currentUser) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $data = request()->validate([
+            'user_id'                  => ['required', 'integer', 'exists:users,id'],
+            'closure_assignment_mode'  => ['nullable', Rule::in(['direct', 'meeting'])],
+            'meeting.schedule_from'    => ['required_if:closure_assignment_mode,meeting', 'nullable', 'date'],
+            'meeting.schedule_to'      => ['required_if:closure_assignment_mode,meeting', 'nullable', 'date', 'after:meeting.schedule_from'],
+            'meeting.comment'          => ['required_if:closure_assignment_mode,meeting', 'nullable', 'string', 'max:500'],
+            'meeting.location'         => ['required_if:closure_assignment_mode,meeting', 'nullable', 'string'],
+            'meeting.participants'     => ['nullable', 'array'],
+        ]);
+
+        $newOwnerId = (int) $data['user_id'];
+        $assignmentMode = $data['closure_assignment_mode'] ?? 'direct';
+
+        try {
+            if ($assignmentMode === 'meeting') {
+                if (! $this->salesOwnerTransferService->isClosureUserId($newOwnerId)) {
+                    return response()->json([
+                        'message' => 'Meeting scheduling is only available when assigning to a Closure user.',
+                    ], 422);
+                }
+
+                $meetingData = $data['meeting'] ?? [];
+
+                $lead = $this->meetingHandoffService->completeSalesOwnerTransferWithMeeting(
+                    $currentUser,
+                    $lead->id,
+                    $newOwnerId,
+                    [
+                        'title'         => 'Meeting'.($lead->title ? ' - '.$lead->title : ''),
+                        'type'          => 'meeting',
+                        'comment'       => $meetingData['comment'] ?? null,
+                        'schedule_from' => $meetingData['schedule_from'] ?? null,
+                        'schedule_to'   => $meetingData['schedule_to'] ?? null,
+                        'location'      => $meetingData['location'] ?? null,
+                        'participants'  => $meetingData['participants'] ?? [],
+                        'lead_id'       => $lead->id,
+                    ],
+                );
+            } else {
+                $lead = $this->salesOwnerTransferService->transfer($lead, $newOwnerId, $currentUser);
+            }
+        } catch (AuthorizationException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 403);
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            return response()->json([
+                'message' => collect($exception->errors())->flatten()->first() ?: 'The selected user is not valid.',
+                'errors'  => $exception->errors(),
+            ], 422);
+        }
+
+        $lead->loadMissing('user');
+
+        return response()->json([
+            'message' => $assignmentMode === 'meeting'
+                ? 'Meeting scheduled and sales owner changed successfully.'
+                : 'Sales owner changed successfully.',
+            'lead' => [
+                'id'         => $lead->id,
+                'user_id'    => $lead->user_id,
+                'user_name'  => $lead->user?->name ?? '',
+                'user_role'  => $this->salesOwnerTransferService->ownerRoleName((int) $lead->user_id),
+                'user_label' => $this->salesOwnerTransferService->ownerLabel((int) $lead->user_id),
+                'lead_pipeline_stage_id' => $lead->lead_pipeline_stage_id,
+            ],
+        ]);
+    }
+
+    protected function applySalesOwnerTransferFromPayload(Lead $lead, array &$data): JsonResponse|RedirectResponse|null
+    {
+        if (! array_key_exists('user_id', $data)) {
+            return null;
+        }
+
+        $newOwnerId = (int) $data['user_id'];
+
+        unset($data['user_id']);
+
+        if (! $newOwnerId || (int) $lead->user_id === $newOwnerId) {
+            return null;
+        }
+
+        if (! bouncer()->hasPermission(lead_permission('edit'))) {
+            return $this->salesOwnerTransferErrorResponse(
+                'You do not have permission to change the sales owner of this lead.',
+                [],
+                403
+            );
+        }
+
+        try {
+            $this->salesOwnerTransferService->transfer($lead, $newOwnerId, auth()->guard('user')->user());
+        } catch (AuthorizationException $exception) {
+            return $this->salesOwnerTransferErrorResponse($exception->getMessage(), [], 403);
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            return $this->salesOwnerTransferErrorResponse(
+                collect($exception->errors())->flatten()->first() ?: 'The selected user is not valid.',
+                $exception->errors(),
+                422
+            );
+        }
+
+        return null;
+    }
+
+    protected function salesOwnerTransferErrorResponse(
+        string $message,
+        array $errors = [],
+        int $status = 422,
+    ): JsonResponse|RedirectResponse {
+        if (request()->ajax() || request()->expectsJson()) {
+            return response()->json([
+                'message' => $message,
+                'errors'  => $errors,
+            ], $status);
+        }
+
+        session()->flash('error', $message);
+
+        return redirect()->back()->withErrors($errors ?: ['user_id' => $message])->withInput();
+    }
+
     protected function isSdrUser(): bool
     {
         return $this->sourceAccessService->isSdrUser();
@@ -1504,12 +1748,18 @@ class LeadController extends Controller
     }
 
     /**
-     * Resolve and validate LinkedIn working profile for LGE lead create/update payloads.
+     * Resolve and validate the working profile only for LinkedIn-source leads.
      *
      * @throws \Illuminate\Validation\ValidationException
      */
     protected function applyLinkedInProfileToLeadData(array &$data, ?int $batchProfileId = null): void
     {
+        if (! $this->sourceRepository->isLinkedInSource((int) ($data['lead_source_id'] ?? 0))) {
+            $data['linkedin_profile_id'] = null;
+
+            return;
+        }
+
         $user = auth()->guard('user')->user();
         $ownerUserId = (int) ($user?->id ?? 0);
         $entry = $this->findLinkedInEntryBySourceLink($data['source_link'] ?? null);
@@ -1626,9 +1876,14 @@ class LeadController extends Controller
         return lead_variant() === 'lge' || $this->sourceAccessService->isLgeUser();
     }
 
+    protected function isBdeUser(): bool
+    {
+        return lead_variant() === 'bde' || $this->sourceAccessService->isBdeUser();
+    }
+
     protected function isCallingRoleUser(): bool
     {
-        return $this->isSdrUser() || $this->isLgeUser();
+        return $this->isBdeUser() || $this->isSdrUser() || $this->isLgeUser();
     }
 
     /**
@@ -1807,6 +2062,10 @@ class LeadController extends Controller
             unset($data['person'], $data['organization_id'], $data['organization_name']);
         }
 
+        if ($response = $this->applySalesOwnerTransferFromPayload($existingLead, $data)) {
+            return $response;
+        }
+
         if (isset($data['lead_pipeline_stage_id'])) {
             $stage = $this->stageRepository->findOrFail($data['lead_pipeline_stage_id']);
 
@@ -1833,15 +2092,19 @@ class LeadController extends Controller
             $data['lead_pipeline_stage_id'] = $stage->id;
         }
 
-        $lead = $this->leadRepository->update($data, $id);
+        $lead = DB::transaction(function () use ($data, $id) {
+            $lead = $this->leadRepository->update($data, $id);
 
-        $this->syncLeadTags($lead, $data['tags'] ?? []);
+            $this->syncLeadTags($lead, $data['tags'] ?? []);
 
-        if (array_key_exists('services', $data)) {
-            $this->syncLeadServices($lead, $data['services']);
-        }
+            if (array_key_exists('services', $data)) {
+                $this->syncLeadServices($lead, $data['services']);
+            }
 
-        $this->syncSourceTagForLead($lead);
+            $this->syncSourceTagForLead($lead);
+
+            return $lead;
+        });
 
         Event::dispatch('lead.update.after', $lead);
 
@@ -1875,7 +2138,8 @@ class LeadController extends Controller
             || bouncer()->hasPermission('lge_leads.create')
             || bouncer()->hasPermission('lge_leads.edit')
             || bouncer()->hasPermission('lead_clouser_leads.edit')
-            || $this->isSdrUser();
+            || $this->isSdrUser()
+            || $this->isLgeUser();
 
         abort_unless($canCreate, 403);
 
@@ -1892,6 +2156,7 @@ class LeadController extends Controller
         $service = $this->serviceRepository->create([
             'name'       => request('name'),
             'sort_order' => $sortOrder,
+            'is_show'    => false,
         ]);
 
         return response()->json([
@@ -1921,6 +2186,16 @@ class LeadController extends Controller
             return response()->json([
                 'message' => trans('admin::app.leads.locked-fields'),
             ], 403);
+        }
+
+        if ($response = $this->applySalesOwnerTransferFromPayload($lead, $data)) {
+            return $response;
+        }
+
+        if (empty($data)) {
+            return response()->json([
+                'message' => trans('admin::app.leads.update-success'),
+            ]);
         }
 
         if (array_key_exists('services', $data) || array_key_exists('service_offered', $data)) {
@@ -2008,7 +2283,7 @@ class LeadController extends Controller
 
             if ($this->isCallingRoleUser() && $this->stageIsBeyondMeeting($lead, $stage)) {
                 return response()->json([
-                    'message' => 'You can move SDR/LGE leads up to Meeting only.',
+                    'message' => 'You can move BDE/SDR/LGE leads up to Meeting only.',
                 ], 403);
             }
 
@@ -2050,11 +2325,7 @@ class LeadController extends Controller
                 $handoffSdrUserId = (int) request()->input('sdr_user_id');
             }
 
-            if (
-                $stage->code === 'meeting'
-                && $this->isCallingRoleUser()
-                && request()->filled('assigned_user_id')
-            ) {
+            if ($stage->code === 'meeting' && $this->isCallingRoleUser()) {
                 $this->validate(request(), [
                     'assigned_user_id' => [
                         'required',
@@ -2098,19 +2369,30 @@ class LeadController extends Controller
                 $attributes[] = 'user_id';
             }
 
+            $oldSalesOwnerId = $lead->user_id ? (int) $lead->user_id : null;
+
             if ($assignedMeetingOwnerId) {
                 $payload['user_id'] = $assignedMeetingOwnerId;
+                $payload['lead_owner_id'] = $assignedMeetingOwnerId;
                 $attributes[] = 'user_id';
-
-                if (empty($lead->lead_owner_id)) {
-                    $payload['lead_owner_id'] = auth()->guard('user')->id();
-                    $attributes[] = 'lead_owner_id';
-                }
+                $attributes[] = 'lead_owner_id';
             }
 
             $attributes = array_values(array_unique($attributes));
 
             $lead = $this->leadRepository->update($payload, $id, $attributes);
+
+            if ($assignedMeetingOwnerId && $oldSalesOwnerId && $oldSalesOwnerId !== $assignedMeetingOwnerId) {
+                DB::table('lead_forwards')->insert([
+                    'lead_id'      => $lead->id,
+                    'from_user_id' => $oldSalesOwnerId,
+                    'to_user_id'   => $assignedMeetingOwnerId,
+                    'forward_type' => SalesOwnerTransferService::TYPE_SALES_OWNER_TRANSFER,
+                    'forwarded_at' => now(),
+                    'created_at'   => now(),
+                    'updated_at'   => now(),
+                ]);
+            }
 
             if ($stage->code === 'follow-up' && request()->filled('followup_mode')) {
                 $mode = request()->input('followup_mode');
@@ -2386,7 +2668,14 @@ class LeadController extends Controller
         $results = $repository
             ->scopeQuery(function ($query) use ($limit, $queryTerm) {
                 $this->sourceAccessService->applyLeadOwnerVisibilityScope($query);
+
                 $this->sourceAccessService->applyLeadQueryScope($query);
+
+                $this->addAssignedByForKanban($query);
+
+                if (in_array(lead_variant(), ['bde', 'sdr', 'lge'], true)) {
+                    $this->addForwardedOriginFlagForKanban($query);
+                }
 
                 if ($queryTerm !== '') {
                     $this->applyKanbanSearch($query, $queryTerm);
@@ -2502,18 +2791,32 @@ class LeadController extends Controller
      */
     public function addProduct(int $leadId): JsonResponse
     {
+        $lead = $this->leadRepository->findOrFail($leadId);
+
+        if (! $this->sourceAccessService->canEditLead($lead)) {
+            return response()->json([
+                'message' => trans('admin::app.leads.source-access-denied'),
+            ], 403);
+        }
+
+        $data = request()->validate([
+            'product_id' => ['required', 'integer', 'exists:products,id'],
+            'price'      => ['required', 'numeric', 'min:0'],
+            'quantity'   => ['required', 'numeric', 'min:0'],
+        ]);
+
         $product = $this->productRepository->updateOrCreate(
             [
                 'lead_id'    => $leadId,
-                'product_id' => request()->input('product_id'),
+                'product_id' => $data['product_id'],
             ],
-            array_merge(
-                request()->all(),
-                [
-                    'lead_id' => $leadId,
-                    'amount'  => request()->input('price') * request()->input('quantity'),
-                ],
-            )
+            [
+                'lead_id'    => $leadId,
+                'product_id' => $data['product_id'],
+                'price'      => $data['price'],
+                'quantity'   => $data['quantity'],
+                'amount'     => $data['price'] * $data['quantity'],
+            ]
         );
 
         return response()->json([
@@ -2527,12 +2830,24 @@ class LeadController extends Controller
      */
     public function removeProduct(int $id): JsonResponse
     {
+        $lead = $this->leadRepository->findOrFail($id);
+
+        if (! $this->sourceAccessService->canEditLead($lead)) {
+            return response()->json([
+                'message' => trans('admin::app.leads.source-access-denied'),
+            ], 403);
+        }
+
+        $data = request()->validate([
+            'product_id' => ['required', 'integer', 'exists:products,id'],
+        ]);
+
         try {
             Event::dispatch('lead.product.delete.before', $id);
 
             $this->productRepository->deleteWhere([
                 'lead_id'    => $id,
-                'product_id' => request()->input('product_id'),
+                'product_id' => $data['product_id'],
             ]);
 
             Event::dispatch('lead.product.delete.after', $id);
@@ -2841,8 +3156,13 @@ class LeadController extends Controller
     /**
      * Sync tag names on a lead.
      */
-    private function syncLeadTags($lead, array $tagNames): void
+    private function syncLeadTags($lead, array|string $tagNames): void
     {
+        // Convert string to array if needed
+        if (is_string($tagNames)) {
+            $tagNames = $tagNames ? explode(',', $tagNames) : [];
+        }
+
         $oldTags = $lead->tags()->pluck('name')->sort()->values()->implode(', ');
 
         $tagIds = collect($tagNames)
@@ -2959,18 +3279,69 @@ class LeadController extends Controller
             ->values()
             ->all();
 
-        $oldServices = $lead->services()->orderBy('name')->pluck('name')->implode(', ');
+        if (! empty($ids)) {
+            $otherServiceId = DB::table('services')
+                ->whereRaw('LOWER(TRIM(name)) = ?', ['other'])
+                ->value('id');
 
-        $lead->services()->sync($ids);
+            if ($otherServiceId) {
+                $ids = array_values(array_filter(
+                    $ids,
+                    fn ($id) => (int) $id !== (int) $otherServiceId
+                ));
+            }
+        }
 
-        $newServices = $lead->services()->orderBy('name')->pluck('name')->implode(', ');
+        if (! empty($ids)) {
+            $existingIds = DB::table('services')
+                ->whereIn('id', $ids)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
 
-        \Webkul\Lead\Models\Lead::storeSystemActivity(
-            $lead,
-            'Services Offered',
-            $oldServices !== '' ? $oldServices : null,
-            $newServices !== '' ? $newServices : null
-        );
+            $invalidIds = array_values(array_diff($ids, $existingIds));
+
+            if (! empty($invalidIds)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'services' => ['One or more selected services are not valid.'],
+                ]);
+            }
+
+            $existingLookup = array_flip($existingIds);
+
+            $ids = array_values(array_filter($ids, fn ($id) => isset($existingLookup[$id])));
+        }
+
+        $oldIds = $lead->services()
+            ->pluck('services.id')
+            ->map(fn ($id) => (int) $id)
+            ->sort()
+            ->values()
+            ->all();
+
+        $newIds = collect($ids)
+            ->sort()
+            ->values()
+            ->all();
+
+        if ($oldIds === $newIds) {
+            return;
+        }
+
+        DB::transaction(function () use ($lead, $ids) {
+            $oldServices = $lead->services()->orderBy('name')->pluck('name')->implode(', ');
+
+            $lead->services()->sync($ids);
+
+            $newServices = $lead->services()->orderBy('name')->pluck('name')->implode(', ');
+
+            \Webkul\Lead\Models\Lead::storeSystemActivity(
+                $lead,
+                'Services Offered',
+                $oldServices !== '' ? $oldServices : null,
+                $newServices !== '' ? $newServices : null
+            );
+        });
     }
 
     protected function requiredImportColumns(): array
@@ -3087,7 +3458,7 @@ class LeadController extends Controller
         return $value;
     }
 
-    protected function validateImportRow(array $row, bool $skipSalesOwnerEmail = false, ?int $batchLinkedInProfileId = null): array
+    protected function validateImportRow(array $row, bool $skipSalesOwnerEmail = false, ?int $batchLinkedInProfileId = null, int $sourceId = 0): array
     {
         $errors = [];
 
@@ -3097,7 +3468,7 @@ class LeadController extends Controller
             }
         }
 
-        if (lead_variant() === 'lge' && filled($row['source_link'] ?? null)) {
+        if ($this->sourceRepository->isLinkedInSource($sourceId)) {
             $profileId = $this->resolveImportedLinkedInProfileId($row, $batchLinkedInProfileId);
 
             if ($profileId <= 0) {
@@ -3142,6 +3513,7 @@ class LeadController extends Controller
         if (
             ! $skipSalesOwnerEmail
             && lead_variant() !== 'lge'
+            && lead_variant() !== 'bde'
             && filled($row['sales_owner_email'] ?? null)
             && ! $this->resolveUserId($row['sales_owner_email'])
         ) {
@@ -3214,8 +3586,10 @@ class LeadController extends Controller
             ];
         }
 
+        $importerOwnsLead = in_array(lead_variant(), ['bde', 'lge', 'sdr'], true);
+
         $ownerId = $assigneeUserId
-            ?? (in_array(lead_variant(), ['lge', 'sdr'], true)
+            ?? ($importerOwnsLead
                 ? auth()->guard('user')->id()
                 : (filled($row['sales_owner_email'] ?? null)
                     ? $this->resolveUserId($row['sales_owner_email'])
@@ -3234,7 +3608,7 @@ class LeadController extends Controller
             'source_link'              => $this->nullableImportValue($row['source_link'] ?? null),
             'user_id'                  => $ownerId,
             'lead_owner_id'            => $assigneeUserId
-                ?? (in_array(lead_variant(), ['lge', 'sdr'], true)
+                ?? ($importerOwnsLead
                     ? auth()->guard('user')->id()
                     : null),
             'lead_pipeline_id'         => $pipeline->id,
@@ -3258,7 +3632,7 @@ class LeadController extends Controller
             $lead['industry'] = $industryId;
         }
 
-        if (lead_variant() === 'lge' && filled($row['source_link'] ?? null)) {
+        if ($this->sourceRepository->isLinkedInSource($leadSourceId)) {
             $profileId = $this->resolveImportedLinkedInProfileId($row, $batchLinkedInProfileId);
 
             if ($profileId <= 0) {
@@ -3382,7 +3756,7 @@ class LeadController extends Controller
      */
     protected function validatedLgeImportProfileId(): int|null|JsonResponse|RedirectResponse
     {
-        if (lead_variant() !== 'lge') {
+        if (! $this->sourceRepository->isLinkedInSource((int) request()->input('lead_source_id', 0))) {
             return null;
         }
 
@@ -3548,7 +3922,7 @@ class LeadController extends Controller
     }
 
     /**
-     * Skip when company + email + phone all match a prior row or an existing lead.
+     * Skip when any duplicate company, email, or phone is found.
      *
      * @param  array<int, string>  $seenDuplicateKeys
      */
@@ -3561,13 +3935,13 @@ class LeadController extends Controller
         }
 
         if (array_intersect($keys, $seenDuplicateKeys)) {
-            return 'skipped duplicate lead (same company, email, and phone in this file).';
+            return 'Duplicate lead skipped: matching company/email/phone already exists in this import file.';
         }
 
-        if ($this->leadExistsWithCompanyEmailPhone($rowData)) {
+        if ($this->leadExistsWithAnyImportIdentity($keys)) {
             array_push($seenDuplicateKeys, ...$keys);
 
-            return 'skipped duplicate lead (same company, email, and phone already exist).';
+            return 'Duplicate lead skipped: matching company/email/phone already exists.';
         }
 
         array_push($seenDuplicateKeys, ...$keys);
@@ -3577,17 +3951,7 @@ class LeadController extends Controller
 
     protected function importDuplicateKeyFromRow(array $rowData): ?string
     {
-        $company = $this->normalizeImportCompanyName(
-            $rowData['companies'] ?? $rowData['title'] ?? $rowData['company'] ?? null
-        );
-        $email = $this->normalizeImportEmail($rowData['email'] ?? null);
-        $phones = ContactPhoneCollection::compareKeys($rowData['phone'] ?? null);
-
-        if ($company === null || $email === null || empty($phones)) {
-            return null;
-        }
-
-        return $company.'|'.$email.'|'.implode(',', $phones);
+        return $this->importDuplicateKeysFromRow($rowData)[0] ?? null;
     }
 
     /**
@@ -3595,20 +3959,25 @@ class LeadController extends Controller
      */
     protected function importDuplicateKeysFromRow(array $rowData): array
     {
+        $keys = [];
+
         $company = $this->normalizeImportCompanyName(
             $rowData['companies'] ?? $rowData['title'] ?? $rowData['company'] ?? null
         );
-        $email = $this->normalizeImportEmail($rowData['email'] ?? null);
-        $phones = ContactPhoneCollection::compareKeys($rowData['phone'] ?? null);
 
-        if ($company === null || $email === null || empty($phones)) {
-            return [];
+        if ($company !== null) {
+            $keys[] = 'company:'.$company;
         }
 
-        return array_map(
-            fn (string $phone) => $company.'|'.$email.'|'.$phone,
-            $phones
-        );
+        foreach ($this->importEmailKeys($rowData['email'] ?? null) as $email) {
+            $keys[] = 'email:'.$email;
+        }
+
+        foreach (ContactPhoneCollection::compareKeys($rowData['phone'] ?? null) as $phone) {
+            $keys[] = 'phone:'.$phone;
+        }
+
+        return array_values(array_unique($keys));
     }
 
     protected function normalizeImportCompanyName($value): ?string
@@ -3648,52 +4017,153 @@ class LeadController extends Controller
         return $digits;
     }
 
-    protected function leadExistsWithCompanyEmailPhone(array $rowData): bool
+    /**
+     * @param  array<int, string>  $keys
+     */
+    protected function leadExistsWithAnyImportIdentity(array $keys): bool
     {
-        $company = $this->normalizeImportCompanyName(
-            $rowData['companies'] ?? $rowData['title'] ?? $rowData['company'] ?? null
-        );
-        $email = $this->normalizeImportEmail($rowData['email'] ?? null);
-        $phones = ContactPhoneCollection::compareKeys($rowData['phone'] ?? null);
-
-        if ($company === null || $email === null || empty($phones)) {
+        if (empty($keys)) {
             return false;
         }
 
-        $organizationIds = DB::table('organizations')
-            ->whereRaw('LOWER(TRIM(name)) = ?', [$company])
-            ->pluck('id');
+        $index = $this->importDuplicateIndex();
 
-        if ($organizationIds->isEmpty()) {
-            return false;
-        }
+        foreach ($keys as $key) {
+            [$type, $value] = array_pad(explode(':', $key, 2), 2, null);
 
-        $candidates = DB::table('leads')
-            ->join('persons', 'leads.person_id', '=', 'persons.id')
-            ->whereNull('leads.deleted_at')
-            ->whereIn('leads.organization_id', $organizationIds->all())
-            ->whereNotNull('leads.person_id')
-            ->select('persons.emails', 'persons.contact_numbers')
-            ->get();
-
-        foreach ($candidates as $candidate) {
-            $emails = is_string($candidate->emails)
-                ? (json_decode($candidate->emails, true) ?: [])
-                : (array) $candidate->emails;
-            $candidatePhones = ContactPhoneCollection::compareKeys(
-                is_string($candidate->contact_numbers)
-                    ? (json_decode($candidate->contact_numbers, true) ?: [])
-                    : (array) $candidate->contact_numbers
-            );
-
-            $candidateEmail = $this->normalizeImportEmail($emails[0]['value'] ?? null);
-
-            if ($candidateEmail === $email && array_intersect($phones, $candidatePhones)) {
+            if ($value !== null && isset($index[$type][$value])) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    protected function importDuplicateIndex(): array
+    {
+        if ($this->importDuplicateIndex !== null) {
+            return $this->importDuplicateIndex;
+        }
+
+        $index = [
+            'company' => [],
+            'email'   => [],
+            'phone'   => [],
+        ];
+
+        DB::table('organizations')
+            ->whereNotNull('name')
+            ->orderBy('id')
+            ->select('id', 'name')
+            ->chunkById(500, function ($organizations) use (&$index) {
+                foreach ($organizations as $organization) {
+                    $company = $this->normalizeImportCompanyName($organization->name);
+
+                    if ($company !== null) {
+                        $index['company'][$company] = true;
+                    }
+                }
+            });
+
+        DB::table('leads')
+            ->whereNull('deleted_at')
+            ->whereNull('organization_id')
+            ->whereNotNull('title')
+            ->orderBy('id')
+            ->select('id', 'title')
+            ->chunkById(500, function ($leads) use (&$index) {
+                foreach ($leads as $lead) {
+                    $company = $this->normalizeImportCompanyName($lead->title);
+
+                    if ($company !== null) {
+                        $index['company'][$company] = true;
+                    }
+                }
+            });
+
+        DB::table('persons')
+            ->where(function ($query) {
+                $query->whereNotNull('emails')
+                    ->orWhereNotNull('contact_numbers');
+            })
+            ->orderBy('id')
+            ->select('id', 'emails', 'contact_numbers')
+            ->chunkById(500, function ($persons) use (&$index) {
+                foreach ($persons as $person) {
+                    foreach ($this->importEmailKeys($this->decodePersonContactArray($person->emails)) as $email) {
+                        $index['email'][$email] = true;
+                    }
+
+                    foreach (ContactPhoneCollection::compareKeys($this->decodePersonContactArray($person->contact_numbers)) as $phone) {
+                        $index['phone'][$phone] = true;
+                    }
+                }
+            });
+
+        return $this->importDuplicateIndex = $index;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function importEmailKeys($value): array
+    {
+        if (is_string($value)) {
+            $values = preg_split('/[,;]+/', $value) ?: [];
+        } elseif (is_array($value)) {
+            $values = $value;
+        } else {
+            $values = [];
+        }
+
+        return collect($values)
+            ->map(function ($item) {
+                return $this->normalizeImportEmail(is_array($item) ? ($item['value'] ?? null) : $item);
+            })
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    protected function leadExistsWithCompanyEmailPhone(array $rowData): bool
+    {
+        $legacyKeys = $this->importDuplicateKeysFromRow($rowData);
+
+        if (empty($legacyKeys)) {
+            return false;
+        }
+
+        $hasCompany = false;
+        $hasEmail = false;
+        $hasPhone = false;
+
+        foreach ($legacyKeys as $key) {
+            if (str_starts_with($key, 'company:')) {
+                $hasCompany = true;
+            } elseif (str_starts_with($key, 'email:')) {
+                $hasEmail = true;
+            } elseif (str_starts_with($key, 'phone:')) {
+                $hasPhone = true;
+            }
+        }
+
+        return $hasCompany && $hasEmail && $hasPhone && $this->leadExistsWithAnyImportIdentity($legacyKeys);
+    }
+
+    protected function decodePersonContactArray($value): array
+    {
+        if (is_array($value)) {
+            return $value;
+        }
+
+        if (is_string($value) && $value !== '') {
+            $decoded = json_decode($value, true);
+
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return [];
     }
 
     /**

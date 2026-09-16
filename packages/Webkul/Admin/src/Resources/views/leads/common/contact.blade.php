@@ -41,6 +41,7 @@
                     :placeholder="trans('admin::app.leads.common.contact.name')"
                     @on-selected="addPerson"
                     :can-add-new="true"
+                    create-url="{{ route('admin.contacts.persons.store') }}"
                 />
 
                 <x-admin::form.control-group.control
@@ -76,7 +77,7 @@
             <v-email-component
                 :attribute="{'id': person?.id, 'code': 'person[emails]', 'name': 'Email'}"
                 :value="person.emails"
-                :is-disabled="! canEditContactDetails || !! person?.id"
+                :is-disabled="! canEditContactDetails || (!! person?.id && ! isNewlyCreatedPerson)"
             ></v-email-component>
         </x-admin::form.control-group>
 
@@ -91,7 +92,7 @@
             <v-phone-component
                 :attribute="{'id': person?.id, 'code': 'person[contact_numbers]', 'name': 'Contact Numbers'}"
                 :value="person.contact_numbers"
-                :is-disabled="! canEditContactDetails || !! person?.id"
+                :is-disabled="! canEditContactDetails || (!! person?.id && ! isNewlyCreatedPerson)"
             ></v-phone-component>
         </x-admin::form.control-group>
 
@@ -104,7 +105,7 @@
             @php
                 $organizationAttribute = app('Webkul\Attribute\Repositories\AttributeRepository')->findOneWhere([
                     'entity_type' => 'persons',
-                    'code'        => 'organization_id'
+                    'code'        => 'organization_id',
                 ]);
 
                 // Display-only lookup field name so we can submit real company values separately.
@@ -119,6 +120,7 @@
                 :value="person.organization"
                 :is-disabled="isCompanyDisabled"
                 :can-add-new="! isCompanyDisabled"
+                create-url="{{ route('admin.contacts.organizations.store') }}"
                 @lookup-added="onCompanySelected"
                 @lookup-removed="onCompanyRemoved"
             ></v-lookup-component>
@@ -213,6 +215,8 @@
                 return {
                     is_searching: false,
 
+                    isNewlyCreatedPerson: Boolean(this.data?.is_newly_created || this.data?.isNewlyCreated),
+
                     person: this.normalizePerson(this.data),
 
                     persons: [],
@@ -222,6 +226,7 @@
             watch: {
                 data: {
                     handler(value) {
+                        this.isNewlyCreatedPerson = Boolean(value?.is_newly_created || value?.isNewlyCreated);
                         this.person = this.normalizePerson(value);
                     },
                     deep: true,
@@ -284,8 +289,20 @@
                     };
                 },
 
-                addPerson (person) {
-                    this.person = this.normalizePerson(person);
+                addPerson(person) {
+                    const isNewlyCreated = Boolean(person?.is_newly_created || person?.isNewlyCreated);
+
+                    this.isNewlyCreatedPerson = isNewlyCreated;
+
+                    this.person = this.normalizePerson({
+                        ...person,
+                        emails: Array.isArray(person?.emails) && person.emails.length
+                            ? person.emails
+                            : [{ value: '', label: 'work' }],
+                        contact_numbers: Array.isArray(person?.contact_numbers) && person.contact_numbers.length
+                            ? person.contact_numbers
+                            : [{ value: '', label: 'work' }],
+                    });
                 },
 
                 onCompanySelected(company) {
@@ -300,6 +317,7 @@
                             id: company.id,
                             name: company.name,
                         };
+
                         this.person.organization_id = company.id;
                         this.person.organization_name = '';
 
@@ -310,6 +328,7 @@
                         id: '',
                         name: company.name,
                     };
+
                     this.person.organization_id = null;
                     this.person.organization_name = company.name;
                 },

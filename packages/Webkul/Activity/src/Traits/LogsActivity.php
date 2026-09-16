@@ -124,6 +124,38 @@ trait LogsActivity
         mixed $newValue,
         mixed $attribute = null
     ): void {
+        static::storeSystemActivityPayload($entity, $attributeLabel, $oldValue, $newValue, $attribute);
+    }
+
+    /**
+     * Persist a system changelog activity with separate raw values and labels.
+     */
+    public static function storeSystemActivityWithLabels(
+        $entity,
+        string $attributeLabel,
+        mixed $oldValue,
+        ?string $oldLabel,
+        mixed $newValue,
+        ?string $newLabel
+    ): void {
+        static::storeSystemActivityPayload(
+            $entity,
+            $attributeLabel,
+            ['value' => $oldValue, 'label' => $oldLabel],
+            ['value' => $newValue, 'label' => $newLabel],
+        );
+    }
+
+    /**
+     * Persist a system changelog activity on an entity that has an activities relation.
+     */
+    protected static function storeSystemActivityPayload(
+        $entity,
+        string $attributeLabel,
+        mixed $oldValue,
+        mixed $newValue,
+        mixed $attribute = null
+    ): void {
         if (! $entity || ! method_exists($entity, 'activities')) {
             return;
         }
@@ -138,19 +170,28 @@ trait LogsActivity
             'is_done'    => 1,
             'additional' => json_encode([
                 'attribute' => $attributeLabel,
-                'new'       => [
-                    'value' => $newValue,
-                    'label' => static::getAttributeLabel($newValue, $attribute) ?? static::stringifyLogValue($newValue),
-                ],
-                'old'       => [
-                    'value' => $oldValue,
-                    'label' => static::getAttributeLabel($oldValue, $attribute) ?? static::stringifyLogValue($oldValue),
-                ],
+                'new'       => static::activityValuePayload($newValue, $attribute),
+                'old'       => static::activityValuePayload($oldValue, $attribute),
             ]),
             'user_id'    => auth()->id(),
         ]);
 
         $entity->activities()->attach($activity->id);
+    }
+
+    protected static function activityValuePayload(mixed $value, mixed $attribute = null): array
+    {
+        if (is_array($value) && array_key_exists('value', $value) && array_key_exists('label', $value)) {
+            return [
+                'value' => $value['value'],
+                'label' => $value['label'] ?? static::stringifyLogValue($value['value']),
+            ];
+        }
+
+        return [
+            'value' => $value,
+            'label' => static::getAttributeLabel($value, $attribute) ?? static::stringifyLogValue($value),
+        ];
     }
 
     /**
@@ -227,6 +268,13 @@ trait LogsActivity
 
     protected static function valuesAreEqual(mixed $oldValue, mixed $newValue): bool
     {
+        if (
+            is_array($oldValue) && array_key_exists('value', $oldValue)
+            && is_array($newValue) && array_key_exists('value', $newValue)
+        ) {
+            return static::decodeValueIfJson($oldValue['value']) == static::decodeValueIfJson($newValue['value']);
+        }
+
         return static::decodeValueIfJson($oldValue) == static::decodeValueIfJson($newValue);
     }
 

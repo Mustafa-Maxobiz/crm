@@ -1,7 +1,9 @@
 @php
     $leadsIndexRoute = $leadsIndexRoute ?? 'admin.leads.index';
 
-    $canEditLeadValue = lead_variant() === 'main'
+    $usesMainLeadFields = in_array(lead_variant(), ['main', 'bde'], true);
+
+    $canEditLeadValue = $usesMainLeadFields
         && bouncer()->hasPermission(lead_permission('edit'));
 
     $lockedLeadAttributeCodes = [
@@ -24,7 +26,7 @@
         'title',
     ];
 
-    $showTitleInEditModal = lead_variant() === 'main';
+    $showTitleInEditModal = $usesMainLeadFields;
 
     if (! $canEditLeadValue) {
         $modalExcludedAttributeCodes[] = 'lead_value';
@@ -64,11 +66,11 @@
 
     $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
     $leadForwardService = app(\Webkul\Lead\Services\LeadForwardService::class);
-    $accessibleStages = in_array(lead_variant(), ['sdr', 'lge'], true)
+    $accessibleStages = in_array(lead_variant(), ['bde', 'sdr', 'lge'], true)
         ? $pipeline->stages->values()
         : $sourceAccessService->filterAccessibleStages($pipeline->stages);
 
-    if (in_array(lead_variant(), ['sdr', 'lge'], true)) {
+    if (in_array(lead_variant(), ['bde', 'sdr', 'lge'], true)) {
         $meetingStage = $pipeline->stages->firstWhere('code', 'meeting');
 
         if ($meetingStage) {
@@ -95,15 +97,21 @@
         'service_offered' => [
             'field'    => 'services',
             'multiple' => true,
-            'items'    => app(\Webkul\Lead\Repositories\ServiceRepository::class)->getDropdownOptions(),
+            'items'    => app(\Webkul\Lead\Repositories\ServiceRepository::class)->getDropdownOptions(true),
+        ],
+        'user' => [
+            'field' => 'user_id',
+            'items' => [],
         ],
     ];
 
     $isSdrUser = $sourceAccessService->isSdrUser();
     $isLgeLeadVariant = ($leadVariant ?? 'main') === 'lge';
     $isLgeUser = $sourceAccessService->isLgeUser();
-    $isCallingRoleLeadVariant = in_array($leadVariant ?? 'main', ['sdr', 'lge'], true);
+    $isCallingRoleLeadVariant = in_array($leadVariant ?? 'main', ['bde', 'sdr', 'lge'], true);
+    $isOwnerRestrictedLeadVariant = in_array($leadVariant ?? 'main', ['bde', 'sdr', 'lge'], true);
     $currentUserId = auth()->guard('user')->id();
+    $canManageAllLeadOwners = $sourceAccessService->isAdmin();
     $activeSdrUsers = $isLgeUser
         ? $leadForwardService->activeSdrUsers()
             ->map(fn ($user) => [

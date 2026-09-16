@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use Webkul\Admin\Http\Controllers\SmrtPhone\CallLogController;
+use Webkul\Admin\Http\Controllers\SmrtPhone\SettingsController;
 use Webkul\SmrtPhone\Http\Controllers\WebhookController;
 
 Route::prefix('smrtphone')->group(function () {
@@ -19,5 +20,11 @@ Route::prefix('smrtphone')->group(function () {
         Route::delete('edit/{id}', 'destroy')->name('admin.smrtphone.delete');
 
         Route::post('mass-destroy', 'massDestroy')->name('admin.smrtphone.mass_delete');
+    });
+
+    Route::controller(SettingsController::class)->prefix('settings')->group(function () {
+        Route::get('', 'index')->name('admin.smrtphone.settings');
+
+        Route::put('', 'update')->name('admin.smrtphone.settings.update');
     });
 });

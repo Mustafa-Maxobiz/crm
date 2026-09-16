@@ -5,7 +5,10 @@
 .phpunit.cache/
 .phpunit.result.cache
 .vscode
+.md
+.sh
 .vagrant
+.zip
 *.hot
 /stubs
 /data
@@ -35,3 +38,6 @@ node_modules/
 /test-results/
 /blob-report/
 /playwright/.cache/
+
+*.zip
+.phpunit.cache/

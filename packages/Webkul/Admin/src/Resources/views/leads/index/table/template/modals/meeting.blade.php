@@ -88,9 +88,10 @@
                                         <x-admin::form.control-group.control
                                             type="select"
                                             name="assigned_user_id"
+                                            v-model="selectedMeetingOwnerId"
                                             rules="required"
                                             label="Assigned Owner"
-                                            ::disabled="meetingOwnersLoading || meetingOwnersEmpty"
+                                            ::disabled="meetingOwnersLoading || meetingOwnersEmpty || !! closureMeetingTransferRecord"
                                         >
                                             <option value="">
                                                 @{{ meetingOwnersLoading ? 'Loading eligible owners...' : 'Select Admin / Lead User' }}
@@ -126,6 +127,7 @@
                                         :show-all-users="true"
                                         :users-only="true"
                                         :user-role-names="['administrator', 'lead', 'lead clouser', 'lead closer']"
+                                        :excluded-user-ids="[selectedMeetingOwnerId].filter(Boolean)"
                                     ></v-activity-participants>
 
                                     <p

@@ -24,13 +24,24 @@ return [
     ],
 
     /**
+     * BD Executive Dashboard.
+     */
+    [
+        'key'        => 'bde_dashboard',
+        'name'       => 'admin::app.layouts.dashboard',
+        'route'      => 'admin.dashboard.bde',
+        'sort'       => 3,
+        'icon-class' => 'icon-dashboard',
+    ],
+
+    /**
      * Lead Clouser Dashboard.
      */
     [
         'key'        => 'lead_clouser_dashboard',
         'name'       => 'admin::app.layouts.dashboard',
         'route'      => 'admin.dashboard.lead_clouser',
-        'sort'       => 3,
+        'sort'       => 4,
         'icon-class' => 'icon-dashboard',
     ],
 
@@ -41,7 +52,7 @@ return [
         'key'        => 'lge_dashboard',
         'name'       => 'admin::app.layouts.dashboard',
         'route'      => 'admin.dashboard.lge',
-        'sort'       => 4,
+        'sort'       => 5,
         'icon-class' => 'icon-dashboard',
     ],
 
@@ -52,7 +63,18 @@ return [
         'key'        => 'leads',
         'name'       => 'admin::app.layouts.leads',
         'route'      => 'admin.leads.index',
-        'sort'       => 5,
+        'sort'       => 6,
+        'icon-class' => 'icon-leads',
+    ],
+
+    /**
+     * BD Executive Leads.
+     */
+    [
+        'key'        => 'bde_leads',
+        'name'       => 'admin::app.layouts.leads',
+        'route'      => 'admin.leads.bde',
+        'sort'       => 7,
         'icon-class' => 'icon-leads',
     ],
 
@@ -63,7 +85,7 @@ return [
         'key'        => 'lead_clouser_leads',
         'name'       => 'admin::app.layouts.leads',
         'route'      => 'admin.leads.lead_clouser',
-        'sort'       => 6,
+        'sort'       => 8,
         'icon-class' => 'icon-leads',
     ],
 
@@ -74,7 +96,7 @@ return [
         'key'        => 'sdr_leads',
         'name'       => 'admin::app.layouts.leads',
         'route'      => 'admin.leads.sdr',
-        'sort'       => 7,
+        'sort'       => 9,
         'icon-class' => 'icon-leads',
     ],
 
@@ -85,7 +107,7 @@ return [
         'key'        => 'lge_leads',
         'name'       => 'admin::app.layouts.leads',
         'route'      => 'admin.leads.lge',
-        'sort'       => 8,
+        'sort'       => 10,
         'icon-class' => 'icon-leads',
     ],
 
@@ -96,7 +118,7 @@ return [
         'key'        => 'meta_leads',
         'name'       => 'admin::app.layouts.meta-leads',
         'route'      => 'admin.meta_leads.index',
-        'sort'       => 9,
+        'sort'       => 10,
         'icon-class' => 'icon-leads',
     ],
 
@@ -107,7 +129,7 @@ return [
         'key'        => 'linkedin_entries',
         'name'       => 'LinkedIn',
         'route'      => 'admin.linkedin_entries.index',
-        'sort'       => 10,
+        'sort'       => 11,
         'icon-class' => 'icon-leads',
     ],
 

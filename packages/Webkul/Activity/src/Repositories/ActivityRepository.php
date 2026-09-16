@@ -3,6 +3,7 @@
 namespace Webkul\Activity\Repositories;
 
 use Illuminate\Container\Container;
+use Illuminate\Support\Facades\DB;
 use Webkul\Core\Eloquent\Repository;
 
 class ActivityRepository extends Repository
@@ -153,35 +154,61 @@ class ActivityRepository extends Repository
      */
     public function isDurationOverlapping($startFrom, $endFrom, $participants, $id)
     {
-        $queryBuilder = $this->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
-            ->where(function ($query) use ($startFrom, $endFrom) {
-                $query->where([
-                    ['activities.schedule_from', '<=', $startFrom],
-                    ['activities.schedule_to', '>=', $startFrom],
-                ])->orWhere([
-                    ['activities.schedule_from', '>=', $startFrom],
-                    ['activities.schedule_from', '<=', $endFrom],
-                ]);
+        $userIds = collect($participants['users'] ?? [])
+            ->filter(fn ($id) => filled($id))
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $personIds = collect($participants['persons'] ?? [])
+            ->filter(fn ($id) => filled($id))
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($userIds) && empty($personIds)) {
+            return false;
+        }
+
+        $queryBuilder = DB::table('activities')
+            ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
+            ->where('activities.type', 'meeting')
+            ->where('activities.is_done', 0)
+            ->where(function ($query) {
+                $query->whereNull('activities.call_status')
+                    ->orWhere('activities.call_status', 'scheduled');
             })
-            ->where(function ($query) use ($participants) {
-                if (is_null($participants)) {
-                    return;
+            ->where('activities.schedule_from', '<', $endFrom)
+            ->where('activities.schedule_to', '>', $startFrom)
+            ->where(function ($query) use ($userIds, $personIds) {
+                $hasUserCondition = false;
+
+                if (! empty($userIds)) {
+                    $query
+                        ->whereIn('activities.user_id', $userIds)
+                        ->orWhereIn('activity_participants.user_id', $userIds);
+
+                    $hasUserCondition = true;
                 }
 
-                if (isset($participants['users'])) {
-                    $query->orWhereIn('activity_participants.user_id', $participants['users']);
-                }
+                if (! empty($personIds)) {
+                    $method = $hasUserCondition ? 'orWhereIn' : 'whereIn';
 
-                if (isset($participants['persons'])) {
-                    $query->orWhereIn('activity_participants.person_id', $participants['persons']);
+                    $query->{$method}('activity_participants.person_id', $personIds);
                 }
-            })
-            ->groupBy('activities.id');
+            });
 
         if (! is_null($id)) {
             $queryBuilder->where('activities.id', '!=', $id);
         }
 
-        return $queryBuilder->count() ? true : false;
+        return $queryBuilder
+            ->select('activities.id')
+            ->distinct()
+            ->exists();
     }
 }

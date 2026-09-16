@@ -5,6 +5,7 @@ namespace Webkul\Admin\Http\Controllers\Lead;
 use Illuminate\Support\Facades\Event;
 use Webkul\Admin\Http\Controllers\Controller;
 use Webkul\Lead\Repositories\LeadRepository;
+use Webkul\Lead\Services\SourceAccessService;
 use Webkul\Quote\Repositories\QuoteRepository;
 
 class QuoteController extends Controller
@@ -16,7 +17,8 @@ class QuoteController extends Controller
      */
     public function __construct(
         protected LeadRepository $leadRepository,
-        protected QuoteRepository $quoteRepository
+        protected QuoteRepository $quoteRepository,
+        protected SourceAccessService $sourceAccessService,
     ) {}
 
     /**
@@ -29,7 +31,13 @@ class QuoteController extends Controller
     {
         Event::dispatch('leads.quote.create.before');
 
-        $lead = $this->leadRepository->find($id);
+        $lead = $this->leadRepository->findOrFail($id);
+
+        if (! $this->sourceAccessService->canEditLead($lead)) {
+            return response()->json([
+                'message' => trans('admin::app.leads.source-access-denied'),
+            ], 403);
+        }
 
         if (! $lead->quotes->contains(request('id'))) {
             $lead->quotes()->attach(request('id'));
@@ -53,9 +61,17 @@ class QuoteController extends Controller
     {
         Event::dispatch('leads.quote.delete.before', $leadId);
 
-        $lead = $this->leadRepository->find($leadId);
+        $lead = $this->leadRepository->findOrFail($leadId);
 
-        $lead->quotes()->detach(request('quote_id'));
+        if (! $this->sourceAccessService->canEditLead($lead)) {
+            return response()->json([
+                'message' => trans('admin::app.leads.source-access-denied'),
+            ], 403);
+        }
+
+        $quoteId = request('quote_id') ?: request()->route('quote_id');
+
+        $lead->quotes()->detach($quoteId);
 
         Event::dispatch('leads.quote.delete.after', $lead);
 

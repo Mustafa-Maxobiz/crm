@@ -4,7 +4,7 @@
         <!-- Sidebar Menu -->
         <x-admin::layouts.sidebar.mobile />
         
-        <a href="{{ route('admin.dashboard.index') }}">
+        <a href="{{ dashboard_route_for_user() }}">
             @if ($logo = core()->getConfigData('general.general.admin_logo.logo_image'))
                 <img
                     class="h-10"

@@ -7,11 +7,13 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Log;
 use Webkul\SmrtPhone\Services\CallLogProcessorService;
+use Webkul\SmrtPhone\Services\SmrtPhoneConfigService;
 
 class WebhookController extends Controller
 {
     public function __construct(
         protected CallLogProcessorService $processor,
+        protected SmrtPhoneConfigService $configService,
     ) {}
 
     public function handle(Request $request): JsonResponse
@@ -22,7 +24,7 @@ class WebhookController extends Controller
             return response()->json(['message' => 'Invalid secret'], 403);
         }
 
-        $payload = $request->all();
+        $payload = $this->webhookPayload($request);
 
         if (empty($payload)) {
             return response()->json(['message' => 'Empty payload'], 422);
@@ -39,6 +41,8 @@ class WebhookController extends Controller
             if (! is_array($eventPayload)) {
                 continue;
             }
+
+            $eventPayload = $this->sanitizePayload($eventPayload);
 
             try {
                 $log = $this->processor->process($eventPayload);
@@ -62,7 +66,7 @@ class WebhookController extends Controller
 
     protected function verifySecret(Request $request): bool
     {
-        $configured = (string) config('smrtphone.webhook_secret');
+        $configured = $this->configService->webhookSecret();
 
         if ($configured === '') {
             return true;
@@ -76,5 +80,28 @@ class WebhookController extends Controller
         );
 
         return hash_equals($configured, $provided);
+    }
+
+    protected function webhookPayload(Request $request): array
+    {
+        if ($request->isJson()) {
+            return $request->json()->all();
+        }
+
+        return $request->request->all();
+    }
+
+    protected function sanitizePayload(array $payload): array
+    {
+        foreach ([
+            'secret',
+            'webhook_secret',
+            'token',
+            'api_key',
+        ] as $key) {
+            unset($payload[$key]);
+        }
+
+        return $payload;
     }
 }
