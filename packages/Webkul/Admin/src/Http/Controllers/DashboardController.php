@@ -11,6 +11,7 @@ use Webkul\Admin\Helpers\Dashboard;
 use Webkul\Lead\Services\LeadForwardService;
 use Webkul\Lead\Services\SourceAccessService;
 use Webkul\Lead\Services\UsStateTimezoneService;
+use Webkul\User\Services\ActiveRoleService;
 
 class DashboardController extends Controller
 {
@@ -47,7 +48,7 @@ class DashboardController extends Controller
     {
         $sourceAccessService = app(SourceAccessService::class);
 
-        if ($this->isPrimaryAdminUser() || $sourceAccessService->isAdmin()) {
+        if ($this->isActiveAdminUser() || $sourceAccessService->isAdmin()) {
             return view('admin::dashboard.index')->with([
                 'startDate' => $this->dashboardHelper->getStartDate(),
                 'endDate'   => $this->dashboardHelper->getEndDate(),
@@ -1063,7 +1064,7 @@ class DashboardController extends Controller
 
     protected function abortUnlessDashboardRole(string $variant): void
     {
-        if ($this->isPrimaryAdminUser()) {
+        if ($this->isActiveAdminUser()) {
             abort(403);
         }
 
@@ -1082,15 +1083,9 @@ class DashboardController extends Controller
         }
     }
 
-    protected function isPrimaryAdminUser(): bool
+    protected function isActiveAdminUser(): bool
     {
-        $user = auth()->guard('user')->user();
-
-        if (! $user || empty($user->role_id)) {
-            return false;
-        }
-
-        $role = DB::table('roles')->where('id', (int) $user->role_id)->first(['name', 'permission_type']);
+        $role = app(ActiveRoleService::class)->getActiveRole(auth()->guard('user')->user());
 
         if (! $role) {
             return false;
