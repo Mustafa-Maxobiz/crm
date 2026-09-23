@@ -181,7 +181,7 @@ class MeetingHandoffService
 
         $serviceIds = $this->getLeadServiceIds($lead);
 
-        if (empty($serviceIds)) {
+        if (count($serviceIds) === 0) {
             return $this->getAllActiveMeetingOwners();
         }
 
@@ -204,7 +204,7 @@ class MeetingHandoffService
 
         $serviceIds = $this->getLeadServiceIds($lead);
 
-        if (empty($serviceIds)) {
+        if (count($serviceIds) === 0) {
             return true;
         }
 
@@ -529,15 +529,16 @@ class MeetingHandoffService
     {
         return collect($rows)
             ->map(fn ($user) => [
-                'id'        => (int) $user->id,
-                'name'      => $user->name,
-                'email'     => $user->email,
+                'id'                      => (int) $user->id,
+                'name'                    => $user->name,
+                'email'                   => $user->email,
                 'role_name'               => $user->role_name,
                 'has_working_hours'       => ! empty($user->working_hour_start_time) && ! empty($user->working_hour_end_time),
                 'working_hour_start_time' => $user->working_hour_start_time,
                 'working_hour_end_time'   => $user->working_hour_end_time,
                 'working_hour_label'      => $this->formatWorkingHourLabel($user->working_hour_start_time ?? null, $user->working_hour_end_time ?? null),
             ])
+            ->unique('id')
             ->values()
             ->all();
     }
