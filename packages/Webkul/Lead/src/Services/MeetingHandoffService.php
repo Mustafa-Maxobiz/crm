@@ -331,6 +331,12 @@ class MeetingHandoffService
     ): Lead {
         $activityData = $this->withAssignedOwnerParticipant($activityData, $assignedUserId, $actorId);
 
+        $this->assertNoMeetingConflict(
+            $assignedUserId,
+            $activityData['schedule_from'] ?? null,
+            $activityData['schedule_to'] ?? null,
+        );
+
         Event::dispatch('activity.create.before');
 
         $activity = $this->activityRepository->create(array_merge($activityData, [
@@ -391,6 +397,63 @@ class MeetingHandoffService
         Event::dispatch('lead.update.after', $lead);
 
         return $lead->fresh(['pipeline.stages', 'stage']);
+    }
+
+    protected function assertNoMeetingConflict(
+        int $assignedUserId,
+        string|Carbon|null $scheduleFrom,
+        string|Carbon|null $scheduleTo,
+        ?int $excludeActivityId = null,
+    ): void {
+        $timezone = config('app.timezone') ?: 'Asia/Karachi';
+
+        if (empty($scheduleFrom) || empty($scheduleTo)) {
+            throw ValidationException::withMessages([
+                'meeting.schedule_from' => ['Please select a valid meeting start and end time.'],
+            ]);
+        }
+
+        $newStart = $scheduleFrom instanceof Carbon
+            ? $scheduleFrom->copy()->timezone($timezone)
+            : Carbon::parse($scheduleFrom, $timezone);
+
+        $newEnd = $scheduleTo instanceof Carbon
+            ? $scheduleTo->copy()->timezone($timezone)
+            : Carbon::parse($scheduleTo, $timezone);
+
+        if ($newStart->greaterThanOrEqualTo($newEnd)) {
+            throw ValidationException::withMessages([
+                'meeting.schedule_to' => ['The meeting end time must be after the start time.'],
+            ]);
+        }
+
+        $newStartForDatabase = $newStart->format('Y-m-d H:i:s');
+        $newEndForDatabase = $newEnd->format('Y-m-d H:i:s');
+
+        $conflictExists = DB::table('activities')
+            ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
+            ->where('activities.type', 'meeting')
+            ->when($excludeActivityId, fn ($query) => $query->where('activities.id', '!=', $excludeActivityId))
+            ->where(function ($query) use ($assignedUserId) {
+                $query
+                    ->where('activities.user_id', $assignedUserId)
+                    ->orWhere('activity_participants.user_id', $assignedUserId);
+            })
+            ->whereNotNull('activities.schedule_from')
+            ->where(function ($query) use ($newStartForDatabase, $newEndForDatabase) {
+                $query
+                    ->where('activities.schedule_from', '<', $newEndForDatabase)
+                    ->whereRaw('COALESCE(activities.schedule_to, activities.schedule_from) > ?', [$newStartForDatabase]);
+            })
+            ->exists();
+
+        if ($conflictExists) {
+            throw ValidationException::withMessages([
+                'meeting.schedule_from' => [
+                    'This user already has a meeting scheduled during this time slot. Please select another time.',
+                ],
+            ]);
+        }
     }
 
     /**
