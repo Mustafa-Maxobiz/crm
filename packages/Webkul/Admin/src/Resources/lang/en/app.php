@@ -26,6 +26,7 @@ return [
         'groups'           => 'Groups',
         'roles'            => 'Roles',
         'users'            => 'Users',
+        'working-hours'    => 'Working Hours',
         'user'             => 'User',
         'automation'       => 'Automation',
         'attributes'       => 'Attributes',
@@ -816,6 +817,19 @@ return [
     ],
 
     'settings' => [
+        'working-hours' => [
+            'index' => [
+                'title'       => 'Working Hours',
+                'description' => 'Set working hours for Admin and Lead Closer users.',
+                'user-name'   => 'User Name',
+                'role'        => 'Role',
+                'start-time'  => 'Start Time',
+                'end-time'    => 'End Time',
+                'action'      => 'Action',
+                'save'        => 'Save',
+                'no-users'    => 'No Admin or Lead Closer users found.',
+            ],
+        ],
         'title' => 'Settings',
 
         'access-scope' => [
@@ -2714,6 +2728,8 @@ return [
         'roles-info'           => 'Add, edit or delete roles from CRM',
         'users'                => 'Users',
         'users-info'           => 'Add, edit or delete users from CRM',
+        'working-hours'       => 'Working Hours',
+        'working-hours-info'  => 'Set daily working hours for Admin and Lead Closer users.',
         'lead'                 => 'Lead',
         'lead-info'            => 'Manage all your leads related settings in the CRM',
         'pipelines'            => 'Pipelines',

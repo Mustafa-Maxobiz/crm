@@ -298,6 +298,13 @@ return [
         'sort'       => 3,
         'icon-class' => 'icon-user',
     ], [
+        'key'        => 'settings.user.working_hours',
+        'name'       => 'admin::app.layouts.working-hours',
+        'info'       => 'admin::app.layouts.working-hours-info',
+        'route'      => 'admin.settings.working_hours.index',
+        'sort'       => 4,
+        'icon-class' => 'icon-clock',
+    ], [
         'key'        => 'settings.lead',
         'name'       => 'admin::app.layouts.lead',
         'info'       => 'admin::app.layouts.lead-info',

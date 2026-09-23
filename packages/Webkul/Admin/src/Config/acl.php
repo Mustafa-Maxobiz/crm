@@ -571,7 +571,7 @@ return [
     ], [
         'key'   => 'settings.user',
         'name'  => 'admin::app.acl.user',
-        'route' => ['admin.settings.groups.index', 'admin.settings.roles.index', 'admin.settings.users.index'],
+        'route' => ['admin.settings.groups.index', 'admin.settings.roles.index', 'admin.settings.users.index', 'admin.settings.working_hours.index'],
         'sort'  => 1,
     ], [
         'key'   => 'settings.user.groups',
@@ -633,6 +633,11 @@ return [
         'name'  => 'admin::app.acl.delete',
         'route' => ['admin.settings.users.delete', 'admin.settings.users.mass_delete'],
         'sort'  => 3,
+    ], [
+        'key'   => 'settings.user.working_hours',
+        'name'  => 'admin::app.acl.working-hours',
+        'route' => ['admin.settings.working_hours.index', 'admin.settings.working_hours.store'],
+        'sort'  => 4,
     ], [
         'key'   => 'settings.lead',
         'name'  => 'admin::app.acl.lead',

@@ -25,6 +25,7 @@ use Webkul\Admin\Http\Controllers\Settings\Warehouse\WarehouseController;
 use Webkul\Admin\Http\Controllers\Settings\WebFormController;
 use Webkul\Admin\Http\Controllers\Settings\WebhookController;
 use Webkul\Admin\Http\Controllers\Settings\WorkflowController;
+use Webkul\Admin\Http\Controllers\WorkingHourController;
 
 /**
  * Settings group routes.
@@ -241,6 +242,16 @@ Route::prefix('settings')->group(function () {
         Route::post('mass-update', 'massUpdate')->name('admin.settings.users.mass_update');
 
         Route::post('mass-destroy', 'massDestroy')->name('admin.settings.users.mass_delete');
+    });
+
+
+    /**
+     * Working Hours Routes.
+     */
+    Route::controller(WorkingHourController::class)->prefix('working-hours')->group(function () {
+        Route::get('', 'index')->name('admin.settings.working_hours.index');
+
+        Route::post('', 'store')->name('admin.settings.working_hours.store');
     });
 
     /**
