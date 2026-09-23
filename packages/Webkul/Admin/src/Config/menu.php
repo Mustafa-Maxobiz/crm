@@ -303,7 +303,7 @@ return [
         'info'       => 'admin::app.layouts.working-hours-info',
         'route'      => 'admin.settings.working_hours.index',
         'sort'       => 4,
-        'icon-class' => 'icon-clock',
+        'icon-class' => 'icon-calendar',
     ], [
         'key'        => 'settings.lead',
         'name'       => 'admin::app.layouts.lead',

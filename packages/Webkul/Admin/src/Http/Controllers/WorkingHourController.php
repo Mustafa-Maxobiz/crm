@@ -3,6 +3,7 @@
 namespace Webkul\Admin\Http\Controllers;
 
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
@@ -38,10 +39,10 @@ class WorkingHourController extends Controller
      */
     public function index(): View
     {
-        $users = $this->workingHourUsers();
+        $users = $this->paginateUsers($this->workingHourUsers());
 
         $workingHours = WorkingHour::query()
-            ->whereIn('user_id', $users->pluck('id'))
+            ->whereIn('user_id', $users->getCollection()->pluck('id'))
             ->get()
             ->keyBy('user_id');
 
@@ -174,6 +175,26 @@ class WorkingHourController extends Controller
 
             return $user;
         });
+    }
+
+
+    /**
+     * Paginate the eligible users collection for the settings table.
+     */
+    protected function paginateUsers($users, int $perPage = 10): LengthAwarePaginator
+    {
+        $page = LengthAwarePaginator::resolveCurrentPage();
+
+        return new LengthAwarePaginator(
+            $users->forPage($page, $perPage)->values(),
+            $users->count(),
+            $perPage,
+            $page,
+            [
+                'path'  => request()->url(),
+                'query' => request()->query(),
+            ]
+        );
     }
 
     /**

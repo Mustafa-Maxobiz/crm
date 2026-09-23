@@ -163,7 +163,8 @@ class MeetingHandoffService
             $this->eligibleOwnerBaseQuery($this->includeAdminMeetingOwners())
                 ->distinct()
                 ->orderBy('users.name')
-                ->get(['users.id', 'users.name', 'users.email', 'roles.name as role_name'])
+                ->leftJoin('working_hours', 'working_hours.user_id', '=', 'users.id')
+                ->get(['users.id', 'users.name', 'users.email', 'roles.name as role_name', 'working_hours.start_time as working_hour_start_time', 'working_hours.end_time as working_hour_end_time'])
         );
     }
 
@@ -190,7 +191,8 @@ class MeetingHandoffService
                 ->whereIn('service_user.service_id', $serviceIds)
                 ->distinct()
                 ->orderBy('users.name')
-                ->get(['users.id', 'users.name', 'users.email', 'roles.name as role_name'])
+                ->leftJoin('working_hours', 'working_hours.user_id', '=', 'users.id')
+                ->get(['users.id', 'users.name', 'users.email', 'roles.name as role_name', 'working_hours.start_time as working_hour_start_time', 'working_hours.end_time as working_hour_end_time'])
         );
     }
 
@@ -331,6 +333,12 @@ class MeetingHandoffService
     ): Lead {
         $activityData = $this->withAssignedOwnerParticipant($activityData, $assignedUserId, $actorId);
 
+        $this->assertWithinWorkingHours(
+            $assignedUserId,
+            $activityData['schedule_from'] ?? null,
+            $activityData['schedule_to'] ?? null,
+        );
+
         $this->assertNoMeetingConflict(
             $assignedUserId,
             $activityData['schedule_from'] ?? null,
@@ -397,6 +405,63 @@ class MeetingHandoffService
         Event::dispatch('lead.update.after', $lead);
 
         return $lead->fresh(['pipeline.stages', 'stage']);
+    }
+
+    protected function assertWithinWorkingHours(
+        int $assignedUserId,
+        string|Carbon|null $scheduleFrom,
+        string|Carbon|null $scheduleTo,
+    ): void {
+        $timezone = config('app.timezone') ?: 'Asia/Karachi';
+
+        if (empty($scheduleFrom) || empty($scheduleTo)) {
+            throw ValidationException::withMessages([
+                'meeting.schedule_from' => ['Please select a valid meeting start and end time.'],
+            ]);
+        }
+
+        $newStart = $scheduleFrom instanceof Carbon
+            ? $scheduleFrom->copy()->timezone($timezone)
+            : Carbon::parse($scheduleFrom, $timezone);
+
+        $newEnd = $scheduleTo instanceof Carbon
+            ? $scheduleTo->copy()->timezone($timezone)
+            : Carbon::parse($scheduleTo, $timezone);
+
+        if ($newStart->greaterThanOrEqualTo($newEnd)) {
+            throw ValidationException::withMessages([
+                'meeting.schedule_to' => ['The meeting end time must be after the start time.'],
+            ]);
+        }
+
+        if (! $newStart->isSameDay($newEnd)) {
+            throw ValidationException::withMessages([
+                'meeting.schedule_to' => ['Meeting start and end time must be on the same day.'],
+            ]);
+        }
+
+        $workingHour = DB::table('working_hours')
+            ->where('user_id', $assignedUserId)
+            ->first(['start_time', 'end_time']);
+
+        if (! $workingHour) {
+            throw ValidationException::withMessages([
+                'meeting.schedule_from' => [
+                    'Working hours are not set for this assigned owner. Please contact admin to add the assigned owner\'s working time.',
+                ],
+            ]);
+        }
+
+        $meetingStartTime = $newStart->format('H:i:s');
+        $meetingEndTime = $newEnd->format('H:i:s');
+        $workingStartTime = Carbon::parse($workingHour->start_time, $timezone)->format('H:i:s');
+        $workingEndTime = Carbon::parse($workingHour->end_time, $timezone)->format('H:i:s');
+
+        if ($meetingStartTime < $workingStartTime || $meetingEndTime > $workingEndTime) {
+            throw ValidationException::withMessages([
+                'meeting.schedule_from' => ['Selected meeting time is outside this assigned owner\'s working hours.'],
+            ]);
+        }
     }
 
     protected function assertNoMeetingConflict(
@@ -467,10 +532,23 @@ class MeetingHandoffService
                 'id'        => (int) $user->id,
                 'name'      => $user->name,
                 'email'     => $user->email,
-                'role_name' => $user->role_name,
+                'role_name'               => $user->role_name,
+                'has_working_hours'       => ! empty($user->working_hour_start_time) && ! empty($user->working_hour_end_time),
+                'working_hour_start_time' => $user->working_hour_start_time,
+                'working_hour_end_time'   => $user->working_hour_end_time,
+                'working_hour_label'      => $this->formatWorkingHourLabel($user->working_hour_start_time ?? null, $user->working_hour_end_time ?? null),
             ])
             ->values()
             ->all();
+    }
+
+    protected function formatWorkingHourLabel(?string $startTime, ?string $endTime): ?string
+    {
+        if (! $startTime || ! $endTime) {
+            return null;
+        }
+
+        return Carbon::parse($startTime)->format('h:i A').' - '.Carbon::parse($endTime)->format('h:i A').' PKT';
     }
 
     protected function assertCanCompleteHandoff(

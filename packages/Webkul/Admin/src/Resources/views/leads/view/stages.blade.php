@@ -388,6 +388,20 @@
                                             </p>
                                         @endif
 
+                                        <p
+                                            v-if="selectedMeetingOwnerWorkingHoursLabel"
+                                            class="mt-1 text-xs text-green-700 dark:text-green-300"
+                                        >
+                                            Working Hours: @{{ selectedMeetingOwnerWorkingHoursLabel }}
+                                        </p>
+
+                                        <p
+                                            v-if="selectedMeetingOwnerHasNoWorkingHours"
+                                            class="mt-1 text-xs text-red-600"
+                                        >
+                                            Working hours are not set for this assigned owner. Please contact admin to add the assigned owner's working time.
+                                        </p>
+
                                         <x-admin::form.control-group.error control-name="assigned_user_id" />
                                     </x-admin::form.control-group>
                                 @endif
@@ -434,7 +448,7 @@
                             <button
                                 type="submit"
                                 class="primary-button"
-                                :disabled="isMeetingStoring || {{ empty($meetingOwnerOptions) ? 'true' : 'false' }}"
+                                :disabled="isMeetingStoring || meetingOwnersEmpty || ! selectedMeetingOwnerId || selectedMeetingOwnerHasNoWorkingHours || ! meetingScheduleFrom || ! meetingScheduleTo"
                             >
                                 <template v-if="isMeetingStoring">
                                     Saving...
@@ -577,6 +591,26 @@
                 this.$emitter.on('open-closure-meeting-transfer', this.openClosureMeetingTransfer);
             },
 
+            computed: {
+                selectedMeetingOwner() {
+                    const ownerId = Number(this.selectedMeetingOwnerId || 0);
+
+                    if (! ownerId) {
+                        return null;
+                    }
+
+                    return this.meetingOwnerOptions.find(user => Number(user.id) === ownerId) || null;
+                },
+
+                selectedMeetingOwnerHasNoWorkingHours() {
+                    return !! this.selectedMeetingOwner && this.selectedMeetingOwner.has_working_hours === false;
+                },
+
+                selectedMeetingOwnerWorkingHoursLabel() {
+                    return this.selectedMeetingOwner?.working_hour_label || '';
+                },
+            },
+
             methods: {
                 openClosureMeetingTransfer(owner) {
                     const meetingStage = this.stages.find(stage => stage.code === 'meeting');
@@ -604,6 +638,10 @@
                                 name: owner.name || owner.label || 'Selected owner',
                                 email: owner.email || '',
                                 role_name: owner.role_name || '',
+                                has_working_hours: owner.has_working_hours === true,
+                                working_hour_start_time: owner.working_hour_start_time || null,
+                                working_hour_end_time: owner.working_hour_end_time || null,
+                                working_hour_label: owner.working_hour_label || '',
                             },
                             ...this.meetingOwnerOptions,
                         ];

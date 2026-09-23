@@ -1434,10 +1434,14 @@ class LeadController extends Controller
             ->merge($this->salesOwnerTransferService->eligibleOwnersForLead($lead))
             ->unique('id')
             ->map(fn ($user) => [
-                'id'        => (int) $user->id,
-                'name'      => $user->name,
-                'role_name' => $user->role_name,
-                'label'     => $this->salesOwnerTransferService->formatOwnerLabel($user),
+                'id'                      => (int) $user->id,
+                'name'                    => $user->name,
+                'role_name'               => $user->role_name,
+                'label'                   => $this->salesOwnerTransferService->formatOwnerLabel($user),
+                'has_working_hours'       => ! empty($user->working_hour_start_time) && ! empty($user->working_hour_end_time),
+                'working_hour_start_time' => $user->working_hour_start_time ?? null,
+                'working_hour_end_time'   => $user->working_hour_end_time ?? null,
+                'working_hour_label'      => $this->formatWorkingHourLabel($user->working_hour_start_time ?? null, $user->working_hour_end_time ?? null),
             ])
             ->values()
             ->all();
@@ -1567,13 +1571,17 @@ class LeadController extends Controller
         return response()->json([
             'users' => $eligibleUsers->map(function ($user) {
                 return [
-                    'id'         => (int) $user->id,
-                    'name'       => $user->name,
-                    'email'      => $user->email,
-                    'role_id'    => (int) $user->role_id,
-                    'role_name'  => $user->role_name,
-                    'label'           => $this->salesOwnerTransferService->formatOwnerLabel($user),
-                    'is_closure_user' => $this->salesOwnerTransferService->isClosureUserId((int) $user->id),
+                    'id'                      => (int) $user->id,
+                    'name'                    => $user->name,
+                    'email'                   => $user->email,
+                    'role_id'                 => (int) $user->role_id,
+                    'role_name'               => $user->role_name,
+                    'label'                   => $this->salesOwnerTransferService->formatOwnerLabel($user),
+                    'is_closure_user'         => $this->salesOwnerTransferService->isClosureUserId((int) $user->id),
+                    'has_working_hours'       => ! empty($user->working_hour_start_time) && ! empty($user->working_hour_end_time),
+                    'working_hour_start_time' => $user->working_hour_start_time ?? null,
+                    'working_hour_end_time'   => $user->working_hour_end_time ?? null,
+                    'working_hour_label'      => $this->formatWorkingHourLabel($user->working_hour_start_time ?? null, $user->working_hour_end_time ?? null),
                 ];
             })->values(),
         ]);
@@ -2495,6 +2503,15 @@ class LeadController extends Controller
 
         return $currentStage->code === 'meeting'
             && $targetStage->sort_order > $meetingStage->sort_order;
+    }
+
+    protected function formatWorkingHourLabel(?string $startTime, ?string $endTime): ?string
+    {
+        if (! $startTime || ! $endTime) {
+            return null;
+        }
+
+        return Carbon::parse($startTime)->format('h:i A').' - '.Carbon::parse($endTime)->format('h:i A').' PKT';
     }
 
     protected function canCurrentUserEditStage($lead): bool

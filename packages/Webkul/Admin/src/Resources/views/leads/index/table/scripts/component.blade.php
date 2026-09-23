@@ -116,6 +116,24 @@
 
                     return exists ? '' : term;
                 },
+
+                selectedMeetingOwner() {
+                    const ownerId = Number(this.selectedMeetingOwnerId || 0);
+
+                    if (! ownerId) {
+                        return null;
+                    }
+
+                    return this.meetingOwnerOptions.find(user => Number(user.id) === ownerId) || null;
+                },
+
+                selectedMeetingOwnerHasNoWorkingHours() {
+                    return !! this.selectedMeetingOwner && this.selectedMeetingOwner.has_working_hours === false;
+                },
+
+                selectedMeetingOwnerWorkingHoursLabel() {
+                    return this.selectedMeetingOwner?.working_hour_label || '';
+                },
             },
 
             mounted() {
@@ -935,6 +953,10 @@
                                     name: owner.name || owner.label || 'Selected owner',
                                     email: owner.email || '',
                                     role_name: owner.role_name || '',
+                                    has_working_hours: owner.has_working_hours === true,
+                                    working_hour_start_time: owner.working_hour_start_time || null,
+                                    working_hour_end_time: owner.working_hour_end_time || null,
+                                    working_hour_label: owner.working_hour_label || '',
                                 },
                                 ...this.meetingOwnerOptions,
                             ];

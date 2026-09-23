@@ -113,6 +113,20 @@
                                             No Lead Closers/Admin users are assigned to the selected Services Offered. Please contact an administrator.
                                         </p>
 
+                                        <p
+                                            v-if="selectedMeetingOwnerWorkingHoursLabel"
+                                            class="mt-1 text-xs text-green-700 dark:text-green-300"
+                                        >
+                                            Working Hours: @{{ selectedMeetingOwnerWorkingHoursLabel }}
+                                        </p>
+
+                                        <p
+                                            v-if="selectedMeetingOwnerHasNoWorkingHours"
+                                            class="mt-1 text-xs text-red-600"
+                                        >
+                                            Working hours are not set for this assigned owner. Please contact admin to add the assigned owner's working time.
+                                        </p>
+
                                         <x-admin::form.control-group.error control-name="assigned_user_id" />
                                     </x-admin::form.control-group>
                                 @endif
@@ -161,7 +175,7 @@
                                 class="primary-button"
                                 title="Save Meeting"
                                 ::loading="isMeetingSaving"
-                                ::disabled="isMeetingSaving || meetingOwnersLoading || meetingOwnersEmpty"
+                                ::disabled="isMeetingSaving || meetingOwnersLoading || meetingOwnersEmpty || ! selectedMeetingOwnerId || selectedMeetingOwnerHasNoWorkingHours || ! meetingScheduleFrom || ! meetingScheduleTo"
                             />
                         </x-slot>
                     </x-admin::modal>

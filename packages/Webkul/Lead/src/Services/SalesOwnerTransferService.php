@@ -230,7 +230,8 @@ class SalesOwnerTransferService
             $pivotUsers = $this->applyUserRoleQueryFilters(
                 DB::table('users')
                 ->join('user_roles', 'users.id', '=', 'user_roles.user_id')
-                    ->join('roles', 'user_roles.role_id', '=', 'roles.id'),
+                    ->join('roles', 'user_roles.role_id', '=', 'roles.id')
+                    ->leftJoin('working_hours', 'working_hours.user_id', '=', 'users.id'),
                 $allowedRoleNames,
                 $excludeUserId,
                 $activeOnly
@@ -240,10 +241,14 @@ class SalesOwnerTransferService
                 'users.email',
                 'roles.id as role_id',
                 'roles.name as role_name',
+                'working_hours.start_time as working_hour_start_time',
+                'working_hours.end_time as working_hour_end_time',
             ]);
 
             $primaryRoleUsers = $this->applyUserRoleQueryFilters(
-                DB::table('users')->join('roles', 'users.role_id', '=', 'roles.id'),
+                DB::table('users')
+                    ->join('roles', 'users.role_id', '=', 'roles.id')
+                    ->leftJoin('working_hours', 'working_hours.user_id', '=', 'users.id'),
                 $allowedRoleNames,
                 $excludeUserId,
                 $activeOnly
@@ -253,6 +258,8 @@ class SalesOwnerTransferService
                 'users.email',
                 'roles.id as role_id',
                 'roles.name as role_name',
+                'working_hours.start_time as working_hour_start_time',
+                'working_hours.end_time as working_hour_end_time',
             ]);
 
             return $pivotUsers
@@ -262,7 +269,9 @@ class SalesOwnerTransferService
                 ->values();
         } else {
             $query = $this->applyUserRoleQueryFilters(
-                DB::table('users')->join('roles', 'users.role_id', '=', 'roles.id'),
+                DB::table('users')
+                    ->join('roles', 'users.role_id', '=', 'roles.id')
+                    ->leftJoin('working_hours', 'working_hours.user_id', '=', 'users.id'),
                 $allowedRoleNames,
                 $excludeUserId,
                 $activeOnly
@@ -277,6 +286,8 @@ class SalesOwnerTransferService
                     'users.email',
                     'roles.id as role_id',
                     'roles.name as role_name',
+                    'working_hours.start_time as working_hour_start_time',
+                    'working_hours.end_time as working_hour_end_time',
                 ])
                 ->unique('id')
                 ->values();
