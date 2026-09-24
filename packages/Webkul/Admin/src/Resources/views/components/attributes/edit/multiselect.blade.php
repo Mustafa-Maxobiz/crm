@@ -4,8 +4,9 @@
     'validations' => '',
     'canAddNew'   => false,
     'storeUrl'    => null,
-    'updateUrl'   => null,
-    'options'     => null,
+    'updateUrl'         => null,
+    'options'           => null,
+    'floatingDropdown'  => false,
 ])
 
 @php
@@ -42,6 +43,7 @@
     :can-add-new='@json($canAddNew)'
     store-url="{{ $storeUrl }}"
     update-url="{{ $updateUrl }}"
+    :floating-dropdown='@json((bool) $floatingDropdown)'
 >
 </v-attribute-multiselect>
 
@@ -108,8 +110,11 @@
             />
 
             <div
-                v-if="isOpen && (filteredOptions.length || (canAddNew && isOtherSelected))"
-                class="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-auto rounded-md border border-gray-200 bg-white shadow-lg dark:border-gray-800 dark:bg-gray-900"
+                v-if="isOpen && filteredOptions.length && ! isOtherSelected"
+                :class="[
+                    floatingDropdown ? 'absolute left-0 right-0 z-50 shadow-lg' : 'relative shadow-sm',
+                    'mt-2 max-h-48 overflow-auto rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'
+                ]"
                 @mousedown.stop
                 @click.stop
             >
@@ -150,32 +155,41 @@
 
                         <span class="truncate">@{{ option.name }}</span>
                     </button>
-
-                    <div
-                        v-if="canAddNew && isOtherOption(option) && isOtherSelected"
-                        class="flex gap-2 border-y border-gray-100 p-2 dark:border-gray-800"
-                        @mousedown.stop
-                    >
-                        <input
-                            ref="newOptionInput"
-                            type="text"
-                            v-model="newOptionName"
-                            class="min-w-0 flex-1 rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-brandColor dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300"
-                            :placeholder="placeholder"
-                            @keydown.enter.prevent="createOption"
-                        />
-
-                        <button
-                            v-if="newOptionName.trim()"
-                            type="button"
-                            class="rounded bg-brandColor px-3 py-1.5 text-sm font-semibold text-white"
-                            :disabled="isCreating"
-                            @mousedown.prevent="createOption"
-                        >
-                            @{{ isCreating ? creatingLabel : 'Add' }}
-                        </button>
-                    </div>
                 </template>
+            </div>
+
+            <div
+                v-if="canAddNew && isOtherSelected"
+                class="mt-2 flex gap-2 rounded-md border border-gray-200 bg-white p-2 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+                @mousedown.stop
+                @click.stop
+            >
+                <input
+                    ref="newOptionInput"
+                    type="text"
+                    v-model="newOptionName"
+                    class="min-w-0 flex-1 rounded border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-brandColor dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300"
+                    :placeholder="placeholder"
+                    @keydown.enter.prevent="createOption"
+                />
+
+                <button
+                    v-if="newOptionName.trim()"
+                    type="button"
+                    class="rounded bg-brandColor px-3 py-1.5 text-sm font-semibold text-white"
+                    :disabled="isCreating"
+                    @mousedown.prevent="createOption"
+                >
+                    @{{ isCreating ? creatingLabel : 'Add' }}
+                </button>
+
+                <button
+                    type="button"
+                    class="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                    @mousedown.prevent="cancelAddNewOption"
+                >
+                    Cancel
+                </button>
             </div>
         </div>
     </script>
@@ -228,6 +242,11 @@
                 updateUrl: {
                     type: String,
                     default: '',
+                },
+
+                floatingDropdown: {
+                    type: Boolean,
+                    default: false,
                 },
             },
 
@@ -503,6 +522,18 @@
                         });
                     }).finally(() => {
                         this.isCreating = false;
+                    });
+                },
+
+                cancelAddNewOption() {
+                    this.unselectOtherOption();
+                    this.newOptionName = '';
+                    this.isCreating = false;
+                    this.isOpen = true;
+                    this.searchTerm = '';
+
+                    this.$nextTick(() => {
+                        this.$refs.searchInput?.focus();
                     });
                 },
 
