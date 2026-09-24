@@ -1306,6 +1306,22 @@ class LeadController extends Controller
             $data['next_followup_date'] = null;
         }
 
+        try {
+            $this->validateColdWarmTagConflict((array) ($data['tags'] ?? []));
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            if (request()->ajax()) {
+                return response()->json([
+                    'message' => collect($exception->errors())->flatten()->first(),
+                    'errors'  => $exception->errors(),
+                ], 422);
+            }
+
+            return redirect()
+                ->back()
+                ->withInput()
+                ->withErrors($exception->errors());
+        }
+
         $isMainCreate = in_array(lead_variant(), ['main', 'bde'], true);
         $isLgeCreate = lead_variant() === 'lge';
         $isDeDataScraperCreate = lead_variant() === 'de_data_scraper';
@@ -2257,6 +2273,22 @@ class LeadController extends Controller
 
         if ($response = $this->applySalesOwnerTransferFromPayload($existingLead, $data)) {
             return $response;
+        }
+
+        try {
+            $this->validateColdWarmTagConflict((array) ($data['tags'] ?? []));
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            if (request()->ajax()) {
+                return response()->json([
+                    'message' => collect($exception->errors())->flatten()->first(),
+                    'errors'  => $exception->errors(),
+                ], 422);
+            }
+
+            return redirect()
+                ->back()
+                ->withInput()
+                ->withErrors($exception->errors());
         }
 
         if (isset($data['lead_pipeline_stage_id'])) {
@@ -3359,6 +3391,58 @@ class LeadController extends Controller
     }
 
     /**
+     * @throws \Illuminate\Validation\ValidationException
+     */
+    protected function validateColdWarmTagConflict(array $tagIds): void
+    {
+        $values = collect($tagIds)
+            ->filter(fn ($value) => filled($value))
+            ->map(fn ($value) => is_string($value) ? trim($value) : $value)
+            ->filter(fn ($value) => $value !== '' && $value !== null)
+            ->values();
+
+        if ($values->isEmpty()) {
+            return;
+        }
+
+        $numericIds = $values
+            ->filter(fn ($value) => is_numeric($value))
+            ->map(fn ($value) => (int) $value)
+            ->filter()
+            ->unique()
+            ->values();
+
+        $names = $values
+            ->reject(fn ($value) => is_numeric($value))
+            ->map(fn ($value) => $this->normalizeColdWarmTagName((string) $value));
+
+        if ($numericIds->isNotEmpty()) {
+            $names = $names->merge(
+                DB::table('tags')
+                    ->whereIn('id', $numericIds)
+                    ->pluck('name')
+                    ->map(fn ($name) => $this->normalizeColdWarmTagName((string) $name))
+            );
+        }
+
+        $names = $names->filter()->unique()->values();
+
+        $hasCold = $names->contains(fn ($name) => in_array($name, ['cold', 'cold lead'], true));
+        $hasWarm = $names->contains(fn ($name) => in_array($name, ['warm', 'warm lead'], true));
+
+        if ($hasCold && $hasWarm) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'tags' => ['A lead cannot be both Cold and Warm. Please select only one.'],
+            ]);
+        }
+    }
+
+    protected function normalizeColdWarmTagName(string $name): string
+    {
+        return strtolower(trim(preg_replace('/\s+/', ' ', $name)));
+    }
+
+    /**
      * Sync tag names on a lead.
      */
     private function syncLeadTags($lead, array|string $tagNames): void
@@ -3411,6 +3495,8 @@ class LeadController extends Controller
             ->filter()
             ->values()
             ->all();
+
+        $this->validateColdWarmTagConflict($tagIds);
 
         $tagIds = $this->leadForwardService->normalizeClassificationTagIds($tagIds);
 
@@ -3728,6 +3814,12 @@ class LeadController extends Controller
 
         if (filled($row['pipeline'] ?? null) && ! $this->resolveImportId('lead_pipelines', $row['pipeline'])) {
             $errors[] = 'pipeline "'.$row['pipeline'].'" was not found.';
+        }
+
+        try {
+            $this->validateColdWarmTagConflict($this->tagsFromImportRow($row));
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $errors[] = collect($exception->errors())->flatten()->first();
         }
 
         return $errors;

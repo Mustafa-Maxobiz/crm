@@ -4,6 +4,7 @@ namespace Webkul\Admin\Http\Controllers\Lead;
 
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Webkul\Activity\Repositories\ActivityRepository;
 use Webkul\Admin\Http\Controllers\Controller;
@@ -59,6 +60,10 @@ class TagController extends Controller
             return $response;
         }
 
+        if ($response = $this->validateColdWarmTagConflictForResponse($lead, (int) $tag->id)) {
+            return $response;
+        }
+
         if (! $lead->tags->contains('id', $tag->id)) {
             $detachedTagIds = $this->attachTagWithClassificationRules($lead, (int) $tag->id);
         } elseif ($this->isClassificationTag((int) $tag->id)) {
@@ -110,6 +115,10 @@ class TagController extends Controller
         $detachedTagIds = [];
 
         if ($response = $this->forwardColdLeadIfRequired($lead, $tag, $oldTags)) {
+            return $response;
+        }
+
+        if ($response = $this->validateColdWarmTagConflictForResponse($lead, $newTagId, $oldTagId)) {
             return $response;
         }
 
@@ -241,6 +250,43 @@ class TagController extends Controller
         }
 
         return false;
+    }
+
+    protected function validateColdWarmTagConflictForResponse($lead, int $newTagId, ?int $oldTagId = null): ?JsonResponse
+    {
+        $lead->loadMissing('tags');
+
+        $tagIds = $lead->tags
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->reject(fn ($id) => $oldTagId && $id === $oldTagId)
+            ->push($newTagId)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $names = DB::table('tags')
+            ->whereIn('id', $tagIds)
+            ->pluck('name')
+            ->map(fn ($name) => strtolower(trim(preg_replace('/\s+/', ' ', (string) $name))))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $hasCold = $names->contains(fn ($name) => in_array($name, ['cold', 'cold lead'], true));
+        $hasWarm = $names->contains(fn ($name) => in_array($name, ['warm', 'warm lead'], true));
+
+        if ($hasCold && $hasWarm) {
+            return response()->json([
+                'message' => 'A lead cannot be both Cold and Warm. Please select only one.',
+                'errors'  => [
+                    'tags' => ['A lead cannot be both Cold and Warm. Please select only one.'],
+                ],
+            ], 422);
+        }
+
+        return null;
     }
 
     protected function attachTagWithClassificationRules($lead, int $tagId): array
