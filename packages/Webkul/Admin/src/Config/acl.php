@@ -27,6 +27,11 @@ return [
         'route' => 'admin.dashboard.lge',
         'sort'  => 5,
     ], [
+        'key'   => 'data_scraper_dashboard',
+        'name'  => 'admin::app.acl.dashboard-data-scraper',
+        'route' => 'admin.dashboard.data_scraper',
+        'sort'  => 6,
+    ], [
         'key'   => 'role_dashboard_calendar_view',
         'name'  => 'admin::app.acl.role-dashboard-calendar',
         'route' => 'admin.dashboard.calendar_events',

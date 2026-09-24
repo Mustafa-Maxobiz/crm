@@ -7,6 +7,7 @@
         $dashboardRoleLabel = match ($dashboardVariant) {
             'bde' => 'BDE',
             'lge' => 'Lead Gen Executive',
+            'data_scraper' => 'Data Scraper',
             'lead_clouser' => 'Closer',
             default => 'SDR',
         };
@@ -74,7 +75,7 @@
                     <div class="mb-4 flex items-center justify-between gap-4">
                         <div class="grid gap-1">
                             <p class="text-lg font-semibold text-gray-800 dark:text-white">
-                                {{ $dashboardVariant === 'bde' ? 'Lead Work Summary' : ($dashboardVariant === 'lge' ? 'Activity Summary' : ($dashboardVariant === 'lead_clouser' ? 'Meeting Summary' : 'Call Summary')) }}
+                                {{ $dashboardVariant === 'bde' ? 'Lead Work Summary' : ($dashboardVariant === 'lge' ? 'Activity Summary' : ($dashboardVariant === 'data_scraper' ? 'Today Summary' : ($dashboardVariant === 'lead_clouser' ? 'Meeting Summary' : 'Call Summary'))) }}
                             </p>
 
                             <p class="text-sm text-gray-500 dark:text-gray-400">
@@ -82,6 +83,8 @@
                                     Daily, weekly, and monthly BD Executive lead work.
                                 @elseif ($dashboardVariant === 'lge')
                                     Daily, weekly, and monthly Lead Gen Executive activity.
+                                @elseif ($dashboardVariant === 'data_scraper')
+                                    Daily, weekly, and monthly Data Scraper lead work.
                                 @elseif ($dashboardVariant === 'lead_clouser')
                                     Daily, weekly, and monthly closer meeting performance.
                                 @else
@@ -208,7 +211,7 @@
                 <div class="flex items-center justify-between gap-3 border-b border-gray-200 p-3 dark:border-gray-800 max-lg:flex-wrap">
                     <div class="grid gap-1">
                         <p class="text-lg font-semibold text-gray-800 dark:text-white">
-                            @{{ isBdeDashboard ? 'Lead Work Summary' : (isLgeDashboard ? 'Activity Summary' : (isCloserDashboard ? 'Meeting Summary' : 'Call Summary')) }}
+                            @{{ isBdeDashboard ? 'Lead Work Summary' : (isLgeDashboard ? 'Activity Summary' : (isDataScraperDashboard ? 'Today Summary' : (isCloserDashboard ? 'Meeting Summary' : 'Call Summary'))) }}
                         </p>
 
                         <p class="text-sm text-gray-500 dark:text-gray-400">
@@ -216,9 +219,11 @@
                                 ? `${periodLabel} BD Executive lead work.`
                                 : (isLgeDashboard
                                 ? `${periodLabel} Lead Gen Executive activity.`
+                                : (isDataScraperDashboard
+                                ? `${periodLabel} Data Scraper lead work.`
                                 : (isCloserDashboard
                                     ? `${periodLabel} closer meeting performance.`
-                                    : `${periodLabel} ${roleLabel} call performance.`)) }}
+                                    : `${periodLabel} ${roleLabel} call performance.`))) }}
                         </p>
                     </div>
 
@@ -448,6 +453,82 @@
                     </div>
 
                 </div>
+
+                <div
+                    v-else-if="isDataScraperDashboard"
+                    class="grid flex-1 grid-cols-5 gap-2.5 p-3 max-xl:grid-cols-3 max-lg:grid-cols-2 max-sm:grid-cols-1"
+                >
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Created
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-gray-800 dark:text-white">
+                            @{{ summary.data_scraper.created }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Leads created in selected period
+                        </p>
+                    </div>
+
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Forwarded
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-gray-800 dark:text-white">
+                            @{{ summary.data_scraper.forwarded }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Forwarded in selected period
+                        </p>
+                    </div>
+
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Meeting Booked
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-gray-800 dark:text-white">
+                            @{{ summary.data_scraper.meeting_booked }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Meetings in selected period
+                        </p>
+                    </div>
+
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Won
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-green-600">
+                            @{{ summary.outcomes.won }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Won in selected period
+                        </p>
+                    </div>
+
+                    <div class="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                        <p class="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">
+                            Lost
+                        </p>
+
+                        <p class="mt-2 text-2xl font-semibold text-red-600">
+                            @{{ summary.outcomes.lost }}
+                        </p>
+
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Lost in selected period
+                        </p>
+                    </div>
+                </div>
+
 
                 <div
                     v-else-if="isCloserDashboard"
@@ -1696,6 +1777,11 @@
                                 forwarded: 0,
                                 followups: 0,
                             },
+                            data_scraper: {
+                                created: 0,
+                                forwarded: 0,
+                                meeting_booked: 0,
+                            },
                         },
                     };
                 },
@@ -1707,6 +1793,10 @@
 
                     isLgeDashboard() {
                         return this.dashboardVariant === 'lge';
+                    },
+
+                    isDataScraperDashboard() {
+                        return this.dashboardVariant === 'data_scraper';
                     },
 
                     isCloserDashboard() {

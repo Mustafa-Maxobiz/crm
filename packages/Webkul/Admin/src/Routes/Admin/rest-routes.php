@@ -21,6 +21,8 @@ Route::controller(DashboardController::class)->prefix('dashboard')->group(functi
 
     Route::get('lge', 'lge')->name('admin.dashboard.lge');
 
+    Route::get('data-scraper', 'dataScraper')->name('admin.dashboard.data_scraper');
+
     Route::get('stats', 'stats')->name('admin.dashboard.stats');
 
     Route::get('call-summary', 'callSummary')->name('admin.dashboard.call_summary');

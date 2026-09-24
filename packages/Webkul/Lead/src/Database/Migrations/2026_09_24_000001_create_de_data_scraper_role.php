@@ -89,6 +89,7 @@ return new class extends Migration
     protected function permissions(): array
     {
         return [
+            'data_scraper_dashboard',
             'de_data_scraper_leads',
             'de_data_scraper_leads.create',
             'de_data_scraper_leads.view',

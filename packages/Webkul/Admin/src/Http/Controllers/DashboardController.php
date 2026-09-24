@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 use Webkul\Admin\Helpers\Dashboard;
 use Webkul\Lead\Services\LeadForwardService;
+use Webkul\Lead\Services\SalesOwnerTransferService;
 use Webkul\Lead\Services\SourceAccessService;
 use Webkul\Lead\Services\UsStateTimezoneService;
 use Webkul\User\Services\ActiveRoleService;
@@ -61,6 +62,10 @@ class DashboardController extends Controller
 
         if ($sourceAccessService->isLeadCloserUser()) {
             return redirect()->route('admin.dashboard.lead_clouser');
+        }
+
+        if ($sourceAccessService->isDeDataScraperUser()) {
+            return redirect()->route('admin.dashboard.data_scraper');
         }
 
         return view('admin::dashboard.index')->with([
@@ -137,6 +142,23 @@ class DashboardController extends Controller
     }
 
     /**
+     * Data Scraper dashboard scoped to leads originated by the active Data Scraper user.
+     */
+    public function dataScraper(): View
+    {
+        $this->abortUnlessDashboardRole('data_scraper');
+
+        return view('admin::dashboard.sdr.index')->with([
+            'stateTimezones' => [],
+            'dashboardTitle' => 'Data Scraper Dashboard',
+            'showUsFeatures' => false,
+            'dashboardVariant' => 'data_scraper',
+            'showMeetings' => false,
+            'showDashboardCalendar' => $this->canViewDashboardCalendar(),
+        ]);
+    }
+
+    /**
      * Display a listing of the resource.
      *
      * @return \Illuminate\Http\JsonResponse
@@ -159,7 +181,7 @@ class DashboardController extends Controller
         $this->ensureCallingDashboardAccess();
 
         $data = request()->validate([
-            'variant'    => ['nullable', 'in:bde,sdr,lge,lead_clouser'],
+            'variant'    => ['nullable', 'in:bde,sdr,lge,lead_clouser,data_scraper'],
             'period'     => ['nullable', 'in:day,week,month'],
             'start_date' => ['nullable', 'date'],
             'end_date'   => ['nullable', 'date'],
@@ -185,6 +207,10 @@ class DashboardController extends Controller
             return response()->json($this->bdeDashboardSummary($startDate, $endDate, $userId));
         }
 
+        if ($variant === 'data_scraper') {
+            return response()->json($this->dataScraperDashboardSummary($startDate, $endDate, $userId));
+        }
+
         if ($variant === 'lead_clouser') {
             return response()->json($this->leadCloserCallSummary($startDate, $endDate, $userId, $sourceAccessService));
         }
@@ -200,7 +226,7 @@ class DashboardController extends Controller
         $this->ensureDashboardCalendarAccess();
 
         $data = request()->validate([
-            'variant'   => ['nullable', 'in:bde,sdr,lge,lead_clouser'],
+            'variant'   => ['nullable', 'in:bde,sdr,lge,lead_clouser,data_scraper'],
             'view_type' => ['nullable', 'in:week,month'],
             'date'      => ['nullable', 'date'],
         ]);
@@ -498,6 +524,89 @@ class DashboardController extends Controller
     }
 
     /**
+     * Data Scraper dashboard: created, forwarded, meetings, and outcomes for originated leads.
+     */
+    protected function dataScraperDashboardSummary(Carbon $startDate, Carbon $endDate, int $userId): array
+    {
+        $created = (int) DB::table('leads')
+            ->whereNull('deleted_at')
+            ->where('lead_owner_id', $userId)
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->distinct('id')
+            ->count('id');
+
+        $forwarded = Schema::hasTable('lead_forwards')
+            ? (int) DB::table('lead_forwards')
+                ->where('from_user_id', $userId)
+                ->where('forward_type', SalesOwnerTransferService::TYPE_SALES_OWNER_TRANSFER)
+                ->whereBetween('forwarded_at', [$startDate, $endDate])
+                ->distinct('lead_id')
+                ->count('lead_id')
+            : 0;
+
+        $meetingsBooked = (int) $this->applyDataScraperWorkLeadScope(
+            DB::table('activities')
+                ->join('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
+                ->join('leads', 'lead_activities.lead_id', '=', 'leads.id')
+                ->where('activities.type', 'meeting')
+                ->whereNull('leads.deleted_at')
+                ->whereBetween('activities.schedule_from', [$startDate, $endDate]),
+            $userId
+        )
+            ->distinct('activities.id')
+            ->count('activities.id');
+
+        $outcomeStats = $this->applyDataScraperWorkLeadScope(
+            DB::table('leads')
+                ->leftJoin('lead_pipeline_stages', 'leads.lead_pipeline_stage_id', '=', 'lead_pipeline_stages.id')
+                ->whereNull('leads.deleted_at')
+                ->where(function ($query) use ($startDate, $endDate) {
+                    $query
+                        ->whereBetween('leads.closed_at', [$startDate, $endDate])
+                        ->orWhereBetween('leads.lead_disqualified_at', [$startDate, $endDate]);
+                }),
+            $userId
+        )
+            ->selectRaw("COUNT(DISTINCT CASE WHEN lead_pipeline_stages.code = 'won' THEN leads.id END) as won_leads")
+            ->selectRaw("COUNT(DISTINCT CASE WHEN lead_pipeline_stages.code = 'lost' OR leads.lead_disqualification_reason IS NOT NULL OR leads.lost_reason IS NOT NULL THEN leads.id END) as lost_leads")
+            ->first();
+
+        $wonLeads = (int) ($outcomeStats->won_leads ?? 0);
+        $lostLeads = (int) ($outcomeStats->lost_leads ?? 0);
+        $outcomeLeads = $wonLeads + $lostLeads;
+
+        return [
+            'period' => [
+                'start' => $startDate->toDateString(),
+                'end'   => $endDate->toDateString(),
+            ],
+            'data_scraper' => [
+                'created'        => $created,
+                'forwarded'      => $forwarded,
+                'meeting_booked' => $meetingsBooked,
+            ],
+            'calls' => [
+                'total'                    => 0,
+                'answered'                 => 0,
+                'answer_rate'              => 0,
+                'answered_average_per_day' => 0,
+            ],
+            'outcomes' => [
+                'won'          => $wonLeads,
+                'lost'         => $lostLeads,
+                'won_percent'  => $outcomeLeads ? round(($wonLeads / $outcomeLeads) * 100) : 0,
+                'lost_percent' => $outcomeLeads ? round(($lostLeads / $outcomeLeads) * 100) : 0,
+            ],
+            'meetings' => [
+                'booked'       => $meetingsBooked,
+                'assigned'     => $meetingsBooked,
+                'attended'     => 0,
+                'attend_rate'  => 0,
+            ],
+        ];
+    }
+
+    /**
      * Returns LGE LinkedIn request funnel and lead outcomes.
      */
     protected function lgeLinkedInSummary(Carbon $startDate, Carbon $endDate): array
@@ -637,6 +746,10 @@ class DashboardController extends Controller
             return response()->json($this->bdeLeadSections($userId, $todayStart, $todayEnd));
         }
 
+        if ($variant === 'data_scraper') {
+            return response()->json($this->dataScraperLeadSections($userId, $todayStart, $todayEnd));
+        }
+
         $meetingsCount = 0;
         $todayMeetings = collect();
 
@@ -774,6 +887,72 @@ class DashboardController extends Controller
             'show_us_features' => $showUsFeatures,
             'show_meetings' => $showMeetings,
         ]);
+    }
+
+    protected function dataScraperLeadSections(int $userId, Carbon $todayStart, Carbon $todayEnd): array
+    {
+        $followupsBase = $this->applyDataScraperWorkLeadScope(
+            DB::table('leads')
+                ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
+                ->leftJoin('organizations', 'persons.organization_id', '=', 'organizations.id')
+                ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
+                ->whereNull('leads.deleted_at')
+                ->whereNull('leads.lead_disqualification_reason')
+                ->whereNotNull('leads.next_followup_date')
+                ->whereBetween('leads.next_followup_date', [$todayStart, $todayEnd]),
+            $userId
+        );
+
+        $todayFollowups = (clone $followupsBase)
+            ->select(
+                'leads.id',
+                'leads.title',
+                'leads.next_followup_date',
+                'persons.name as person_name',
+                'persons.city as person_city',
+                'persons.state as person_state',
+                'persons.country as person_country',
+                'persons.timezone as person_timezone',
+                'organizations.name as organization_name',
+                'lead_sources.name as source_name'
+            )
+            ->orderBy('leads.next_followup_date')
+            ->get()
+            ->unique('id')
+            ->values()
+            ->map(function ($lead) {
+                return $this->mapDashboardCalendarItem([
+                    'id'            => 'followup-'.$lead->id,
+                    'type'          => 'Follow-up',
+                    'source'        => $lead->source_name,
+                    'title'         => $lead->title,
+                    'person'        => $lead->person_name,
+                    'city'          => $lead->person_city,
+                    'state'         => $lead->person_state,
+                    'country'       => $lead->person_country,
+                    'timezone'      => $lead->person_timezone,
+                    'fallback_meta' => $lead->organization_name ?: 'Lead follow-up',
+                    'at'            => $lead->next_followup_date,
+                    'url'           => lead_route_for_user('view', $lead->id),
+                    'lead_url'      => lead_route_for_user('view', $lead->id),
+                ], false);
+            });
+
+        $calendar = $todayFollowups
+            ->sortBy('sort_at')
+            ->values();
+
+        return [
+            'summary' => [
+                'meetings'  => 0,
+                'followups' => $calendar->count(),
+                'total'     => $calendar->count(),
+            ],
+            'today_calendar' => $calendar,
+            'calendar_date' => $todayStart->toDateString(),
+            'show_us_features' => false,
+            'show_meetings' => false,
+        ];
     }
 
     protected function bdeLeadSections(int $userId, Carbon $todayStart, Carbon $todayEnd): array
@@ -1041,6 +1220,7 @@ class DashboardController extends Controller
             || bouncer()->hasPermission('bde_dashboard')
             || bouncer()->hasPermission('lead_clouser_dashboard')
             || bouncer()->hasPermission('lge_dashboard')
+            || bouncer()->hasPermission('data_scraper_dashboard')
         ) {
             return;
         }
@@ -1074,6 +1254,7 @@ class DashboardController extends Controller
             'bde'          => $sourceAccessService->isBdeUser(),
             'sdr'          => $sourceAccessService->isSdrUser(),
             'lge'          => $sourceAccessService->isLgeUser(),
+            'data_scraper' => $sourceAccessService->isDeDataScraperUser(),
             'lead_clouser' => $sourceAccessService->isLeadCloserUser(),
             default        => false,
         };
@@ -1213,6 +1394,23 @@ class DashboardController extends Controller
                 ->where('activities.type', 'system')
                 ->where('activities.title', trans('admin::app.activities.created'))
                 ->where('activities.user_id', $userId);
+        });
+    }
+
+    protected function applyDataScraperWorkLeadScope($query, int $userId)
+    {
+        return $query->where(function ($query) use ($userId) {
+            $query->where('leads.lead_owner_id', $userId);
+
+            if (Schema::hasTable('lead_forwards')) {
+                $query->orWhereExists(function ($query) use ($userId) {
+                    $query
+                        ->selectRaw('1')
+                        ->from('lead_forwards')
+                        ->whereColumn('lead_forwards.lead_id', 'leads.id')
+                        ->where('lead_forwards.from_user_id', $userId);
+                });
+            }
         });
     }
 

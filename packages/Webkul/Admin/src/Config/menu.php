@@ -57,6 +57,17 @@ return [
     ],
 
     /**
+     * Data Scraper Dashboard.
+     */
+    [
+        'key'        => 'data_scraper_dashboard',
+        'name'       => 'admin::app.layouts.dashboard',
+        'route'      => 'admin.dashboard.data_scraper',
+        'sort'       => 6,
+        'icon-class' => 'icon-dashboard',
+    ],
+
+    /**
      * Leads.
      */
     [
