@@ -402,6 +402,13 @@
                                         ]"
                                     />
 
+
+                                    @if (lead_variant() === 'de_data_scraper')
+                                        <p class="-mt-3 mb-4 text-xs text-gray-500 dark:text-gray-400">
+                                            Changing Sales Owner will forward this lead. You will remain Lead Owner.
+                                        </p>
+                                    @endif
+
                                     <input
                                         type="hidden"
                                         name="schedule_followup"

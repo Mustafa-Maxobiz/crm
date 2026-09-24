@@ -32,9 +32,12 @@
         || bouncer()->hasPermission('sdr_leads.edit')
         || bouncer()->hasPermission('lge_leads.create')
         || bouncer()->hasPermission('lge_leads.edit')
+        || bouncer()->hasPermission('de_data_scraper_leads.create')
+        || bouncer()->hasPermission('de_data_scraper_leads.edit')
         || bouncer()->hasPermission('lead_clouser_leads.edit')
         || app(\Webkul\Lead\Services\SourceAccessService::class)->isSdrUser()
-        || app(\Webkul\Lead\Services\SourceAccessService::class)->isLgeUser();
+        || app(\Webkul\Lead\Services\SourceAccessService::class)->isLgeUser()
+        || app(\Webkul\Lead\Services\SourceAccessService::class)->isDeDataScraperUser();
 
     $serviceUpdateUrl = isset($lead) ? lead_route('attributes.update', $lead->id) : null;
 @endphp

@@ -111,6 +111,19 @@ return [
         'icon-class' => 'icon-leads',
     ],
 
+
+
+    /**
+     * Data Scraper Leads.
+     */
+    [
+        'key'        => 'de_data_scraper_leads',
+        'name'       => 'admin::app.layouts.leads',
+        'route'      => 'admin.leads.de_data_scraper',
+        'sort'       => 11,
+        'icon-class' => 'icon-leads',
+    ],
+
     /**
      * Meta Leads.
      */

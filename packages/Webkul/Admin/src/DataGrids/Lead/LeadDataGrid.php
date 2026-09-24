@@ -380,7 +380,7 @@ class LeadDataGrid extends DataGrid
             'filterable' => true,
         ]);
 
-        if (in_array(lead_variant(), ['sdr', 'lge', 'lead_clouser'], true)) {
+        if (in_array(lead_variant(), ['sdr', 'lge', 'de_data_scraper', 'lead_clouser'], true)) {
             $this->addColumn([
                 'index'      => 'title',
                 'label'      => trans('admin::app.leads.index.datagrid.subject'),
@@ -781,7 +781,7 @@ class LeadDataGrid extends DataGrid
         $stages = app(\Webkul\Lead\Services\SourceAccessService::class)
             ->filterAccessibleStages($this->pipeline->stages);
 
-        if (! in_array(lead_variant(), ['sdr', 'lge'], true)) {
+        if (! in_array(lead_variant(), ['sdr', 'lge', 'de_data_scraper'], true)) {
             return $stages;
         }
 

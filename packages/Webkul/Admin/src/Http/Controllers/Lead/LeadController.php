@@ -129,6 +129,14 @@ class LeadController extends Controller
     }
 
     /**
+     * Data Scraper leads list.
+     */
+    public function deDataScraper()
+    {
+        return $this->listIndex('de_data_scraper');
+    }
+
+    /**
      * Lead Clouser leads list.
      */
     public function leadClouser()
@@ -167,6 +175,9 @@ class LeadController extends Controller
             'leadVariant'     => $leadVariant,
             'leadsIndexRoute' => $leadsIndexRoute,
             'meetingOwnerOptions' => [],
+            'forwardAssignableUsers' => $leadVariant === 'de_data_scraper'
+                ? $this->activeCrmUserForwardOptions()
+                : collect(),
             'linkedInProfileFilterOptions' => $leadVariant === 'lge'
                 ? $this->linkedInProfileAccessService->getFilterOptionsWithHistoricalLeads()
                 : [],
@@ -201,6 +212,7 @@ class LeadController extends Controller
             'bde'          => $this->canAccessBdeLeadScreen(),
             'sdr'          => $this->sourceAccessService->isSdrUser(),
             'lge'          => $this->sourceAccessService->isLgeUser(),
+            'de_data_scraper' => $this->sourceAccessService->isDeDataScraperUser(),
             'lead_clouser' => $this->sourceAccessService->isLeadCloserUser(),
             default        => false,
         };
@@ -312,6 +324,14 @@ class LeadController extends Controller
         if ($assignment instanceof JsonResponse || $assignment instanceof RedirectResponse) {
             return $assignment;
         }
+
+        $deDataScraperSalesOwnerId = $this->validatedDeDataScraperSalesOwnerIdForRequest();
+
+        if ($deDataScraperSalesOwnerId instanceof JsonResponse || $deDataScraperSalesOwnerId instanceof RedirectResponse) {
+            return $deDataScraperSalesOwnerId;
+        }
+
+        $assignment['user_id'] = $deDataScraperSalesOwnerId;
 
         $batchLinkedInProfileId = $this->validatedLgeImportProfileId();
 
@@ -447,6 +467,14 @@ class LeadController extends Controller
             return $assignment;
         }
 
+        $deDataScraperSalesOwnerId = $this->validatedDeDataScraperSalesOwnerIdForRequest();
+
+        if ($deDataScraperSalesOwnerId instanceof JsonResponse || $deDataScraperSalesOwnerId instanceof RedirectResponse) {
+            return $deDataScraperSalesOwnerId;
+        }
+
+        $assignment['user_id'] = $deDataScraperSalesOwnerId;
+
         $batchLinkedInProfileId = $this->validatedLgeImportProfileId();
 
         if ($batchLinkedInProfileId instanceof JsonResponse || $batchLinkedInProfileId instanceof RedirectResponse) {
@@ -533,6 +561,7 @@ class LeadController extends Controller
             'import_tag_id'              => $importTagId,
             'assignee_user_ids'          => $assignment['assignee_user_ids'],
             'industry_id'               => $assignment['industry_id'],
+            'user_id'                  => $assignment['user_id'] ?? null,
             'rows'                      => $importRows,
             'created'              => 0,
             'skipped'              => 0,
@@ -575,6 +604,20 @@ class LeadController extends Controller
         $importTagId = (int) ($payload['import_tag_id'] ?? 0);
         $assigneeUserIds = $this->normalizeImportAssigneeIds($payload['assignee_user_ids'] ?? []);
         $industryId = $this->normalizeImportIndustryId($payload['industry_id'] ?? null);
+        $salesOwnerId = null;
+
+        if (lead_variant() === 'de_data_scraper') {
+            try {
+                $salesOwnerId = $this->validatedDeDataScraperSalesOwnerId($payload['user_id'] ?? null);
+            } catch (\Illuminate\Validation\ValidationException $exception) {
+                @unlink($path);
+
+                return response()->json([
+                    'message' => collect($exception->errors())->flatten()->first(),
+                    'errors'  => $exception->errors(),
+                ], 422);
+            }
+        }
 
         if (! $sourceId || ! $this->sourceAccessService->canUseLeadSourceSelection($sourceId)) {
             @unlink($path);
@@ -647,6 +690,7 @@ class LeadController extends Controller
                     [
                         'assignee_user_ids' => $assigneeUserIds,
                         'industry_id'       => $industryId,
+                        'user_id'            => $salesOwnerId,
                     ],
                     (int) $payload['assign_index'],
                     $batchLinkedInProfileId,
@@ -708,6 +752,14 @@ class LeadController extends Controller
         if ($assignment instanceof JsonResponse || $assignment instanceof RedirectResponse) {
             return $assignment;
         }
+
+        $deDataScraperSalesOwnerId = $this->validatedDeDataScraperSalesOwnerIdForRequest();
+
+        if ($deDataScraperSalesOwnerId instanceof JsonResponse || $deDataScraperSalesOwnerId instanceof RedirectResponse) {
+            return $deDataScraperSalesOwnerId;
+        }
+
+        $assignment['user_id'] = $deDataScraperSalesOwnerId;
 
         $batchLinkedInProfileId = $this->validatedLgeImportProfileId();
 
@@ -882,7 +934,7 @@ class LeadController extends Controller
 
             $this->addAssignedByForKanban($query);
 
-            if (in_array(lead_variant(), ['bde', 'sdr', 'lge'], true)) {
+            if (in_array(lead_variant(), ['bde', 'sdr', 'lge', 'de_data_scraper'], true)) {
                 $this->addForwardedOriginFlagForKanban($query);
             }
 
@@ -1069,7 +1121,9 @@ class LeadController extends Controller
     {
         $this->shareLeadVariant();
 
-        $linkedInSourceIds = $this->sourceRepository->getAllowedLinkedInSourceIds();
+        $linkedInSourceIds = lead_variant() === 'de_data_scraper'
+            ? []
+            : $this->sourceRepository->getAllowedLinkedInSourceIds();
 
         return view('admin::leads.create', [
             'linkedInSourceIds' => $linkedInSourceIds,
@@ -1080,6 +1134,9 @@ class LeadController extends Controller
             'coldLeadTagId'    => $this->leadForwardService->coldLeadTagId(),
             'activeSdrUsers'   => lead_variant() === 'lge'
                 ? $this->leadForwardService->activeSdrUsers()
+                : collect(),
+            'forwardAssignableUsers' => lead_variant() === 'de_data_scraper'
+                ? $this->activeCrmUserForwardOptions()
                 : collect(),
         ]);
     }
@@ -1141,6 +1198,94 @@ class LeadController extends Controller
         );
     }
 
+
+    public function activeCrmUserForwardOptions()
+    {
+        $currentUserId = (int) auth()->guard('user')->id();
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('user_roles')) {
+            $users = DB::table('users')
+                ->leftJoin('user_roles', 'user_roles.user_id', '=', 'users.id')
+                ->leftJoin('roles as assigned_roles', 'assigned_roles.id', '=', 'user_roles.role_id')
+                ->leftJoin('roles as primary_roles', 'primary_roles.id', '=', 'users.role_id')
+                ->where('users.status', 1)
+                ->where('users.id', '!=', $currentUserId)
+                ->groupBy('users.id', 'users.name', 'users.email', 'primary_roles.name')
+                ->orderBy('users.name')
+                ->get([
+                    'users.id',
+                    'users.name',
+                    'users.email',
+                    DB::raw('COALESCE(GROUP_CONCAT(DISTINCT assigned_roles.name ORDER BY assigned_roles.name SEPARATOR ", "), primary_roles.name) as role_name'),
+                ]);
+        } else {
+            $users = DB::table('users')
+                ->leftJoin('roles', 'roles.id', '=', 'users.role_id')
+                ->where('users.status', 1)
+                ->where('users.id', '!=', $currentUserId)
+                ->orderBy('users.name')
+                ->get(['users.id', 'users.name', 'users.email', 'roles.name as role_name']);
+        }
+
+        return $users->map(function ($user) {
+            $roleName = trim((string) ($user->role_name ?? ''));
+            $user->label = $roleName !== '' ? $user->name.' — '.$roleName : $user->name;
+
+            return $user;
+        })->values();
+    }
+
+    /**
+     * @throws \Illuminate\Validation\ValidationException
+     */
+    protected function validatedDeDataScraperSalesOwnerId(mixed $id): ?int
+    {
+        if (lead_variant() !== 'de_data_scraper') {
+            return null;
+        }
+
+        $id = (int) $id;
+        $currentUserId = (int) auth()->guard('user')->id();
+
+        if ($id <= 0) {
+            return $currentUserId;
+        }
+
+        $exists = DB::table('users')
+            ->where('id', $id)
+            ->where('status', 1)
+            ->exists();
+
+        if (! $exists) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'user_id' => ['Please select an active Sales Owner.'],
+            ]);
+        }
+
+        return $id;
+    }
+
+    /**
+     * @return int|null|JsonResponse|RedirectResponse
+     */
+    protected function validatedDeDataScraperSalesOwnerIdForRequest(): int|null|JsonResponse|RedirectResponse
+    {
+        try {
+            return $this->validatedDeDataScraperSalesOwnerId(request()->input('user_id'));
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $message = collect($exception->errors())->flatten()->first();
+
+            if (request()->ajax() || request()->expectsJson()) {
+                return response()->json([
+                    'message' => $message,
+                    'errors'  => $exception->errors(),
+                ], 422);
+            }
+
+            return redirect()->back()->withErrors($exception->errors())->withInput();
+        }
+    }
+
     /**
      * Store a newly created resource in storage.
      */
@@ -1163,9 +1308,27 @@ class LeadController extends Controller
 
         $isMainCreate = in_array(lead_variant(), ['main', 'bde'], true);
         $isLgeCreate = lead_variant() === 'lge';
-        $isCallingRoleCreate = in_array(lead_variant(), ['lge', 'sdr'], true);
+        $isDeDataScraperCreate = lead_variant() === 'de_data_scraper';
+        $isCallingRoleCreate = in_array(lead_variant(), ['lge', 'sdr', 'de_data_scraper'], true);
+        $deDataScraperSalesOwnerId = null;
 
-        if ($isLgeCreate || $this->sourceRepository->isLinkedInSource((int) ($data['lead_source_id'] ?? 0))) {
+        try {
+            $deDataScraperSalesOwnerId = $this->validatedDeDataScraperSalesOwnerId($data['user_id'] ?? null);
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            if (request()->ajax()) {
+                return response()->json([
+                    'message' => collect($exception->errors())->flatten()->first(),
+                    'errors'  => $exception->errors(),
+                ], 422);
+            }
+
+            return redirect()
+                ->back()
+                ->withInput()
+                ->withErrors($exception->errors());
+        }
+
+        if (! $isDeDataScraperCreate && ($isLgeCreate || $this->sourceRepository->isLinkedInSource((int) ($data['lead_source_id'] ?? 0)))) {
             try {
                 $this->applyLinkedInProfileToLeadData($data);
                 $coldLeadForwardSdrId = $isLgeCreate ? $this->validatedColdLeadForwardSdrId($data) : null;
@@ -1187,7 +1350,7 @@ class LeadController extends Controller
             $coldLeadForwardSdrId = null;
         }
 
-        unset($data['cold_lead_sdr_user_id']);
+        unset($data['cold_lead_sdr_user_id'], $data['forward_to_user_id']);
 
         // Main create: default Sales Owner to creator (editable to forward); always start in New stage.
         if ($isMainCreate || $isCallingRoleCreate) {
@@ -1196,11 +1359,16 @@ class LeadController extends Controller
             }
 
             if ($isCallingRoleCreate) {
-                $data['user_id'] = auth()->guard('user')->id();
+                if ($isDeDataScraperCreate) {
+                    $data['user_id'] = $deDataScraperSalesOwnerId ?: auth()->guard('user')->id();
+                    $data['lead_owner_id'] = auth()->guard('user')->id();
+                } else {
+                    $data['user_id'] = auth()->guard('user')->id();
+                }
             }
 
             if ($isCallingRoleCreate && empty($data['lead_owner_id'])) {
-                $data['lead_owner_id'] = auth()->guard('user')->id();
+                $data['lead_owner_id'] = $data['user_id'] ?? auth()->guard('user')->id();
             }
 
             if (empty($data['lead_pipeline_id'])) {
@@ -1253,7 +1421,7 @@ class LeadController extends Controller
             $data['closed_at'] = Carbon::now();
         }
 
-        $lead = DB::transaction(function () use ($data, $isLgeCreate, $coldLeadForwardSdrId) {
+        $lead = DB::transaction(function () use ($data, $isLgeCreate, $coldLeadForwardSdrId, $isDeDataScraperCreate, $deDataScraperSalesOwnerId) {
             $lead = $this->leadRepository->create($data);
 
             $this->syncLeadTags($lead, $data['tags'] ?? []);
@@ -1272,6 +1440,18 @@ class LeadController extends Controller
                     $lead,
                     (int) auth()->guard('user')->id(),
                     $coldLeadForwardSdrId,
+                );
+            }
+
+            if (
+                $isDeDataScraperCreate
+                && $deDataScraperSalesOwnerId
+                && $deDataScraperSalesOwnerId !== (int) auth()->guard('user')->id()
+            ) {
+                $this->leadForwardService->recordSalesOwnerTransferHistory(
+                    $lead,
+                    (int) auth()->guard('user')->id(),
+                    $deDataScraperSalesOwnerId,
                 );
             }
 
@@ -1450,7 +1630,7 @@ class LeadController extends Controller
             ? $this->sourceAccessService->filterAccessibleStages($lead->pipeline->stages)
             : collect();
 
-        if ($lead->pipeline && in_array(lead_variant(), ['bde', 'sdr', 'lge'], true)) {
+        if ($lead->pipeline && in_array(lead_variant(), ['bde', 'sdr', 'lge', 'de_data_scraper'], true)) {
             $meetingStage = $lead->pipeline->stages->firstWhere('code', 'meeting');
 
             if ($meetingStage) {
@@ -1889,9 +2069,14 @@ class LeadController extends Controller
         return lead_variant() === 'bde' || $this->sourceAccessService->isBdeUser();
     }
 
+    protected function isDeDataScraperUser(): bool
+    {
+        return lead_variant() === 'de_data_scraper' || $this->sourceAccessService->isDeDataScraperUser();
+    }
+
     protected function isCallingRoleUser(): bool
     {
-        return $this->isBdeUser() || $this->isSdrUser() || $this->isLgeUser();
+        return $this->isBdeUser() || $this->isSdrUser() || $this->isLgeUser() || $this->isDeDataScraperUser();
     }
 
     /**
@@ -2145,9 +2330,12 @@ class LeadController extends Controller
             || bouncer()->hasPermission('sdr_leads.edit')
             || bouncer()->hasPermission('lge_leads.create')
             || bouncer()->hasPermission('lge_leads.edit')
+            || bouncer()->hasPermission('de_data_scraper_leads.create')
+            || bouncer()->hasPermission('de_data_scraper_leads.edit')
             || bouncer()->hasPermission('lead_clouser_leads.edit')
             || $this->isSdrUser()
-            || $this->isLgeUser();
+            || $this->isLgeUser()
+            || $this->sourceAccessService->isDeDataScraperUser();
 
         abort_unless($canCreate, 403);
 
@@ -2690,7 +2878,7 @@ class LeadController extends Controller
 
                 $this->addAssignedByForKanban($query);
 
-                if (in_array(lead_variant(), ['bde', 'sdr', 'lge'], true)) {
+                if (in_array(lead_variant(), ['bde', 'sdr', 'lge', 'de_data_scraper'], true)) {
                     $this->addForwardedOriginFlagForKanban($query);
                 }
 
@@ -3485,7 +3673,7 @@ class LeadController extends Controller
             }
         }
 
-        if ($this->sourceRepository->isLinkedInSource($sourceId)) {
+        if (lead_variant() !== 'de_data_scraper' && $this->sourceRepository->isLinkedInSource($sourceId)) {
             $profileId = $this->resolveImportedLinkedInProfileId($row, $batchLinkedInProfileId);
 
             if ($profileId <= 0) {
@@ -3530,6 +3718,7 @@ class LeadController extends Controller
         if (
             ! $skipSalesOwnerEmail
             && lead_variant() !== 'lge'
+            && lead_variant() !== 'de_data_scraper'
             && lead_variant() !== 'bde'
             && filled($row['sales_owner_email'] ?? null)
             && ! $this->resolveUserId($row['sales_owner_email'])
@@ -3550,6 +3739,7 @@ class LeadController extends Controller
         ?int $assigneeUserId = null,
         ?int $industryId = null,
         ?int $batchLinkedInProfileId = null,
+        ?int $forwardToUserId = null,
     ): array {
         $pipeline = filled($row['pipeline'] ?? null)
             ? $this->pipelineRepository->find($this->resolveImportId('lead_pipelines', $row['pipeline']))
@@ -3603,14 +3793,19 @@ class LeadController extends Controller
             ];
         }
 
-        $importerOwnsLead = in_array(lead_variant(), ['bde', 'lge', 'sdr'], true);
+        $importerOwnsLead = in_array(lead_variant(), ['bde', 'lge', 'sdr', 'de_data_scraper'], true);
+        $isDeDataScraperImport = lead_variant() === 'de_data_scraper';
+        $currentUserId = (int) auth()->guard('user')->id();
 
-        $ownerId = $assigneeUserId
-            ?? ($importerOwnsLead
-                ? auth()->guard('user')->id()
-                : (filled($row['sales_owner_email'] ?? null)
-                    ? $this->resolveUserId($row['sales_owner_email'])
-                    : null));
+        $ownerId = $isDeDataScraperImport
+            ? ($forwardToUserId ?: $currentUserId)
+            : ($forwardToUserId
+                ?? $assigneeUserId
+                ?? ($importerOwnsLead
+                    ? $currentUserId
+                    : (filled($row['sales_owner_email'] ?? null)
+                        ? $this->resolveUserId($row['sales_owner_email'])
+                        : null)));
 
         $lead = [
             'entity_type'              => 'leads',
@@ -3624,10 +3819,13 @@ class LeadController extends Controller
             'source_sub_type'          => $this->nullableImportValue($row['source_sub_type'] ?? null),
             'source_link'              => $this->nullableImportValue($row['source_link'] ?? null),
             'user_id'                  => $ownerId,
-            'lead_owner_id'            => $assigneeUserId
-                ?? ($importerOwnsLead
-                    ? auth()->guard('user')->id()
-                    : null),
+            'lead_owner_id'            => $isDeDataScraperImport
+                ? $currentUserId
+                : ($forwardToUserId
+                    ?? $assigneeUserId
+                    ?? ($importerOwnsLead
+                        ? $currentUserId
+                        : null)),
             'lead_pipeline_id'         => $pipeline->id,
             'lead_pipeline_stage_id'   => $stage->id,
             'status'                   => 1,
@@ -3649,7 +3847,7 @@ class LeadController extends Controller
             $lead['industry'] = $industryId;
         }
 
-        if ($this->sourceRepository->isLinkedInSource($leadSourceId)) {
+        if (lead_variant() !== 'de_data_scraper' && $this->sourceRepository->isLinkedInSource($leadSourceId)) {
             $profileId = $this->resolveImportedLinkedInProfileId($row, $batchLinkedInProfileId);
 
             if ($profileId <= 0) {
@@ -3677,6 +3875,9 @@ class LeadController extends Controller
         int $importTagId,
     ): Lead {
         $assigneeUserId = $this->assigneeForImportIndex($assignment['assignee_user_ids'] ?? [], $assignIndex);
+        $deDataScraperSalesOwnerId = lead_variant() === 'de_data_scraper'
+            ? (int) ($assignment['user_id'] ?? 0)
+            : 0;
         $isLgeColdForward = $this->isLgeColdForwardImport($importTagId);
 
         if ($isLgeColdForward && ! $assigneeUserId) {
@@ -3691,6 +3892,7 @@ class LeadController extends Controller
             $importTagId,
             $assigneeUserId,
             $isLgeColdForward,
+            $deDataScraperSalesOwnerId,
         ) {
             Event::dispatch('lead.create.before');
 
@@ -3700,6 +3902,7 @@ class LeadController extends Controller
                 $isLgeColdForward ? null : $assigneeUserId,
                 $assignment['industry_id'] ?? null,
                 $batchLinkedInProfileId,
+                $deDataScraperSalesOwnerId ?: null,
             ));
 
             $this->syncLeadTags($lead, $this->tagsFromImportRow($rowData));
@@ -3720,6 +3923,14 @@ class LeadController extends Controller
                     (int) auth()->guard('user')->id(),
                     (int) $assigneeUserId,
                     false,
+                );
+            }
+
+            if ($deDataScraperSalesOwnerId > 0 && $deDataScraperSalesOwnerId !== (int) auth()->guard('user')->id()) {
+                $this->leadForwardService->recordSalesOwnerTransferHistory(
+                    $lead,
+                    (int) auth()->guard('user')->id(),
+                    $deDataScraperSalesOwnerId,
                 );
             }
 
@@ -3773,7 +3984,7 @@ class LeadController extends Controller
      */
     protected function validatedLgeImportProfileId(): int|null|JsonResponse|RedirectResponse
     {
-        if (! $this->sourceRepository->isLinkedInSource((int) request()->input('lead_source_id', 0))) {
+        if (lead_variant() === 'de_data_scraper' || ! $this->sourceRepository->isLinkedInSource((int) request()->input('lead_source_id', 0))) {
             return null;
         }
 
@@ -3833,13 +4044,15 @@ class LeadController extends Controller
             return [
                 'assignee_user_ids' => array_values($assigneeUserIds),
                 'industry_id'       => null,
+                'user_id'            => null,
             ];
         }
 
-        if (! $this->sourceAccessService->isAdmin()) {
+        if (lead_variant() === 'de_data_scraper' || ! $this->sourceAccessService->isAdmin()) {
             return [
                 'assignee_user_ids' => [],
                 'industry_id'       => null,
+                'user_id'            => null,
             ];
         }
 
@@ -3862,6 +4075,7 @@ class LeadController extends Controller
         return [
             'assignee_user_ids' => array_values($assigneeUserIds),
             'industry_id'       => $industryId,
+            'user_id'            => null,
         ];
     }
 

@@ -23,8 +23,10 @@
             let importAssigneeUserIds = [];
             let importIndustryId = null;
             let importLinkedInProfileId = null;
+            let importForwardToUserId = null;
             let importTagId = null;
             const isLgeLeadImport = @json(lead_variant() === 'lge');
+            const isDeDataScraperLeadImport = @json(lead_variant() === 'de_data_scraper');
             const isAdminLeadImport = @json(app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin());
             const coldLeadImportTagId = @json(app(\Webkul\Lead\Services\LeadForwardService::class)->coldLeadTagId());
             let failedImportRows = [];
@@ -416,7 +418,7 @@
 
                 importLinkedInProfileId = null;
 
-                if (isLinkedInImportSource()) {
+                if (! isDeDataScraperLeadImport && isLinkedInImportSource()) {
                     const profileSelect = document.getElementById('lead-import-linkedin-profile');
 
                     if (! profileSelect?.value) {
@@ -456,6 +458,9 @@
                 importTagId = Number(tagSelect.value);
                 importAssigneeUserIds = selectedAssignees;
                 importIndustryId = industrySelect?.value ? Number(industrySelect.value) : null;
+                importForwardToUserId = document.getElementById('lead-import-sales-owner')?.value
+                    ? Number(document.getElementById('lead-import-sales-owner').value)
+                    : null;
                 renderFailedRows([], importLeadSourceId);
 
                 elements.submit.disabled = true;
@@ -561,6 +566,7 @@
                         assignee_user_ids: importAssigneeUserIds,
                         industry_id: importIndustryId,
                         import_linkedin_profile_id: importLinkedInProfileId,
+                        user_id: importForwardToUserId,
                         import_tag_id: importTagId,
                         rows,
                     }, {

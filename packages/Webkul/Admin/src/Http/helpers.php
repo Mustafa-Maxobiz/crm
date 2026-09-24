@@ -12,18 +12,18 @@ if (! function_exists('bouncer')) {
 
 if (! function_exists('lead_variant')) {
     /**
-     * Current leads UI variant: main, bde, sdr, lge, or lead_clouser.
+     * Current leads UI variant: main, bde, sdr, lge, de_data_scraper, or lead_clouser.
      */
     function lead_variant(?string $variant = null): string
     {
-        if (in_array($variant, ['main', 'bde', 'sdr', 'lge', 'lead_clouser'], true)) {
+        if (in_array($variant, ['main', 'bde', 'sdr', 'lge', 'de_data_scraper', 'lead_clouser'], true)) {
             return $variant;
         }
 
         if (app()->bound('view')) {
             $shared = view()->shared('leadVariant');
 
-            if (in_array($shared, ['main', 'bde', 'sdr', 'lge', 'lead_clouser'], true)) {
+            if (in_array($shared, ['main', 'bde', 'sdr', 'lge', 'de_data_scraper', 'lead_clouser'], true)) {
                 return $shared;
             }
         }
@@ -40,6 +40,10 @@ if (! function_exists('lead_variant')) {
 
         if (str_starts_with($routeName, 'admin.leads.lge')) {
             return 'lge';
+        }
+
+        if (str_starts_with($routeName, 'admin.leads.de_data_scraper')) {
+            return 'de_data_scraper';
         }
 
         if (str_starts_with($routeName, 'admin.leads.lead_clouser')) {
@@ -61,6 +65,7 @@ if (! function_exists('lead_permission')) {
             'bde' => 'bde_leads',
             'sdr' => 'sdr_leads',
             'lge' => 'lge_leads',
+            'de_data_scraper' => 'de_data_scraper_leads',
             'lead_clouser' => 'lead_clouser_leads',
             default => 'leads',
         };
@@ -87,6 +92,10 @@ if (! function_exists('lead_route_name')) {
 
         if (lead_variant($variant) === 'lge') {
             return $action === 'index' ? 'admin.leads.lge' : 'admin.leads.lge.'.$action;
+        }
+
+        if (lead_variant($variant) === 'de_data_scraper') {
+            return $action === 'index' ? 'admin.leads.de_data_scraper' : 'admin.leads.de_data_scraper.'.$action;
         }
 
         if (lead_variant($variant) === 'lead_clouser') {
@@ -134,6 +143,10 @@ if (! function_exists('lead_variant_for_user')) {
             return 'lge';
         }
 
+        if ($sourceAccessService->isDeDataScraperUser($user)) {
+            return 'de_data_scraper';
+        }
+
         if ($sourceAccessService->isLeadCloserUser($user)) {
             return 'lead_clouser';
         }
@@ -164,6 +177,7 @@ if (! function_exists('lead_url')) {
             'bde' => url('admin/leads/bde'),
             'sdr' => url('admin/leads/sdr'),
             'lge' => url('admin/leads/lge'),
+            'de_data_scraper' => url('admin/leads/data-scraper'),
             'lead_clouser' => url('admin/leads/lead-clouser'),
             default => url('admin/leads'),
         };
@@ -207,6 +221,7 @@ if (! function_exists('admin_menu_items')) {
                 'sdr_leads',
                 'lead_clouser_leads',
                 'lge_leads',
+                'de_data_scraper_leads',
             ];
 
             return $items->reject(
@@ -224,6 +239,7 @@ if (! function_exists('admin_menu_items')) {
                 'leads',
                 'sdr_leads',
                 'lge_leads',
+                'de_data_scraper_leads',
             ];
 
             return $items->reject(
@@ -244,6 +260,7 @@ if (! function_exists('admin_menu_items')) {
             'sdr_leads',
             'lead_clouser_leads',
             'lge_leads',
+            'de_data_scraper_leads',
         ];
 
         return $items->reject(

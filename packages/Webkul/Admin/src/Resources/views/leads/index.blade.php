@@ -6,6 +6,8 @@
             @lang('admin::app.layouts.leads-sdr')
         @elseif (($leadVariant ?? 'main') === 'lge')
             @lang('admin::app.layouts.leads-lge')
+        @elseif (($leadVariant ?? 'main') === 'de_data_scraper')
+            @lang('admin::app.layouts.leads-data-scraper')
         @elseif (($leadVariant ?? 'main') === 'lead_clouser')
             @lang('admin::app.layouts.leads-lead-clouser')
         @else

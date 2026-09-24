@@ -1,7 +1,7 @@
 @php
     $isLgeLeadVariant = ($leadVariant ?? 'main') === 'lge';
-    $isCallingRoleLeadVariant = in_array($leadVariant ?? 'main', ['bde', 'sdr', 'lge'], true);
-    $isOwnerRestrictedLeadVariant = in_array($leadVariant ?? 'main', ['bde', 'sdr', 'lge'], true);
+    $isCallingRoleLeadVariant = in_array($leadVariant ?? 'main', ['bde', 'sdr', 'lge', 'de_data_scraper'], true);
+    $isOwnerRestrictedLeadVariant = in_array($leadVariant ?? 'main', ['bde', 'sdr', 'lge', 'de_data_scraper'], true);
     $currentUserId = auth()->guard('user')->id();
     $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
     $accessibleStages = $sourceAccessService

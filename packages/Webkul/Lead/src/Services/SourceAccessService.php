@@ -251,6 +251,19 @@ class SourceAccessService
         return strtolower(trim((string) $this->activeRole($user)?->name)) === 'lge';
     }
 
+    public function isDeDataScraperUser(?UserContract $user = null): bool
+    {
+        $user = $this->resolveUser($user);
+        $roleName = strtolower(trim((string) $this->activeRole($user)?->name));
+
+        return in_array($roleName, [
+            'de data scraper',
+            'data scraper',
+            'de_data_scraper',
+            'de-data-scraper',
+        ], true);
+    }
+
     public function isLeadCloserUser(?UserContract $user = null): bool
     {
         $user = $this->resolveUser($user);
@@ -275,7 +288,7 @@ class SourceAccessService
     {
         $roleName = strtolower(trim((string) $roleName));
 
-        return in_array($roleName, ['sdr', 'lge'], true)
+        return in_array($roleName, ['sdr', 'lge', 'de data scraper', 'data scraper', 'de_data_scraper', 'de-data-scraper'], true)
             || $this->isLeadCloserRoleName($roleName);
     }
 
@@ -675,7 +688,7 @@ class SourceAccessService
      */
     public function applyNonTransferredOwnerTableScope(QueryBuilder $query): QueryBuilder
     {
-        if ($this->isAdmin() || ! in_array(lead_variant(), ['sdr', 'lge'], true)) {
+        if ($this->isAdmin() || ! in_array(lead_variant(), ['sdr', 'lge', 'de_data_scraper'], true)) {
             return $query;
         }
 
@@ -695,7 +708,7 @@ class SourceAccessService
 
     public function isCallingRoleUser(?UserContract $user = null): bool
     {
-        return $this->isBdeUser($user) || $this->isSdrUser($user) || $this->isLgeUser($user);
+        return $this->isBdeUser($user) || $this->isSdrUser($user) || $this->isLgeUser($user) || $this->isDeDataScraperUser($user);
     }
 
     public function canAccessSourceId(int $sourceId, ?UserContract $user = null): bool

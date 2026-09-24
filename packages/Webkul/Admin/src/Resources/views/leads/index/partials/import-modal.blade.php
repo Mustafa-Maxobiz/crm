@@ -8,8 +8,12 @@
                             ?? $importTags->first()?->id;
                         $leadForwardService = app(\Webkul\Lead\Services\LeadForwardService::class);
                         $coldLeadImportTagId = $leadForwardService->coldLeadTagId();
-                        $isAdminLeadImport = app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin();
+                        $isAdminLeadImport = app(\Webkul\Lead\Services\SourceAccessService::class)->isAdmin() && lead_variant() !== 'de_data_scraper';
                         $importSdrUsers = $leadForwardService->activeSdrUsers();
+                        $isDeDataScraperLeadImport = lead_variant() === 'de_data_scraper';
+                        $forwardAssignableUsers = $isDeDataScraperLeadImport
+                            ? collect($forwardAssignableUsers ?? [])
+                            : collect();
                     @endphp
 
                     <x-admin::modal
@@ -54,6 +58,8 @@
                                             Choose one or more <strong>SDR users</strong> to own these leads (multiple users share them equally) and an <strong>Industry</strong> for the whole file.
                                         @elseif (lead_variant() === 'lge')
                                             If the selected tag is <strong>Cold Lead</strong>, choose one or more <strong>SDR users</strong> to receive the imported leads.
+                                        @elseif ($isDeDataScraperLeadImport)
+                                            Optionally select a <strong>Sales Owner</strong> user to own every imported lead. Leave it blank to assign leads to yourself.
                                         @elseif (lead_variant() === 'bde')
                                             Imported leads are assigned to you automatically as Sales Owner and Lead Owner.
                                         @endif
@@ -132,7 +138,7 @@
                                     <x-admin::form.control-group.error control-name="import_tag_id" />
                                 </x-admin::form.control-group>
 
-                                @if (collect($importSources)->contains(fn ($source) => strtolower(trim($source['label'])) === 'linkedin'))
+                                @if (! $isDeDataScraperLeadImport && collect($importSources)->contains(fn ($source) => strtolower(trim($source['label'])) === 'linkedin'))
                                     @php
                                         $importLinkedInProfiles = app(\Webkul\Lead\Services\LinkedInProfileAccessService::class)->getFilterOptions();
                                     @endphp
@@ -231,6 +237,35 @@
                                             </select>
                                         </x-admin::form.control-group>
                                     @endif
+                                @endif
+
+
+
+                                @if ($isDeDataScraperLeadImport)
+                                    <x-admin::form.control-group>
+                                        <x-admin::form.control-group.label>
+                                            Sales Owner
+                                        </x-admin::form.control-group.label>
+
+                                        <select
+                                            id="lead-import-sales-owner"
+                                            name="user_id"
+                                            class="custom-select w-full rounded border border-gray-200 px-2.5 py-2 text-sm font-normal text-gray-800 transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+                                        >
+                                            <option value="{{ auth()->guard('user')->id() }}" selected>
+                                                {{ auth()->guard('user')->user()?->name ?? 'Me' }} (me)
+                                            </option>
+                                            @foreach ($forwardAssignableUsers as $forwardUser)
+                                                <option value="{{ $forwardUser->id }}">
+                                                    {{ $forwardUser->label }}@if ($forwardUser->email) ({{ $forwardUser->email }})@endif
+                                                </option>
+                                            @endforeach
+                                        </select>
+
+                                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                            Changing Sales Owner will forward every imported lead. You will remain Lead Owner.
+                                        </p>
+                                    </x-admin::form.control-group>
                                 @endif
 
                                 <x-admin::form.control-group>

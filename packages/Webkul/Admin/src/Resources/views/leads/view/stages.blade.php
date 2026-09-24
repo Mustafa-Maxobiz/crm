@@ -1,6 +1,6 @@
 <!-- Stages Navigation -->
 @php
-    $accessibleViewStages = in_array(lead_variant(), ['bde', 'sdr', 'lge'], true)
+    $accessibleViewStages = in_array(lead_variant(), ['bde', 'sdr', 'lge', 'de_data_scraper'], true)
         ? $lead->pipeline->stages->values()
         : app(\Webkul\Lead\Services\SourceAccessService::class)
             ->filterAccessibleStages($lead->pipeline->stages);
@@ -8,14 +8,14 @@
     $currentUser = auth()->guard('user')->user();
     $meetingStage = $lead->pipeline->stages->firstWhere('code', 'meeting');
 
-    if (in_array(lead_variant(), ['bde', 'sdr', 'lge'], true) && $meetingStage) {
+    if (in_array(lead_variant(), ['bde', 'sdr', 'lge', 'de_data_scraper'], true) && $meetingStage) {
         $accessibleViewStages = $accessibleViewStages
             ->filter(fn ($stage) => (int) $stage->sort_order <= (int) $meetingStage->sort_order)
             ->values();
     }
 
     $isLgeLeadVariant = lead_variant() === 'lge';
-    $isCallingRoleView = in_array(lead_variant(), ['bde', 'sdr', 'lge'], true);
+    $isCallingRoleView = in_array(lead_variant(), ['bde', 'sdr', 'lge', 'de_data_scraper'], true);
     $stageEditingLocked = $currentUser
         && $isCallingRoleView
         && (int) ($lead->lead_owner_id ?? 0) === (int) $currentUser->id
@@ -40,7 +40,7 @@
         $hasMeetingActivity = $lead->activities()->where('type', 'meeting')->exists();
 
         $defaultMeetingParticipants = [
-            'users' => ! in_array(lead_variant(), ['bde', 'sdr', 'lge'], true) && auth()->guard('user')->user()
+            'users' => ! in_array(lead_variant(), ['bde', 'sdr', 'lge', 'de_data_scraper'], true) && auth()->guard('user')->user()
                 ? [[
                     'id'   => auth()->guard('user')->id(),
                     'name' => auth()->guard('user')->user()->name,
@@ -359,7 +359,7 @@
                                     <x-admin::form.control-group.error control-name="comment" />
                                 </x-admin::form.control-group>
 
-                                @if (in_array(lead_variant(), ['bde', 'sdr', 'lge'], true))
+                                @if (in_array(lead_variant(), ['bde', 'sdr', 'lge', 'de_data_scraper'], true))
                                     <x-admin::form.control-group>
                                         <x-admin::form.control-group.label class="required">
                                             Assigned Owner

@@ -2,6 +2,7 @@
 
 namespace Webkul\Lead\Services;
 
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Webkul\Lead\Models\Lead;
@@ -300,6 +301,41 @@ class LeadForwardService
 
             return $lead->refresh();
         });
+    }
+
+
+    public function recordSalesOwnerTransferHistory(Lead $lead, int $fromUserId, int $toUserId): void
+    {
+        if ($fromUserId <= 0 || $toUserId <= 0 || $fromUserId === $toUserId) {
+            return;
+        }
+
+        $now = now();
+        $latestForward = DB::table('lead_forwards')
+            ->where('lead_id', $lead->id)
+            ->orderByDesc('id')
+            ->first();
+
+        $isImmediateDuplicate = $latestForward
+            && (int) $latestForward->from_user_id === $fromUserId
+            && (int) $latestForward->to_user_id === $toUserId
+            && $latestForward->forward_type === SalesOwnerTransferService::TYPE_SALES_OWNER_TRANSFER
+            && $latestForward->created_at
+            && Carbon::parse($latestForward->created_at)->greaterThanOrEqualTo($now->copy()->subSeconds(10));
+
+        if ($isImmediateDuplicate) {
+            return;
+        }
+
+        DB::table('lead_forwards')->insert([
+            'lead_id'      => $lead->id,
+            'from_user_id' => $fromUserId,
+            'to_user_id'   => $toUserId,
+            'forward_type' => SalesOwnerTransferService::TYPE_SALES_OWNER_TRANSFER,
+            'forwarded_at' => $now,
+            'created_at'   => $now,
+            'updated_at'   => $now,
+        ]);
     }
 
     public function switchToColdAndForward(Lead $lead, int $fromUserId, int $toUserId, bool $validateSdr = true): Lead
