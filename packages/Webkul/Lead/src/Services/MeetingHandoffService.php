@@ -169,7 +169,7 @@ class MeetingHandoffService
     }
 
     /**
-     * Eligible handoff owners for a lead. Falls back to all active owners when the lead has no services.
+     * Eligible handoff owners for a lead. Falls back to all active owners when the lead has no services or no active aligned owner.
      *
      * @return array<int, array{id: int, name: string, email: string|null, role_name: string|null}>
      */
@@ -185,15 +185,11 @@ class MeetingHandoffService
             return $this->getAllActiveMeetingOwners();
         }
 
-        return $this->mapEligibleOwnerRows(
-            $this->eligibleOwnerBaseQuery($this->includeAdminMeetingOwners())
-                ->join('service_user', 'service_user.user_id', '=', 'users.id')
-                ->whereIn('service_user.service_id', $serviceIds)
-                ->distinct()
-                ->orderBy('users.name')
-                ->leftJoin('working_hours', 'working_hours.user_id', '=', 'users.id')
-                ->get(['users.id', 'users.name', 'users.email', 'roles.name as role_name', 'working_hours.start_time as working_hour_start_time', 'working_hours.end_time as working_hour_end_time'])
-        );
+        $alignedOwners = $this->getActiveMeetingOwnersForServices($serviceIds);
+
+        return count($alignedOwners) > 0
+            ? $alignedOwners
+            : $this->getAllActiveMeetingOwners();
     }
 
     public function isEligibleMeetingOwnerForLead(LeadContract $lead, int $userId): bool
@@ -208,9 +204,50 @@ class MeetingHandoffService
             return true;
         }
 
-        return DB::table('service_user')
-            ->where('user_id', $userId)
-            ->whereIn('service_id', $serviceIds)
+        if (! $this->activeMeetingOwnersExistForServices($serviceIds)) {
+            return true;
+        }
+
+        return $this->eligibleOwnerBaseQuery($this->includeAdminMeetingOwners())
+            ->join('service_user', 'service_user.user_id', '=', 'users.id')
+            ->where('users.id', $userId)
+            ->whereIn('service_user.service_id', $serviceIds)
+            ->exists();
+    }
+
+    /**
+     * @param  array<int>  $serviceIds
+     * @return array<int, array{id: int, name: string, email: string|null, role_name: string|null}>
+     */
+    protected function getActiveMeetingOwnersForServices(array $serviceIds): array
+    {
+        if (empty($serviceIds)) {
+            return [];
+        }
+
+        return $this->mapEligibleOwnerRows(
+            $this->eligibleOwnerBaseQuery($this->includeAdminMeetingOwners())
+                ->join('service_user', 'service_user.user_id', '=', 'users.id')
+                ->whereIn('service_user.service_id', $serviceIds)
+                ->distinct()
+                ->orderBy('users.name')
+                ->leftJoin('working_hours', 'working_hours.user_id', '=', 'users.id')
+                ->get(['users.id', 'users.name', 'users.email', 'roles.name as role_name', 'working_hours.start_time as working_hour_start_time', 'working_hours.end_time as working_hour_end_time'])
+        );
+    }
+
+    /**
+     * @param  array<int>  $serviceIds
+     */
+    protected function activeMeetingOwnersExistForServices(array $serviceIds): bool
+    {
+        if (empty($serviceIds)) {
+            return false;
+        }
+
+        return $this->eligibleOwnerBaseQuery($this->includeAdminMeetingOwners())
+            ->join('service_user', 'service_user.user_id', '=', 'users.id')
+            ->whereIn('service_user.service_id', $serviceIds)
             ->exists();
     }
 
