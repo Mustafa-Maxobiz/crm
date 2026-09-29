@@ -58,6 +58,8 @@
             :attribute="$attribute"
             :value="$value"
             :validations="$validations"
+            :can-add-new="$attribute->code === 'service_offered'"
+            :store-url="$attribute->code === 'service_offered' ? lead_route('services_offered.store') : null"
         />
         
         @break

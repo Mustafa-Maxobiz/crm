@@ -1103,13 +1103,12 @@
                         organizationPayload.organization_id = personPayload.organization_id || null;
                     }
 
-                    this.$axios.post(`{{ lead_url() . '/edit' }}/${this.editLeadId}`, {
+                    this.$axios.put(`{{ lead_url() . '/edit' }}/${this.editLeadId}`, {
                         ...params,
                         ...organizationPayload,
                         person: personPayload,
                         entity_type: 'leads',
                         quick_add: 1,
-                        _method: 'put',
                     }, {
                         headers: {
                             Accept: 'application/json',

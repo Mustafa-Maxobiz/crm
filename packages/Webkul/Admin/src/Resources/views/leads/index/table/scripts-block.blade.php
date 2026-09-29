@@ -11,10 +11,11 @@
         'lead_type_id',
         'lead_sub_source_id',
         'industry',
+        'linkedin_profile_id',
     ];
 
     $modalExcludedAttributeCodes = [
-        'lead_type_id',
+        ...$lockedLeadAttributeCodes,
         'user_id',
         'lead_pipeline_id',
         'lead_pipeline_stage_id',

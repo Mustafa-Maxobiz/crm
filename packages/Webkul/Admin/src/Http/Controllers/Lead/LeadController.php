@@ -1306,20 +1306,22 @@ class LeadController extends Controller
             $data['next_followup_date'] = null;
         }
 
-        try {
-            $this->validateColdWarmTagConflict((array) ($data['tags'] ?? []));
-        } catch (\Illuminate\Validation\ValidationException $exception) {
-            if (request()->ajax()) {
-                return response()->json([
-                    'message' => collect($exception->errors())->flatten()->first(),
-                    'errors'  => $exception->errors(),
-                ], 422);
-            }
+        if (array_key_exists('tags', $data)) {
+            try {
+                $this->validateColdWarmTagConflict((array) ($data['tags'] ?? []));
+            } catch (\Illuminate\Validation\ValidationException $exception) {
+                if (request()->ajax()) {
+                    return response()->json([
+                        'message' => collect($exception->errors())->flatten()->first(),
+                        'errors'  => $exception->errors(),
+                    ], 422);
+                }
 
-            return redirect()
-                ->back()
-                ->withInput()
-                ->withErrors($exception->errors());
+                return redirect()
+                    ->back()
+                    ->withInput()
+                    ->withErrors($exception->errors());
+            }
         }
 
         $isMainCreate = in_array(lead_variant(), ['main', 'bde'], true);
@@ -1548,7 +1550,7 @@ class LeadController extends Controller
             abort(403);
         }
 
-        $lead->load(['person.organization', 'organization', 'tags', 'pipeline.stages']);
+        $lead->load(['person.organization', 'organization', 'tags', 'services', 'pipeline.stages']);
 
         $data = $lead->attributesToArray();
 
@@ -1623,7 +1625,11 @@ class LeadController extends Controller
 
         $data['entity_type'] = 'leads';
         $data['quick_add'] = 1;
+        $serviceIds = $lead->services->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+
         $data['tags'] = $lead->tags->pluck('name')->filter()->values()->all();
+        $data['services'] = $serviceIds;
+        $data['service_offered'] = $serviceIds;
         $data['person'] = $this->leadPersonFormPayload($lead->person);
         $data['sales_owner_options'] = collect([$this->salesOwnerTransferService->ownerOption((int) $lead->user_id)])
             ->filter()
@@ -2165,6 +2171,41 @@ class LeadController extends Controller
     }
 
     /**
+     * Remove system fields from table quick-edit payloads; these use dedicated endpoints.
+     */
+    protected function stripQuickEditSystemFields(array $data): array
+    {
+        foreach ([
+            'user_id',
+            'lead_owner_id',
+            'lead_pipeline_id',
+            'lead_pipeline_stage_id',
+        ] as $code) {
+            unset($data[$code]);
+        }
+
+        return $data;
+    }
+
+    /**
+     * System fields that must not be changed through the inline attribute endpoint.
+     *
+     * @return array<int, string>
+     */
+    protected function lockedInlineAttributeCodes(): array
+    {
+        return array_values(array_unique(array_merge(
+            $this->lockedLeadAttributeCodes(),
+            [
+                'user_id',
+                'lead_owner_id',
+                'lead_pipeline_id',
+                'lead_pipeline_stage_id',
+            ]
+        )));
+    }
+
+    /**
      * @deprecated Use lockedLeadAttributeCodes()
      *
      * @return array<int, string>
@@ -2265,7 +2306,13 @@ class LeadController extends Controller
 
         Event::dispatch('lead.update.before', $id);
 
+        $isQuickAdd = $request->boolean('quick_add');
+
         $data = $this->stripLockedLeadFields($request->all());
+
+        if ($isQuickAdd) {
+            $data = $this->stripQuickEditSystemFields($data);
+        }
 
         if ($this->isSdrUser()) {
             unset($data['person'], $data['organization_id'], $data['organization_name']);
@@ -2275,20 +2322,22 @@ class LeadController extends Controller
             return $response;
         }
 
-        try {
-            $this->validateColdWarmTagConflict((array) ($data['tags'] ?? []));
-        } catch (\Illuminate\Validation\ValidationException $exception) {
-            if (request()->ajax()) {
-                return response()->json([
-                    'message' => collect($exception->errors())->flatten()->first(),
-                    'errors'  => $exception->errors(),
-                ], 422);
-            }
+        if (array_key_exists('tags', $data)) {
+            try {
+                $this->validateColdWarmTagConflict((array) ($data['tags'] ?? []));
+            } catch (\Illuminate\Validation\ValidationException $exception) {
+                if (request()->ajax()) {
+                    return response()->json([
+                        'message' => collect($exception->errors())->flatten()->first(),
+                        'errors'  => $exception->errors(),
+                    ], 422);
+                }
 
-            return redirect()
-                ->back()
-                ->withInput()
-                ->withErrors($exception->errors());
+                return redirect()
+                    ->back()
+                    ->withInput()
+                    ->withErrors($exception->errors());
+            }
         }
 
         if (isset($data['lead_pipeline_stage_id'])) {
@@ -2307,7 +2356,7 @@ class LeadController extends Controller
             }
 
             $data['lead_pipeline_id'] = $stage->lead_pipeline_id;
-        } else {
+        } elseif (! $isQuickAdd) {
             $pipeline = $this->pipelineRepository->getDefaultPipeline();
 
             $stage = $pipeline->stages()->first();
@@ -2317,13 +2366,27 @@ class LeadController extends Controller
             $data['lead_pipeline_stage_id'] = $stage->id;
         }
 
-        $lead = DB::transaction(function () use ($data, $id) {
+        $submittedTags = array_key_exists('tags', $data)
+            ? ($data['tags'] ?? [])
+            : null;
+
+        $submittedServices = null;
+
+        if (array_key_exists('services', $data) || array_key_exists('service_offered', $data)) {
+            $submittedServices = $data['services'] ?? $data['service_offered'] ?? [];
+        }
+
+        unset($data['tags'], $data['services'], $data['service_offered']);
+
+        $lead = DB::transaction(function () use ($data, $id, $submittedTags, $submittedServices) {
             $lead = $this->leadRepository->update($data, $id);
 
-            $this->syncLeadTags($lead, $data['tags'] ?? []);
+            if ($submittedTags !== null) {
+                $this->syncLeadTags($lead, $submittedTags);
+            }
 
-            if (array_key_exists('services', $data)) {
-                $this->syncLeadServices($lead, $data['services']);
+            if ($submittedServices !== null) {
+                $this->syncLeadServices($lead, $submittedServices);
             }
 
             $this->syncSourceTagForLead($lead);
@@ -2344,7 +2407,7 @@ class LeadController extends Controller
         if (request()->has('closed_at')) {
             return redirect()->back();
         } else {
-            return redirect()->route($this->leadsIndexRouteName(), $data['lead_pipeline_id']);
+            return redirect()->route($this->leadsIndexRouteName(), $data['lead_pipeline_id'] ?? $existingLead->lead_pipeline_id);
         }
     }
 
@@ -2407,7 +2470,7 @@ class LeadController extends Controller
             ], 403);
         }
 
-        $lockedCodes = $this->lockedLeadAttributeCodes();
+        $lockedCodes = $this->lockedInlineAttributeCodes();
         $attemptedLocked = array_values(array_intersect(array_keys($data), $lockedCodes));
 
         if (! empty($attemptedLocked)) {
