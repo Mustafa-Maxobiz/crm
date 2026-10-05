@@ -951,13 +951,16 @@ class LeadController extends Controller
 
             $data[$stage->sort_order]['leads'] = [
                 'data' => LeadResource::collection($paginator = $query->with([
+                    'attribute_values',
                     'tags.user',
                     'type',
                     'source',
                     'subSource',
                     'user',
                     'person',
+                    'person.attribute_values',
                     'person.organization',
+                    'person.organization.attribute_values',
                     'pipeline',
                     'pipeline.stages',
                     'stage',
@@ -2950,12 +2953,15 @@ class LeadController extends Controller
 
         $repository = $this->leadRepository
             ->with([
+                'attribute_values',
                 'tags.user',
                 'type',
                 'source',
                 'subSource',
                 'user',
+                'person.attribute_values',
                 'person.organization',
+                'person.organization.attribute_values',
                 'pipeline.stages',
                 'stage',
             ]);

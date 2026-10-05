@@ -48,7 +48,7 @@ trait CustomAttribute
             return $this->getRelationValue($key);
         }
 
-        if (! method_exists(static::class, $key) && ! isset($this->attributes[$key])) {
+        if (! method_exists(static::class, $key) && ! array_key_exists($key, $this->attributes)) {
             if (isset($this->id)) {
                 $this->attributes[$key] = '';
 

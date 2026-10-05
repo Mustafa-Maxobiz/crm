@@ -14,6 +14,10 @@ class LeadResource extends JsonResource
      */
     public function toArray($request)
     {
+        $attributes = $this->resource->getAttributes();
+
+        $assignedByUserId = $attributes['assigned_by_user_id'] ?? null;
+
         return [
             'id'                   => $this->id,
             'title'                => $this->title,
@@ -22,9 +26,9 @@ class LeadResource extends JsonResource
             'status'               => $this->status,
             'user_id'              => $this->user_id,
             'lead_owner_id'        => $this->lead_owner_id,
-            'forwarded_from_current_user' => (bool) ($this->forwarded_from_current_user ?? false),
-            'assigned_by_user_id'  => $this->assigned_by_user_id ? (int) $this->assigned_by_user_id : null,
-            'assigned_by_user_name'=> $this->assigned_by_user_name,
+            'forwarded_from_current_user' => (bool) ($attributes['forwarded_from_current_user'] ?? false),
+            'assigned_by_user_id'  => $assignedByUserId ? (int) $assignedByUserId : null,
+            'assigned_by_user_name'=> $attributes['assigned_by_user_name'] ?? null,
             'lead_pipeline_id'     => $this->lead_pipeline_id,
             'lead_pipeline_stage_id'=> $this->lead_pipeline_stage_id,
             'stage_code'           => $this->stage?->code,
