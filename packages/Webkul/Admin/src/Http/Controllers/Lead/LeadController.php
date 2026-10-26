@@ -933,6 +933,7 @@ class LeadController extends Controller
             $this->sourceAccessService->applyLeadQueryScope($query);
 
             $this->addAssignedByForKanban($query);
+            $this->addMeetingActivityFlagForKanban($query);
 
             if (in_array(lead_variant(), ['bde', 'sdr', 'lge', 'de_data_scraper'], true)) {
                 $this->addForwardedOriginFlagForKanban($query);
@@ -1007,6 +1008,28 @@ class LeadController extends Controller
         }
 
         $addAssignedBySelect($query);
+    }
+
+    protected function addMeetingActivityFlagForKanban(mixed $query): void
+    {
+        $addMeetingFlagSelect = function ($builder) {
+            return $builder->addSelect([
+                'has_meeting_activity' => DB::table('lead_activities')
+                    ->join('activities', 'activities.id', '=', 'lead_activities.activity_id')
+                    ->selectRaw('1')
+                    ->whereColumn('lead_activities.lead_id', 'leads.id')
+                    ->where('activities.type', 'meeting')
+                    ->limit(1),
+            ]);
+        };
+
+        if (method_exists($query, 'scopeQuery')) {
+            $query->scopeQuery($addMeetingFlagSelect);
+
+            return;
+        }
+
+        $addMeetingFlagSelect($query);
     }
 
     protected function addForwardedOriginFlagForKanban(mixed $query): void
@@ -1594,6 +1617,16 @@ class LeadController extends Controller
             ? ['id' => $organization->id, 'name' => $organization->name]
             : null;
 
+        $personPayload = $this->leadPersonFormPayload($lead->person);
+
+        if ($organization && empty($personPayload['organization_id'])) {
+            $personPayload['organization_id'] = $organization->id;
+            $personPayload['organization'] = [
+                'id'   => $organization->id,
+                'name' => $organization->name,
+            ];
+        }
+
         // Prefer company as Title only when Title is empty (main create/edit uses a separate Title).
         if ($organization && empty($data['title'])) {
             $data['title'] = $organization->name;
@@ -1628,12 +1661,13 @@ class LeadController extends Controller
 
         $data['entity_type'] = 'leads';
         $data['quick_add'] = 1;
+        $data['schedule_followup'] = filled($lead->next_followup_date);
         $serviceIds = $lead->services->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
 
-        $data['tags'] = $lead->tags->pluck('name')->filter()->values()->all();
+        $data['tags'] = $lead->tags->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
         $data['services'] = $serviceIds;
         $data['service_offered'] = $serviceIds;
-        $data['person'] = $this->leadPersonFormPayload($lead->person);
+        $data['person'] = $personPayload;
         $data['sales_owner_options'] = collect([$this->salesOwnerTransferService->ownerOption((int) $lead->user_id)])
             ->filter()
             ->merge($this->salesOwnerTransferService->eligibleOwnersForLead($lead))
@@ -2321,6 +2355,14 @@ class LeadController extends Controller
             unset($data['person'], $data['organization_id'], $data['organization_name']);
         }
 
+        if (array_key_exists('schedule_followup', $data)) {
+            $data['schedule_followup'] = $request->boolean('schedule_followup');
+        }
+
+        if (! ($data['schedule_followup'] ?? true)) {
+            $data['next_followup_date'] = null;
+        }
+
         if ($response = $this->applySalesOwnerTransferFromPayload($existingLead, $data)) {
             return $response;
         }
@@ -2575,10 +2617,20 @@ class LeadController extends Controller
                 ], 403);
             }
 
-            if ($this->isCallingRoleUser() && $this->stageIsBeyondMeeting($lead, $stage)) {
+            if (
+                $this->isCallingRoleUser()
+                && ! $this->sourceAccessService->isBdeDemoUser()
+                && $this->stageIsBeyondMeeting($lead, $stage)
+            ) {
                 return response()->json([
                     'message' => 'You can move BDE/SDR/LGE leads up to Meeting only.',
                 ], 403);
+            }
+
+            if (in_array($stage->code, ['won', 'lost'], true)) {
+                $this->validate(request(), [
+                    'meeting_attended' => ['nullable', 'boolean'],
+                ]);
             }
 
             $isLgeHandoffStage = $this->requiresLgeSdrHandoff($lead, $stage);
@@ -2676,6 +2728,17 @@ class LeadController extends Controller
 
             $lead = $this->leadRepository->update($payload, $id, $attributes);
 
+            if (in_array($stage->code, ['won', 'lost'], true)) {
+                $lead->activities()
+                    ->where('type', 'meeting')
+                    ->where('is_done', 0)
+                    ->update([
+                        'is_done'           => 1,
+                        'meeting_attended'  => request()->boolean('meeting_attended'),
+                        'updated_at'        => Carbon::now(),
+                    ]);
+            }
+
             if ($assignedMeetingOwnerId && $oldSalesOwnerId && $oldSalesOwnerId !== $assignedMeetingOwnerId) {
                 DB::table('lead_forwards')->insert([
                     'lead_id'      => $lead->id,
@@ -2696,11 +2759,44 @@ class LeadController extends Controller
                         'next_followup_date' => ['required', 'date', 'after:now'],
                     ]);
 
+                    $lead->newQuery()
+                        ->whereKey($lead->getKey())
+                        ->update([
+                            'followup_rule_group_id' => null,
+                        ]);
+
+                    $lead = $lead->refresh();
+
                     $this->followupScheduleService->applyNextFollowup(
                         $lead,
                         Carbon::parse(request()->input('next_followup_date'))
                     );
                 } elseif ($mode === 'auto') {
+                    $this->validate(request(), [
+                        'followup_rule_group_id' => [
+                            'required',
+                            'integer',
+                            function ($attribute, $value, $fail) {
+                                $exists = DB::table('followup_rule_groups')
+                                    ->where('id', (int) $value)
+                                    ->where('is_active', 1)
+                                    ->exists();
+
+                                if (! $exists) {
+                                    $fail('Please select a valid active follow-up group.');
+                                }
+                            },
+                        ],
+                    ]);
+
+                    $lead->newQuery()
+                        ->whereKey($lead->getKey())
+                        ->update([
+                            'followup_rule_group_id' => (int) request()->input('followup_rule_group_id'),
+                        ]);
+
+                    $lead = $lead->refresh();
+
                     $this->followupScheduleService->applyNextFollowup($lead, null, true);
                 }
 
@@ -2731,6 +2827,13 @@ class LeadController extends Controller
 
         $movingBeyondMeeting = $targetStage->sort_order > $meetingStage->sort_order;
 
+        if (
+            $this->sourceAccessService->isBdeDemoUser()
+            && $targetStage->code !== 'meeting'
+        ) {
+            return null;
+        }
+
         if ($targetStage->code !== 'meeting' && ! $movingBeyondMeeting) {
             return null;
         }
@@ -2744,16 +2847,6 @@ class LeadController extends Controller
                 'message'                    => trans('admin::app.leads.meeting-stage-requires-activity'),
                 'requires_meeting_activity'  => true,
             ], 422);
-        }
-
-        if ($movingBeyondMeeting) {
-            $lead->activities()
-                ->where('type', 'meeting')
-                ->where('is_done', 0)
-                ->update([
-                    'is_done'    => 1,
-                    'updated_at' => Carbon::now(),
-                ]);
         }
 
         return null;
@@ -3464,46 +3557,8 @@ class LeadController extends Controller
      */
     protected function validateColdWarmTagConflict(array $tagIds): void
     {
-        $values = collect($tagIds)
-            ->filter(fn ($value) => filled($value))
-            ->map(fn ($value) => is_string($value) ? trim($value) : $value)
-            ->filter(fn ($value) => $value !== '' && $value !== null)
-            ->values();
-
-        if ($values->isEmpty()) {
-            return;
-        }
-
-        $numericIds = $values
-            ->filter(fn ($value) => is_numeric($value))
-            ->map(fn ($value) => (int) $value)
-            ->filter()
-            ->unique()
-            ->values();
-
-        $names = $values
-            ->reject(fn ($value) => is_numeric($value))
-            ->map(fn ($value) => $this->normalizeColdWarmTagName((string) $value));
-
-        if ($numericIds->isNotEmpty()) {
-            $names = $names->merge(
-                DB::table('tags')
-                    ->whereIn('id', $numericIds)
-                    ->pluck('name')
-                    ->map(fn ($name) => $this->normalizeColdWarmTagName((string) $name))
-            );
-        }
-
-        $names = $names->filter()->unique()->values();
-
-        $hasCold = $names->contains(fn ($name) => in_array($name, ['cold', 'cold lead'], true));
-        $hasWarm = $names->contains(fn ($name) => in_array($name, ['warm', 'warm lead'], true));
-
-        if ($hasCold && $hasWarm) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
-                'tags' => ['A lead cannot be both Cold and Warm. Please select only one.'],
-            ]);
-        }
+        // Cold/Warm classification tags are now normalized with last-selected-wins
+        // behavior before sync, so callers can submit both without persisting both.
     }
 
     protected function normalizeColdWarmTagName(string $name): string

@@ -653,6 +653,7 @@ class MeetingHandoffService
     {
         return $this->sourceAccessService->isBdeUser($user)
             || $this->sourceAccessService->isSdrUser($user)
-            || $this->sourceAccessService->isLgeUser($user);
+            || $this->sourceAccessService->isLgeUser($user)
+            || $this->sourceAccessService->isDeDataScraperUser($user);
     }
 }

@@ -8,7 +8,11 @@
     $currentUser = auth()->guard('user')->user();
     $meetingStage = $lead->pipeline->stages->firstWhere('code', 'meeting');
 
-    if (in_array(lead_variant(), ['bde', 'sdr', 'lge', 'de_data_scraper'], true) && $meetingStage) {
+    if (
+        in_array(lead_variant(), ['bde', 'sdr', 'lge', 'de_data_scraper'], true)
+        && ! app(\Webkul\Lead\Services\SourceAccessService::class)->isBdeDemoUser()
+        && $meetingStage
+    ) {
         $accessibleViewStages = $accessibleViewStages
             ->filter(fn ($stage) => (int) $stage->sort_order <= (int) $meetingStage->sort_order)
             ->values();
@@ -38,6 +42,19 @@
 @pushOnce('scripts')
     @php
         $hasMeetingActivity = $lead->activities()->where('type', 'meeting')->exists();
+
+        $followupRuleOptions = \Illuminate\Support\Facades\DB::table('followup_rule_groups')
+            ->where('is_active', 1)
+            ->orderByDesc('is_default')
+            ->orderBy('name')
+            ->get(['id', 'name', 'is_default'])
+            ->map(fn ($rule) => [
+                'id'         => (int) $rule->id,
+                'name'       => $rule->name,
+                'is_default' => (bool) $rule->is_default,
+            ])
+            ->values()
+            ->all();
 
         $defaultMeetingParticipants = [
             'users' => ! in_array(lead_variant(), ['bde', 'sdr', 'lge', 'de_data_scraper'], true) && auth()->guard('user')->user()
@@ -235,6 +252,37 @@
 
                     <div
                         class="mb-4"
+                        v-if="followupMode === 'auto'"
+                    >
+                        <label class="mb-1.5 block text-sm font-medium text-gray-800 dark:text-white">
+                            Follow-up Group <span class="text-red-500">*</span>
+                        </label>
+
+                        <select
+                            v-model="selectedFollowupRuleId"
+                            class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-brandColor dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                        >
+                            <option value="">Select follow-up group</option>
+
+                            <option
+                                v-for="rule in followupRuleOptions"
+                                :key="'followup-rule-' + rule.id"
+                                :value="String(rule.id)"
+                            >
+                                @{{ rule.name }}@{{ rule.is_default ? ' (Default)' : '' }}
+                            </option>
+                        </select>
+
+                        <p
+                            v-if="! followupRuleOptions.length"
+                            class="mt-1 text-xs text-red-600"
+                        >
+                            No active follow-up groups are available. Please create one in Settings → Follow-up Automation.
+                        </p>
+                    </div>
+
+                    <div
+                        class="mb-4"
                         v-if="followupMode === 'custom'"
                     >
                         <label class="mb-1.5 block text-sm font-medium text-gray-800 dark:text-white">
@@ -260,9 +308,9 @@
                             type="button"
                             class="transparent-button"
                             :disabled="isFollowupSaving"
-                            @click="applyFollowupStage('auto')"
+                            @click="followupMode === 'auto' ? applyFollowupStage('auto') : (followupMode = 'auto')"
                         >
-                            Use Auto
+                            @{{ followupMode === 'auto' ? 'Save Auto' : 'Use Auto' }}
                         </button>
 
                         <button
@@ -542,6 +590,10 @@
 
                     followupMode: null,
 
+                    followupRuleOptions: @json($followupRuleOptions),
+
+                    selectedFollowupRuleId: '',
+
                     customFollowupDate: '',
 
                     isFollowupSaving: false,
@@ -696,6 +748,7 @@
                     if (this.shouldPromptFollowupStage(stage)) {
                         this.pendingFollowupStage = stage;
                         this.followupMode = null;
+                        this.selectedFollowupRuleId = '';
                         this.customFollowupDate = '';
                         this.$refs.stageUpdateModal.close();
                         this.$refs.followupStageModal.open();
@@ -755,6 +808,15 @@
                         return;
                     }
 
+                    if (mode === 'auto' && ! this.selectedFollowupRuleId) {
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: 'Please select a follow-up group.',
+                        });
+
+                        return;
+                    }
+
                     if (mode === 'custom' && ! this.customFollowupDate) {
                         this.$emitter.emit('add-flash', {
                             type: 'error',
@@ -770,6 +832,10 @@
                         followup_mode: mode,
                     };
 
+                    if (mode === 'auto') {
+                        params.followup_rule_group_id = Number(this.selectedFollowupRuleId);
+                    }
+
                     if (mode === 'custom') {
                         params.next_followup_date = this.customFollowupDate.replace('T', ' ') + ':00';
                     }
@@ -783,6 +849,7 @@
                             this.currentStage = stage;
                             this.pendingFollowupStage = null;
                             this.followupMode = null;
+                            this.selectedFollowupRuleId = '';
                             this.customFollowupDate = '';
                             this.$refs.followupStageModal.close();
                             this.$parent.$refs.activities.get();

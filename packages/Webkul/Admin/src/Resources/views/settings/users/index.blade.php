@@ -52,13 +52,84 @@
                 :src="route('admin.settings.users.index')"
                 ref="datagrid"
             >
+                <template #header="{
+                    isLoading,
+                    available,
+                    applied,
+                    selectAll,
+                    sort
+                }">
+                    <template v-if="isLoading">
+                        <x-admin::shimmer.datagrid.table.head />
+                    </template>
+
+                    <template v-else>
+                        <div
+                            class="row sticky top-0 z-[1] grid min-h-[48px] items-center gap-2.5 border-b bg-gray-50 px-4 py-2.5 text-sm font-semibold text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 max-lg:hidden"
+                            :style="usersGridStyle(available)"
+                        >
+                            <div class="flex items-center" v-if="available.massActions.length">
+                                <label for="mass_action_select_all_records">
+                                    <input
+                                        type="checkbox"
+                                        name="mass_action_select_all_records"
+                                        id="mass_action_select_all_records"
+                                        class="peer hidden"
+                                        :checked="['all', 'partial'].includes(applied.massActions.meta.mode)"
+                                        @change="selectAll"
+                                    >
+
+                                    <span
+                                        class="icon-checkbox-outline cursor-pointer rounded-md text-2xl text-gray-500 peer-checked:text-brandColor"
+                                        :class="[
+                                            applied.massActions.meta.mode === 'all'
+                                                ? 'peer-checked:icon-checkbox-select'
+                                                : (applied.massActions.meta.mode === 'partial'
+                                                    ? 'peer-checked:icon-checkbox-multiple'
+                                                    : '')
+                                        ]"
+                                    ></span>
+                                </label>
+                            </div>
+
+                            <button type="button" class="text-left" @click="sort(available.columns.find(column => column.index === 'id'))">
+                                @lang('admin::app.settings.users.index.datagrid.id')
+                            </button>
+
+                            <button type="button" class="text-left" @click="sort(available.columns.find(column => column.index === 'name'))">
+                                @lang('admin::app.settings.users.index.datagrid.name')
+                            </button>
+
+                            <button type="button" class="text-left" @click="sort(available.columns.find(column => column.index === 'email'))">
+                                @lang('admin::app.settings.users.index.datagrid.email')
+                            </button>
+
+                            <span>@lang('admin::app.settings.users.index.datagrid.assigned-sources')</span>
+                            <span>@lang('admin::app.settings.users.index.datagrid.assigned-companies')</span>
+
+                            <button type="button" class="text-left" @click="sort(available.columns.find(column => column.index === 'status'))">
+                                @lang('admin::app.settings.users.index.datagrid.status')
+                            </button>
+
+                            <button type="button" class="text-left" @click="sort(available.columns.find(column => column.index === 'created_at'))">
+                                @lang('admin::app.settings.users.index.datagrid.created-at')
+                            </button>
+
+                            <span class="text-right" v-if="available.actions.length">
+                                @lang('admin::app.components.datagrid.table.actions')
+                            </span>
+                        </div>
+                    </template>
+                </template>
+
                 <template #body="{
                     isLoading,
                     available,
                     applied,
                     selectAll,
                     sort,
-                    performAction
+                    performAction,
+                    gridRowStyle
                 }">
                     <template v-if="isLoading">
                         <x-admin::shimmer.datagrid.table.body />
@@ -67,11 +138,12 @@
                     <template v-else>
                         <div
                             v-for="record in available.records"
-                            class="row grid items-center gap-2.5 border-b px-4 py-4 text-gray-600 transition-all hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-950 max-lg:hidden"
-                            :style="`grid-template-columns: repeat(${gridsCount}, minmax(0, 1fr))`"
+                            :key="record.id"
+                            class="row grid min-h-[68px] items-center gap-2.5 border-b px-4 py-3 text-gray-600 transition-all hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-950 max-lg:hidden"
+                            :style="usersGridStyle(available)"
                         >
-                            <!-- Mass Actions, Title and Created By -->
-                            <div class="flex select-none items-center gap-16">
+                            <!-- Mass Actions -->
+                            <div class="flex select-none items-center">
                                 <input
                                     type="checkbox"
                                     :name="`mass_action_select_record_${record.id}`"
@@ -88,15 +160,16 @@
                             </div>
 
                             <!-- Users Id -->
-                            <p>@{{ record.id }}</p>
+                            <p class="min-w-0 text-sm font-medium">@{{ record.id }}</p>
 
                             <!-- Users Name and Profile -->
-                            <div class="flex items-center gap-2.5">
+                            <div class="flex min-w-0 items-center gap-2.5">
                                 <template v-if="record.name.image">
                                     <img
                                         class="flex h-9 w-9 items-center justify-center rounded-full"
                                         :src="record.name.image"
-                                        alt="record.name"
+                                        :alt="record.name.name"
+                                        v-on:error="$event.target.style.display = 'none'"
                                     />
                                 </template>
 
@@ -104,7 +177,7 @@
                                     <x-admin::avatar ::name="record.name.name"/>
                                 </template>
 
-                                <div class="text-sm">
+                                <div class="min-w-0 truncate text-sm font-medium">
                                     @{{ record.name.name }}
                                 </div>
                             </div>
@@ -126,6 +199,7 @@
 
                             <!-- Users Status -->
                             <span
+                                class="w-fit"
                                 :class="record.status == 1 ? 'label-active' : 'label-inactive'"
                             >
                                 @{{ record.status == 1 ? '@lang('admin::app.settings.users.index.active')' : '@lang('admin::app.settings.users.index.inactive')' }}
@@ -374,20 +448,38 @@
                                         @lang('admin::app.settings.users.index.create.role')
                                     </x-admin::form.control-group.label>
 
-                                    <div class="flex max-h-40 flex-col gap-2 overflow-y-auto rounded-md border border-gray-200 p-3 dark:border-gray-700">
-                                        <label
+                                    <div class="flex max-h-48 flex-col gap-2 overflow-y-auto rounded-md border border-gray-200 p-3 dark:border-gray-700">
+                                        <div
                                             v-for="role in roles"
                                             :key="role.id"
-                                            class="flex cursor-pointer items-center gap-2 text-sm text-gray-800 dark:text-gray-200"
+                                            class="flex items-center justify-between gap-3 rounded px-1 py-1 text-sm text-gray-800 dark:text-gray-200"
                                         >
-                                            <input
-                                                type="checkbox"
-                                                :value="role.id"
-                                                v-model="user.role_ids"
-                                                class="rounded border-gray-300 text-brandColor"
-                                            />
-                                            <span>@{{ role.name }}</span>
-                                        </label>
+                                            <label class="flex min-w-0 cursor-pointer items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    :value="role.id"
+                                                    v-model="user.role_ids"
+                                                    class="rounded border-gray-300 text-brandColor"
+                                                />
+
+                                                <span class="truncate">@{{ role.name }}</span>
+                                            </label>
+
+                                            <label
+                                                v-if="user.role_ids.map(Number).includes(Number(role.id))"
+                                                class="flex shrink-0 cursor-pointer items-center gap-1.5 rounded border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 dark:border-gray-700 dark:text-gray-300"
+                                                :title="'Make this user Team Lead for ' + role.name"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    :value="Number(role.id)"
+                                                    v-model="user.tl_role_ids"
+                                                    class="rounded border-gray-300 text-brandColor"
+                                                />
+
+                                                <span>TL</span>
+                                            </label>
+                                        </div>
                                     </div>
 
                                     <input
@@ -403,6 +495,21 @@
                                             :value="roleId"
                                         />
                                     </template>
+
+                                    <template v-for="(roleId, index) in user.tl_role_ids" :key="'tl-role-hidden-' + roleId">
+                                        <input
+                                            type="hidden"
+                                            :name="'tl_role_ids[' + index + ']'"
+                                            :value="roleId"
+                                        />
+                                    </template>
+
+                                    <p
+                                        v-if="user.role_ids?.length"
+                                        class="mt-2 text-xs text-gray-500 dark:text-gray-400"
+                                    >
+                                        Check <strong>TL</strong> beside each role where this user should see the data of all users assigned to that role.
+                                    </p>
 
                                     <p
                                         v-if="! user.role_ids?.length"
@@ -483,6 +590,60 @@
                             </template>
 
                             {!! view_render_event('admin.settings.users.index.form.role_id.after') !!}
+
+                            <div
+                                class="mb-4 rounded-md border border-gray-200 p-4 dark:border-gray-800"
+                            >
+                                <div class="mb-3">
+                                    <p class="text-sm font-semibold text-gray-800 dark:text-white">
+                                        @lang('admin::app.settings.users.index.create.working-hours')
+                                    </p>
+
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                                        @lang('admin::app.settings.users.index.create.working-hours-help')
+                                    </p>
+                                </div>
+
+                                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                    <div class="flex min-w-0 flex-col gap-1.5">
+                                        <label
+                                            for="working_start_time"
+                                            class="text-sm font-medium text-gray-800 dark:text-white"
+                                        >
+                                            @lang('admin::app.settings.users.index.create.working-start-time')
+                                        </label>
+
+                                        <input
+                                            id="working_start_time"
+                                            type="time"
+                                            name="working_start_time"
+                                            v-model="user.working_start_time"
+                                            class="w-full rounded border border-gray-200 px-3 py-2 text-sm font-normal text-gray-800 outline-none transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+                                        >
+
+                                        <x-admin::form.control-group.error control-name="working_start_time" />
+                                    </div>
+
+                                    <div class="flex min-w-0 flex-col gap-1.5">
+                                        <label
+                                            for="working_end_time"
+                                            class="text-sm font-medium text-gray-800 dark:text-white"
+                                        >
+                                            @lang('admin::app.settings.users.index.create.working-end-time')
+                                        </label>
+
+                                        <input
+                                            id="working_end_time"
+                                            type="time"
+                                            name="working_end_time"
+                                            v-model="user.working_end_time"
+                                            class="w-full rounded border border-gray-200 px-3 py-2 text-sm font-normal text-gray-800 outline-none transition-all hover:border-gray-400 focus:border-gray-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+                                        >
+
+                                        <x-admin::form.control-group.error control-name="working_end_time" />
+                                    </div>
+                                </div>
+                            </div>
 
                             <x-admin::form.control-group>
                                 <x-admin::form.control-group.label>
@@ -630,8 +791,11 @@
                         user: {
                             view_permission: 'global',
                             role_ids: [],
+                            tl_role_ids: [],
                             source_ids: [],
                             organization_ids: [],
+                            working_start_time: '',
+                            working_end_time: '',
                         },
                     };
                 },
@@ -695,6 +859,10 @@
                         deep: true,
                         handler() {
                             this.user.role_id = this.user.role_ids?.[0] || null;
+                            const selectedRoleIds = new Set((this.user.role_ids || []).map(Number));
+                            this.user.tl_role_ids = (this.user.tl_role_ids || [])
+                                .map(Number)
+                                .filter(roleId => selectedRoleIds.has(roleId));
                             this.pruneUserAssignments();
                         },
                     },
@@ -707,6 +875,33 @@
                 },
 
                 methods: {
+                    usersGridStyle(available) {
+                        const tracks = [];
+
+                        if (available?.massActions?.length) {
+                            tracks.push('40px');
+                        }
+
+                        tracks.push(
+                            '64px',
+                            '220px',
+                            '220px',
+                            'minmax(220px, 1.25fr)',
+                            'minmax(190px, 1fr)',
+                            '110px',
+                            '170px'
+                        );
+
+                        if (available?.actions?.length) {
+                            tracks.push('82px');
+                        }
+
+                        return {
+                            gridTemplateColumns: tracks.join(' '),
+                            minWidth: '1360px',
+                        };
+                    },
+
                     resetPasswordFields() {
                         this.$nextTick(() => {
                             ['user_password', 'user_confirm_password'].forEach((fieldId) => {
@@ -765,10 +960,13 @@
                         this.user = {
                             view_permission: 'global',
                             role_ids: [],
+                            tl_role_ids: [],
                             role_id: null,
                             groups: [],
                             source_ids: [],
                             organization_ids: [],
+                            working_start_time: '',
+                            working_end_time: '',
                         };
 
                         this.$refs.userUpdateAndCreateModal.toggle();
@@ -819,6 +1017,7 @@
                                 this.user.organization_ids = (this.user.organizations || []).map(organization => organization.id);
 
                                 this.user.role_ids = (this.user.role_ids || []).map(id => Number(id));
+                                this.user.tl_role_ids = (this.user.tl_role_ids || []).map(id => Number(id));
 
                                 if (! this.user.role_ids.length && this.user.role_id) {
                                     this.user.role_ids = [Number(this.user.role_id)];

@@ -88,6 +88,7 @@ class User extends Authenticatable implements UserContract
     public function roles(): BelongsToMany
     {
         return $this->belongsToMany(RoleProxy::modelClass(), 'user_roles', 'user_id', 'role_id')
+            ->withPivot('is_tl')
             ->withTimestamps();
     }
 

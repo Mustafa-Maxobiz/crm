@@ -33,6 +33,7 @@ class LeadResource extends JsonResource
             'lead_pipeline_stage_id'=> $this->lead_pipeline_stage_id,
             'stage_code'           => $this->stage?->code,
             'stage_sort_order'     => $this->stage?->sort_order,
+            'has_meeting_activity' => (bool) ($attributes['has_meeting_activity'] ?? false),
             'expected_close_date'  => $this->expected_close_date,
             'rotten_days'          => $this->rotten_days,
             'closed_at'            => $this->closed_at,

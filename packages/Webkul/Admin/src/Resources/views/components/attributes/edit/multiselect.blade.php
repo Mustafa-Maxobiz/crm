@@ -6,7 +6,8 @@
     'storeUrl'    => null,
     'updateUrl'         => null,
     'options'           => null,
-    'floatingDropdown'  => false,
+    'floatingDropdown'    => false,
+    'selectedIdsBinding' => null,
 ])
 
 @php
@@ -39,7 +40,11 @@
     placeholder="{{ $fieldLabel }}"
     rules="{{ $validations }}"
     :options='@json($resolvedOptions)'
-    :selected-ids='@json($selectedIds)'
+    @if ($selectedIdsBinding)
+        v-model:selected-ids="{{ $selectedIdsBinding }}"
+    @else
+        :selected-ids='@json($selectedIds)'
+    @endif
     :can-add-new='@json($canAddNew)'
     store-url="{{ $storeUrl }}"
     update-url="{{ $updateUrl }}"
@@ -198,6 +203,8 @@
         app.component('v-attribute-multiselect', {
             template: '#v-attribute-multiselect-template',
 
+            emits: ['update:selectedIds'],
+
             props: {
                 name: {
                     type: String,
@@ -342,6 +349,12 @@
                 },
             },
 
+            watch: {
+                selectedIds(value) {
+                    this.selectedIdList = [...value].map(Number);
+                },
+            },
+
             mounted() {
                 document.addEventListener('mousedown', this.handleOutsideClick);
             },
@@ -429,6 +442,10 @@
                         if (selectedIndex >= 0) {
                             selectedIds.splice(selectedIndex, 1);
                         } else {
+                            if (this.isClassificationTagOption(option)) {
+                                selectedIds.splice(0, selectedIds.length, ...this.withoutOtherClassificationTags(selectedIds, id));
+                            }
+
                             selectedIds.push(id);
                         }
 
@@ -441,7 +458,12 @@
                     }
 
                     if (! this.selectedIdList.includes(id)) {
+                        if (this.isClassificationTagOption(option)) {
+                            this.selectedIdList = this.withoutOtherClassificationTags(this.selectedIdList, id);
+                        }
+
                         this.selectedIdList.push(id);
+                        this.$emit('update:selectedIds', [...this.selectedIdList]);
                     }
 
                     this.searchTerm = '';
@@ -452,6 +474,7 @@
                 removeOption(option) {
                     const id = Number(option.id);
                     this.selectedIdList = this.selectedIdList.filter(selectedId => selectedId !== id);
+                    this.$emit('update:selectedIds', [...this.selectedIdList]);
 
                     if (this.isOtherOption(option)) {
                         this.newOptionName = '';
@@ -584,6 +607,26 @@
 
                 isOtherOption(option) {
                     return String(option?.name || '').trim().toLowerCase() === 'other';
+                },
+
+                normalizedOptionName(option) {
+                    return String(option?.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+                },
+
+                isClassificationTagOption(option) {
+                    if (this.name !== 'tags') {
+                        return false;
+                    }
+
+                    return ['cold', 'cold lead', 'warm', 'warm lead'].includes(this.normalizedOptionName(option));
+                },
+
+                withoutOtherClassificationTags(selectedIds, keepId) {
+                    const classificationIds = this.availableOptions
+                        .filter(option => this.isClassificationTagOption(option) && Number(option.id) !== Number(keepId))
+                        .map(option => Number(option.id));
+
+                    return selectedIds.filter(selectedId => ! classificationIds.includes(Number(selectedId)));
                 },
 
                 isSelectedOption(option) {

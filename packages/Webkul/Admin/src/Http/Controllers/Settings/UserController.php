@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Prettus\Repository\Criteria\RequestCriteria;
 use Webkul\Admin\DataGrids\Settings\UserDataGrid;
@@ -16,6 +17,7 @@ use Webkul\Admin\Http\Controllers\Controller;
 use Webkul\Admin\Http\Requests\MassDestroyRequest;
 use Webkul\Admin\Http\Requests\MassUpdateRequest;
 use Webkul\Admin\Http\Resources\UserResource;
+use Webkul\Admin\Models\WorkingHour;
 use Webkul\Admin\Notifications\User\Create as UserCreatedNotification;
 use Webkul\Contact\Repositories\OrganizationRepository;
 use Webkul\Lead\Repositories\SourceRepository;
@@ -51,10 +53,11 @@ class UserController extends Controller
 
         $roles = $this->roleRepository
             ->with(['sources:id', 'organizations:id'])
-            ->get(['id', 'name'])
+            ->get(['id', 'name', 'permission_type'])
             ->map(fn ($role) => [
                 'id'                => $role->id,
                 'name'              => $role->name,
+                'permission_type'   => $role->permission_type,
                 'source_ids'        => $role->sources->pluck('id')->values()->all(),
                 'organization_ids'  => $role->organizations->pluck('id')->values()->all(),
             ]);
@@ -81,11 +84,21 @@ class UserController extends Controller
             'role_ids'         => 'required|array|min:1',
             'role_ids.*'       => 'integer|exists:roles,id',
             'role_id'          => 'nullable|integer|exists:roles,id',
+            'tl_role_ids'      => 'nullable|array',
+            'tl_role_ids.*'    => 'integer|exists:roles,id',
             'status'           => 'boolean|in:0,1',
-            'view_permission'  => 'string|in:global,group,individual',
+            'view_permission'   => 'string|in:global,group,individual',
+            'working_start_time' => ['nullable', 'required_with:working_end_time', 'regex:/^(?:[01]\\d|2[0-3]):[0-5]\\d$/'],
+            'working_end_time'   => ['nullable', 'required_with:working_start_time', 'regex:/^(?:[01]\\d|2[0-3]):[0-5]\\d$/'],
         ]);
 
+        $this->validateWorkingHoursInput($this->normalizedRoleIds(
+            request()->input('role_ids', []),
+            request()->input('role_id')
+        ));
+
         $roleIds = $this->normalizedRoleIds(request()->input('role_ids', []), request()->input('role_id'));
+        $tlRoleIds = $this->normalizedTlRoleIds(request()->input('tl_role_ids', []), $roleIds);
 
         $assignmentValidation = $this->validateUserAssignments(
             $roleIds[0],
@@ -97,7 +110,11 @@ class UserController extends Controller
             return $assignmentValidation;
         }
 
-        $data = request()->all();
+        $data = Arr::except(request()->all(), [
+            'working_start_time',
+            'working_end_time',
+            'tl_role_ids',
+        ]);
         $data['role_id'] = $roleIds[0];
 
         if (
@@ -112,10 +129,12 @@ class UserController extends Controller
         $admin = $this->userRepository->create($data);
 
         $admin->groups()->sync($data['groups'] ?? []);
-        $admin->roles()->sync($roleIds);
+        $this->syncUserRoles($admin, $roleIds, $tlRoleIds);
 
         $admin->sources()->sync($assignmentValidation['source_ids']);
         $admin->organizations()->sync($assignmentValidation['organization_ids']);
+
+        $this->syncWorkingHours($admin->id, $roleIds);
 
         try {
             Mail::queue(new UserCreatedNotification($admin));
@@ -140,10 +159,27 @@ class UserController extends Controller
 
         $payload = $admin->toArray();
         $payload['role_ids'] = $admin->roles->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+        $payload['tl_role_ids'] = $admin->roles
+            ->filter(fn ($role) => (bool) ($role->pivot?->is_tl ?? false))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
 
         if (empty($payload['role_ids']) && $admin->role_id) {
             $payload['role_ids'] = [(int) $admin->role_id];
         }
+
+        $workingHour = WorkingHour::query()
+            ->where('user_id', $admin->id)
+            ->first();
+
+        $payload['working_start_time'] = $workingHour?->start_time
+            ? substr($workingHour->start_time, 0, 5)
+            : '';
+        $payload['working_end_time'] = $workingHour?->end_time
+            ? substr($workingHour->end_time, 0, 5)
+            : '';
 
         return new JsonResponse([
             'data' => $payload,
@@ -163,11 +199,21 @@ class UserController extends Controller
             'role_ids'         => 'required|array|min:1',
             'role_ids.*'       => 'integer|exists:roles,id',
             'role_id'          => 'nullable|integer|exists:roles,id',
+            'tl_role_ids'      => 'nullable|array',
+            'tl_role_ids.*'    => 'integer|exists:roles,id',
             'status'           => 'nullable|boolean|in:0,1',
-            'view_permission'  => 'required|string|in:global,group,individual',
+            'view_permission'   => 'required|string|in:global,group,individual',
+            'working_start_time' => ['nullable', 'required_with:working_end_time', 'regex:/^(?:[01]\\d|2[0-3]):[0-5]\\d$/'],
+            'working_end_time'   => ['nullable', 'required_with:working_start_time', 'regex:/^(?:[01]\\d|2[0-3]):[0-5]\\d$/'],
         ]);
 
+        $this->validateWorkingHoursInput($this->normalizedRoleIds(
+            request()->input('role_ids', []),
+            request()->input('role_id')
+        ));
+
         $roleIds = $this->normalizedRoleIds(request()->input('role_ids', []), request()->input('role_id'));
+        $tlRoleIds = $this->normalizedTlRoleIds(request()->input('tl_role_ids', []), $roleIds);
 
         $assignmentValidation = $this->validateUserAssignments(
             $roleIds[0],
@@ -179,7 +225,11 @@ class UserController extends Controller
             return $assignmentValidation;
         }
 
-        $data = request()->all();
+        $data = Arr::except(request()->all(), [
+            'working_start_time',
+            'working_end_time',
+            'tl_role_ids',
+        ]);
         $data['role_id'] = $roleIds[0];
 
         if (empty($data['password'])) {
@@ -199,10 +249,12 @@ class UserController extends Controller
         $admin = $this->userRepository->update($data, $id);
 
         $admin->groups()->sync($data['groups'] ?? []);
-        $admin->roles()->sync($roleIds);
+        $this->syncUserRoles($admin, $roleIds, $tlRoleIds);
 
         $admin->sources()->sync($assignmentValidation['source_ids']);
         $admin->organizations()->sync($assignmentValidation['organization_ids']);
+
+        $this->syncWorkingHours($admin->id, $roleIds);
 
         Event::dispatch('settings.user.update.after', $admin);
 
@@ -421,5 +473,83 @@ class UserController extends Controller
         }
 
         return $normalized;
+    }
+
+    /**
+     * @param  array<int|string>  $tlRoleIds
+     * @param  array<int>  $roleIds
+     * @return array<int>
+     */
+    protected function normalizedTlRoleIds(array $tlRoleIds, array $roleIds): array
+    {
+        $normalized = collect($tlRoleIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        $invalid = array_diff($normalized, $roleIds);
+
+        if (! empty($invalid)) {
+            throw ValidationException::withMessages([
+                'tl_role_ids' => ['A user can only be Team Lead for a role that is assigned to that user.'],
+            ]);
+        }
+
+        return $normalized;
+    }
+
+    protected function syncUserRoles($user, array $roleIds, array $tlRoleIds): void
+    {
+        $tlLookup = array_fill_keys($tlRoleIds, true);
+        $sync = [];
+
+        foreach ($roleIds as $roleId) {
+            $sync[(int) $roleId] = [
+                'is_tl' => isset($tlLookup[(int) $roleId]),
+            ];
+        }
+
+        $user->roles()->sync($sync);
+        $user->unsetRelation('roles');
+    }
+
+    protected function validateWorkingHoursInput(array $roleIds): void
+    {
+        $start = request()->input('working_start_time');
+        $end = request()->input('working_end_time');
+
+        if (! filled($start) && ! filled($end)) {
+            return;
+        }
+
+        if (filled($start) && filled($end) && strtotime($end) <= strtotime($start)) {
+            throw ValidationException::withMessages([
+                'working_end_time' => ['The working end time must be after the working start time.'],
+            ]);
+        }
+    }
+
+    protected function syncWorkingHours(int $userId, array $roleIds): void
+    {
+        $start = request()->input('working_start_time');
+        $end = request()->input('working_end_time');
+
+        if (! filled($start) && ! filled($end)) {
+            WorkingHour::query()
+                ->where('user_id', $userId)
+                ->delete();
+
+            return;
+        }
+
+        WorkingHour::updateOrCreate(
+            ['user_id' => $userId],
+            [
+                'start_time' => strlen($start) === 5 ? $start.':00' : $start,
+                'end_time'   => strlen($end) === 5 ? $end.':00' : $end,
+            ]
+        );
     }
 }

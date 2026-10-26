@@ -16,6 +16,37 @@
 
                     <div
                         class="mb-4"
+                        v-if="followupMode === 'auto'"
+                    >
+                        <label class="mb-1.5 block text-sm font-medium text-gray-800 dark:text-white">
+                            Follow-up Group <span class="text-red-500">*</span>
+                        </label>
+
+                        <select
+                            v-model="selectedFollowupRuleId"
+                            class="w-full rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-brandColor dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                        >
+                            <option value="">Select follow-up group</option>
+
+                            <option
+                                v-for="rule in followupRuleOptions"
+                                :key="'followup-rule-' + rule.id"
+                                :value="String(rule.id)"
+                            >
+                                @{{ rule.name }}@{{ rule.is_default ? ' (Default)' : '' }}
+                            </option>
+                        </select>
+
+                        <p
+                            v-if="! followupRuleOptions.length"
+                            class="mt-1 text-xs text-red-600"
+                        >
+                            No active follow-up groups are available. Please create one in Settings → Follow-up Automation.
+                        </p>
+                    </div>
+
+                    <div
+                        class="mb-4"
                         v-if="followupMode === 'custom'"
                     >
                         <label class="mb-1.5 block text-sm font-medium text-gray-800 dark:text-white">
@@ -41,9 +72,9 @@
                             type="button"
                             class="transparent-button"
                             :disabled="isFollowupSaving"
-                            @click="applyFollowupStage('auto')"
+                            @click="followupMode === 'auto' ? applyFollowupStage('auto') : (followupMode = 'auto')"
                         >
-                            Use Auto
+                            @{{ followupMode === 'auto' ? 'Save Auto' : 'Use Auto' }}
                         </button>
 
                         <button

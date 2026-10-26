@@ -65,34 +65,66 @@
                                     :disabled-attribute-codes="$lockedLeadAttributeCodes"
                                 />
 
+                                <input
+                                    type="hidden"
+                                    name="schedule_followup"
+                                    :value="editScheduleFollowup ? 1 : 0"
+                                />
+
                                 <x-admin::form.control-group>
+                                    <label class="flex cursor-pointer items-start gap-2 rounded border border-gray-200 p-3 text-sm dark:border-gray-800">
+                                        <input
+                                            type="checkbox"
+                                            v-model="editScheduleFollowup"
+                                            class="mt-1 rounded border-gray-300 text-brandColor focus:ring-brandColor dark:border-gray-600 dark:bg-gray-900"
+                                        />
+
+                                        <span class="flex flex-col gap-1">
+                                            <span class="font-medium text-gray-800 dark:text-white">
+                                                @lang('admin::app.leads.create.schedule-followup')
+                                            </span>
+
+                                            <span class="text-xs text-gray-500 dark:text-gray-400">
+                                                @lang('admin::app.leads.create.schedule-followup-help')
+                                            </span>
+                                        </span>
+                                    </label>
+                                </x-admin::form.control-group>
+
+                                <x-admin::form.control-group v-if="editScheduleFollowup">
                                     <x-admin::form.control-group.label>
-                                        @lang('admin::app.leads.index.datagrid.next-followup-date')
+                                        @lang('admin::app.leads.create.next-followup-date')
                                     </x-admin::form.control-group.label>
 
                                     <x-admin::form.control-group.control
                                         type="datetime"
                                         name="next_followup_date"
                                         ::value="editLead.next_followup_date"
-                                        :label="trans('admin::app.leads.index.datagrid.next-followup-date')"
+                                        :label="trans('admin::app.leads.create.next-followup-date')"
+                                        :placeholder="trans('admin::app.leads.create.next-followup-date')"
                                     />
+
+                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                        @lang('admin::app.leads.create.next-followup-date-help')
+                                    </p>
+
+                                    <x-admin::form.control-group.error control-name="next_followup_date" />
                                 </x-admin::form.control-group>
 
                                 <x-admin::form.control-group>
                                     <x-admin::form.control-group.label>
-                                        @lang('admin::app.components.tags.index.title')
+                                        Tags
                                     </x-admin::form.control-group.label>
 
-                                    <x-admin::form.control-group.control
-                                        type="tags"
-                                        name="tags"
-                                        label="Tags"
-                                        :placeholder="trans('admin::app.components.tags.index.placeholder')"
-                                        ::data="editTags"
-                                        input-rules="max:100"
-                                        :allow-duplicates="false"
-                                        suggestions-endpoint="{{ route('admin.settings.tags.search') }}"
+                                    <x-admin::attributes.edit.multiselect
+                                        :attribute="(object) ['code' => 'tags', 'name' => 'Tags', 'lookup_type' => null]"
+                                        :options="$editTagOptions"
+                                        selected-ids-binding="editTagIds"
+                                        validations=""
+                                        :can-add-new="false"
                                     />
+
+                                    <x-admin::form.control-group.error control-name="tags" />
                                 </x-admin::form.control-group>
 
                                 <div class="flex flex-col gap-1 border-t border-gray-200 pt-4 dark:border-gray-800">
@@ -106,6 +138,7 @@
                                     v-if="editLeadId && ! isEditLoading"
                                     :key="'contact-' + editLeadId + '-' + (editPerson.id || 'new')"
                                     :data="editPerson"
+                                    @person-updated="editPerson = $event"
                                     :can-edit-contact-details='@json(! app(\Webkul\Lead\Services\SourceAccessService::class)->isSdrUser())'
                                     :can-edit-company='@json(
                                         ! app(\Webkul\Lead\Services\SourceAccessService::class)->isSdrUser()

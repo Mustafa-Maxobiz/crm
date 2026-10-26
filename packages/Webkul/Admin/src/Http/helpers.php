@@ -256,6 +256,7 @@ if (! function_exists('admin_menu_items')) {
             'bde_dashboard',
             'lead_clouser_dashboard',
             'lge_dashboard',
+            'data_scraper_dashboard',
             'bde_leads',
             'sdr_leads',
             'lead_clouser_leads',

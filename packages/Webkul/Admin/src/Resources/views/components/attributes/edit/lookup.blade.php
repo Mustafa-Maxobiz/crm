@@ -66,7 +66,7 @@
                                     && ! isSearching
                                 )"
                             class="icon-cross-large cursor-pointer text-2xl text-gray-600"
-                            @click="remove"
+                            @click.stop="remove"
                         ></i>
 
                         <!-- Arrow Icon -->
@@ -129,7 +129,7 @@
                         v-for="item in filteredResults"
                         :key="item.id"
                         class="flex cursor-pointer gap-2 p-2 transition-colors hover:bg-blue-100 dark:text-gray-300 dark:hover:bg-gray-900"
-                        @click="handleResult(item)"
+                        @mousedown.prevent.stop="handleResult(item)"
                     >
                         <!-- Entity Name -->
                         <span>@{{ item.name }}</span>
@@ -142,7 +142,7 @@
 
                         <li
                             v-if="searchTerm.length > 2 && canAddNew"
-                            @click="handleResult({ id: '', name: searchTerm })"
+                            @mousedown.prevent.stop="handleResult({ id: '', name: searchTerm })"
                             class="cursor-pointer border-t border-gray-800 px-4 py-2 text-gray-500 hover:bg-brandColor hover:text-white dark:border-gray-300 dark:text-gray-400 dark:hover:bg-gray-900 dark:hover:text-white"
                         >
                             <i class="icon-add text-md"></i>
@@ -191,14 +191,7 @@
             },
 
             mounted() {
-                if (this.value?.id) {
-                    this.getLookUpEntity();
-                } else if (this.value?.name) {
-                    this.selectedItem = {
-                        id: this.value.id || '',
-                        name: this.value.name,
-                    };
-                }
+                this.syncSelectedItemFromValue(this.value);
 
                 window.addEventListener('click', this.handleFocusOut);
             },
@@ -206,6 +199,15 @@
             beforeUnmount() {
                 clearTimeout(this.debounceTimer);
                 window.removeEventListener('click', this.handleFocusOut);
+            },
+
+            watch: {
+                value: {
+                    handler(value) {
+                        this.syncSelectedItemFromValue(value);
+                    },
+                    deep: true,
+                },
             },
 
             computed: {
@@ -242,6 +244,28 @@
             },
 
             methods: {
+                syncSelectedItemFromValue(value) {
+                    if (value?.name) {
+                        this.selectedItem = {
+                            id: value.id || '',
+                            name: value.name,
+                        };
+
+                        return;
+                    }
+
+                    if (value?.id) {
+                        this.getLookUpEntity(value.id);
+
+                        return;
+                    }
+
+                    this.selectedItem = {
+                        id: '',
+                        name: '',
+                    };
+                },
+
                 queueSearch() {
                     clearTimeout(this.debounceTimer);
 
@@ -301,9 +325,9 @@
                         .finally(() => this.isSearching = false);
                 },
 
-                getLookUpEntity() {
+                getLookUpEntity(id = null) {
                     this.$axios.get(this.lookupEntityRoute, {
-                            params: { query: this.value?.id ?? ""}
+                            params: { query: id ?? this.value?.id ?? ""}
                         })
                         .then (response => {
                             this.selectedItem = Object.keys(response.data).length
@@ -355,11 +379,15 @@
                             name: name,
                         })
                         .then(response => {
-                            const createdItem = response.data.data;
-                            
+                            const createdItem = response.data?.data ?? response.data;
+
+                            if (! createdItem?.id || ! createdItem?.name) {
+                                throw new Error('Organization create response is missing id/name.');
+                            }
+
                             // Add to search results so it appears in future searches
                             this.searchedResults.unshift(createdItem);
-                            
+
                             // Select the newly created item
                             this.selectedItem = {
                                 id: createdItem.id,
@@ -395,7 +423,7 @@
 
                     if (
                         lookup &&
-                        ! lookup.contains(event.target)
+                        ! lookup.contains(e.target)
                     ) {
                         this.showPopup = false;
                     }

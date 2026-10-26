@@ -126,14 +126,36 @@ class ActivityRepository extends Repository
             'activities.id',
             'activities.created_at',
             'activities.title',
+            'activities.type',
             'activities.schedule_from as start',
             'activities.schedule_to as end',
+            'activities.is_done',
+            'activities.meeting_attended',
             'users.name as user_name',
         )
             ->addSelect(\DB::raw('IF('.$tablePrefix.'activities.is_done, "done", "") as class'))
+            ->addSelect(\DB::raw('CASE WHEN '.$tablePrefix.'activities.type = "meeting" AND '.$tablePrefix.'activities.is_done = 1 AND '.$tablePrefix.'activities.meeting_attended = 1 THEN "#16A34A" ELSE NULL END as background'))
+            ->addSelect(\DB::raw('"#ffffff" as textColor'))
             ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
             ->leftJoin('users', 'activities.user_id', '=', 'users.id')
             ->whereIn('type', ['call', 'meeting', 'lunch'])
+            ->where(function ($query) {
+                $query
+                    ->where('activities.type', '!=', 'meeting')
+                    ->orWhere(function ($meetingQuery) {
+                        $meetingQuery
+                            ->where('activities.type', 'meeting')
+                            ->where(function ($statusQuery) {
+                                $statusQuery
+                                    ->where('activities.is_done', 0)
+                                    ->orWhere(function ($attendedQuery) {
+                                        $attendedQuery
+                                            ->where('activities.is_done', 1)
+                                            ->where('activities.meeting_attended', 1);
+                                    });
+                            });
+                    });
+            })
             ->whereBetween('activities.schedule_from', $dateRange)
             ->where(function ($query) {
                 if ($userIds = bouncer()->getAuthorizedUserIds()) {

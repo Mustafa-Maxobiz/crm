@@ -194,6 +194,8 @@
         app.component('v-contact-component', {
             template: '#v-contact-component-template',
 
+            emits: ['person-updated'],
+
             props: {
                 data: {
                     type: Object,
@@ -320,6 +322,7 @@
 
                         this.person.organization_id = company.id;
                         this.person.organization_name = '';
+                        this.emitPersonUpdated();
 
                         return;
                     }
@@ -331,12 +334,23 @@
 
                     this.person.organization_id = null;
                     this.person.organization_name = company.name;
+                    this.emitPersonUpdated();
                 },
 
                 onCompanyRemoved() {
                     this.person.organization = null;
                     this.person.organization_id = null;
                     this.person.organization_name = '';
+                    this.emitPersonUpdated();
+                },
+
+                emitPersonUpdated() {
+                    this.$emit('person-updated', {
+                        ...this.person,
+                        organization: this.person.organization
+                            ? { ...this.person.organization }
+                            : null,
+                    });
                 },
             }
         });

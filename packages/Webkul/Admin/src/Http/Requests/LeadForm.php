@@ -143,7 +143,20 @@ class LeadForm extends FormRequest
             'schedule_followup'            => ['nullable', 'boolean'],
             'next_followup_date'           => ['nullable', 'date'],
             'tags'                         => ['nullable', 'array'],
-            'tags.*'                       => ['nullable', 'string', 'max:100'],
+            'tags.*'                       => [
+                'nullable',
+                function ($attribute, $value, $fail) {
+                    if (! is_scalar($value)) {
+                        $fail('The '.$attribute.' must be a valid tag.');
+
+                        return;
+                    }
+
+                    if (is_string($value) && mb_strlen($value) > 100) {
+                        $fail('The '.$attribute.' must not be greater than 100 characters.');
+                    }
+                },
+            ],
             'person.name'                  => ['nullable', 'string', 'max:100'],
             'person.emails'                => ['nullable', 'array'],
             'person.emails.*.value'        => ['nullable', 'email'],

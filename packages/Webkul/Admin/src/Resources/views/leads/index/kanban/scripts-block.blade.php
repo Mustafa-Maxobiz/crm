@@ -4,9 +4,23 @@
     $isOwnerRestrictedLeadVariant = in_array($leadVariant ?? 'main', ['bde', 'sdr', 'lge', 'de_data_scraper'], true);
     $currentUserId = auth()->guard('user')->id();
     $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
+    $isBdeDemoUser = $sourceAccessService->isBdeDemoUser();
     $accessibleStages = $sourceAccessService
         ->getVisibleStagesForLeadListing($pipeline->stages, (int) $pipeline->id)
         ->values();
+
+    $followupRuleOptions = \Illuminate\Support\Facades\DB::table('followup_rule_groups')
+        ->where('is_active', 1)
+        ->orderByDesc('is_default')
+        ->orderBy('name')
+        ->get(['id', 'name', 'is_default'])
+        ->map(fn ($rule) => [
+            'id'         => (int) $rule->id,
+            'name'       => $rule->name,
+            'is_default' => (bool) $rule->is_default,
+        ])
+        ->values()
+        ->all();
 
     $defaultMeetingParticipants = [
         'users' => ! $isCallingRoleLeadVariant && auth()->guard('user')->user()

@@ -94,8 +94,59 @@ class Bouncer
     {
         $roles = acl()->getRoles();
 
+        if (
+            Route::currentRouteName() === 'admin.activities.store'
+            && $this->isLeadMeetingStageWorkflowRequest()
+        ) {
+            return;
+        }
+
         if (isset($roles[Route::currentRouteName()])) {
             bouncer()->allow($roles[Route::currentRouteName()]);
         }
+    }
+
+    /**
+     * Allow the lead Meeting-stage workflow to create its required meeting
+     * activity without granting the role general activities.create access.
+     */
+    protected function isLeadMeetingStageWorkflowRequest(): bool
+    {
+        if (! request()->boolean('stage_meeting')) {
+            return false;
+        }
+
+        $leadId = (int) request()->input('lead_id');
+        $targetStageId = (int) request()->input('lead_pipeline_stage_id');
+
+        if (! $leadId || ! $targetStageId) {
+            return false;
+        }
+
+        $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
+
+        if (! (
+            $sourceAccessService->isBdeUser()
+            || $sourceAccessService->isSdrUser()
+            || $sourceAccessService->isLgeUser()
+            || $sourceAccessService->isDeDataScraperUser()
+        )) {
+            return false;
+        }
+
+        $lead = app(\Webkul\Lead\Repositories\LeadRepository::class)
+            ->getModel()
+            ->newQuery()
+            ->with('pipeline.stages')
+            ->find($leadId);
+
+        if (! $lead || ! $sourceAccessService->canEditLead($lead)) {
+            return false;
+        }
+
+        $targetStage = $lead->pipeline?->stages
+            ?->firstWhere('id', $targetStageId);
+
+        return $targetStage?->code === 'meeting';
     }
 }

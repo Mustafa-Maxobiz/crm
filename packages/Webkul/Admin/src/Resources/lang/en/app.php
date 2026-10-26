@@ -1519,6 +1519,10 @@ return [
                     'companies-role-pool'      => 'Only companies assigned to the selected role can be chosen for this user.',
                     'companies-empty-role'     => 'This role has no company restriction. Leave user companies empty to allow all companies.',
                     'company-role-mismatch'    => 'One or more selected companies are not allowed for this user\'s role.',
+                    'working-hours'            => 'Working Hours',
+                    'working-hours-help'       => 'Set the user\'s normal availability used for meeting scheduling. This is stored in the same Working Hours settings table.',
+                    'working-start-time'       => 'Working Start Time',
+                    'working-end-time'         => 'Working End Time',
                 ],
 
                 'edit' => [

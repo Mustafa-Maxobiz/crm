@@ -254,38 +254,9 @@ class TagController extends Controller
 
     protected function validateColdWarmTagConflictForResponse($lead, int $newTagId, ?int $oldTagId = null): ?JsonResponse
     {
-        $lead->loadMissing('tags');
-
-        $tagIds = $lead->tags
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->reject(fn ($id) => $oldTagId && $id === $oldTagId)
-            ->push($newTagId)
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-
-        $names = DB::table('tags')
-            ->whereIn('id', $tagIds)
-            ->pluck('name')
-            ->map(fn ($name) => strtolower(trim(preg_replace('/\s+/', ' ', (string) $name))))
-            ->filter()
-            ->unique()
-            ->values();
-
-        $hasCold = $names->contains(fn ($name) => in_array($name, ['cold', 'cold lead'], true));
-        $hasWarm = $names->contains(fn ($name) => in_array($name, ['warm', 'warm lead'], true));
-
-        if ($hasCold && $hasWarm) {
-            return response()->json([
-                'message' => 'A lead cannot be both Cold and Warm. Please select only one.',
-                'errors'  => [
-                    'tags' => ['A lead cannot be both Cold and Warm. Please select only one.'],
-                ],
-            ], 422);
-        }
-
+        // Cold/Warm classification tags are mutually exclusive. The attach path
+        // normalizes by detaching the opposite classification tag instead of
+        // rejecting the user's selection.
         return null;
     }
 

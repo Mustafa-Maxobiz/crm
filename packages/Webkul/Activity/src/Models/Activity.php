@@ -32,8 +32,9 @@ class Activity extends Model implements ActivityContract
      * @var array
      */
     protected $casts = [
-        'schedule_from' => 'datetime',
-        'schedule_to'   => 'datetime',
+        'schedule_from'    => 'datetime',
+        'schedule_to'      => 'datetime',
+        'meeting_attended' => 'boolean',
     ];
 
     /**
@@ -50,6 +51,7 @@ class Activity extends Model implements ActivityContract
         'schedule_from',
         'schedule_to',
         'is_done',
+        'meeting_attended',
         'call_status',
         'call_status_updated_at',
         'user_id',

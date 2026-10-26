@@ -6,36 +6,13 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Webkul\Admin\Models\WorkingHour;
 
 class WorkingHourController extends Controller
 {
     /**
-     * Role names that may have working hours managed here.
-     */
-    protected array $adminRoleNames = [
-        'admin',
-        'administrator',
-        'super admin',
-    ];
-
-    /**
-     * Closure role spellings used across this project.
-     */
-    protected array $closureRoleNames = [
-        'lead',
-        'lead closer',
-        'lead clouser',
-        'lead closure',
-        'lead_clouser',
-        'closure',
-        'closer',
-    ];
-
-    /**
-     * Display working hours for eligible users.
+     * Display working hours for all active users.
      */
     public function index(): View
     {
@@ -50,18 +27,18 @@ class WorkingHourController extends Controller
     }
 
     /**
-     * Store or update working hours for an eligible user.
+     * Store or update working hours for any active user.
      */
     public function store(): RedirectResponse
     {
-        $eligibleUserIds = $this->workingHourUsers()->pluck('id')->all();
+        $activeUserIds = $this->workingHourUsers()->pluck('id')->all();
 
         $validator = validator(request()->all(), [
-            'user_id'    => ['required', 'integer', 'exists:users,id', Rule::in($eligibleUserIds)],
-            'start_time' => ['required', 'regex:/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/'],
-            'end_time'   => ['required', 'regex:/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/'],
+            'user_id'    => ['required', 'integer', 'exists:users,id', \Illuminate\Validation\Rule::in($activeUserIds)],
+            'start_time' => ['required', 'regex:/^(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d)?$/'],
+            'end_time'   => ['required', 'regex:/^(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d)?$/'],
         ], [
-            'user_id.in'        => 'Working hours can only be set for Admin and Lead Closer users.',
+            'user_id.in'        => 'Working hours can only be set for active users.',
             'start_time.regex'  => 'The start time must use HH:MM format.',
             'end_time.regex'    => 'The end time must use HH:MM format.',
         ]);
@@ -95,39 +72,13 @@ class WorkingHourController extends Controller
     }
 
     /**
-     * Fetch active Admin and Lead Closer users with role names without N+1 queries.
+     * Fetch every active user and all of their assigned role names.
      */
     protected function workingHourUsers()
     {
-        $allowedRoleNames = collect(array_merge($this->adminRoleNames, $this->closureRoleNames))
-            ->map(fn ($role) => strtolower($role))
-            ->unique()
-            ->values()
-            ->all();
-
-        $query = DB::table('users')
+        $users = DB::table('users')
             ->leftJoin('roles as primary_roles', 'users.role_id', '=', 'primary_roles.id')
             ->where('users.status', 1)
-            ->where(function ($query) use ($allowedRoleNames) {
-                $query
-                    ->where('primary_roles.permission_type', 'all')
-                    ->orWhereIn(DB::raw('LOWER(primary_roles.name)'), $allowedRoleNames);
-
-                if (Schema::hasTable('user_roles')) {
-                    $query->orWhereExists(function ($subQuery) use ($allowedRoleNames) {
-                        $subQuery
-                            ->select(DB::raw(1))
-                            ->from('user_roles')
-                            ->join('roles', 'user_roles.role_id', '=', 'roles.id')
-                            ->whereColumn('user_roles.user_id', 'users.id')
-                            ->where(function ($roleQuery) use ($allowedRoleNames) {
-                                $roleQuery
-                                    ->where('roles.permission_type', 'all')
-                                    ->orWhereIn(DB::raw('LOWER(roles.name)'), $allowedRoleNames);
-                            });
-                    });
-                }
-            })
             ->select([
                 'users.id',
                 'users.name',
@@ -138,9 +89,12 @@ class WorkingHourController extends Controller
             ->orderBy('users.name')
             ->get();
 
-        if (! Schema::hasTable('user_roles') || $query->isEmpty()) {
-            return $query->map(function ($user) {
-                $user->role_name = $this->displayRoleName($user->primary_role_name, $user->primary_permission_type);
+        if (! Schema::hasTable('user_roles') || $users->isEmpty()) {
+            return $users->map(function ($user) {
+                $user->role_name = $this->displayRoleName(
+                    $user->primary_role_name,
+                    $user->primary_permission_type
+                );
 
                 return $user;
             });
@@ -148,20 +102,18 @@ class WorkingHourController extends Controller
 
         $roleNamesByUser = DB::table('user_roles')
             ->join('roles', 'user_roles.role_id', '=', 'roles.id')
-            ->whereIn('user_roles.user_id', $query->pluck('id'))
-            ->where(function ($roleQuery) use ($allowedRoleNames) {
-                $roleQuery
-                    ->where('roles.permission_type', 'all')
-                    ->orWhereIn(DB::raw('LOWER(roles.name)'), $allowedRoleNames);
-            })
+            ->whereIn('user_roles.user_id', $users->pluck('id'))
             ->select('user_roles.user_id', 'roles.name', 'roles.permission_type')
             ->get()
             ->groupBy('user_id');
 
-        return $query->map(function ($user) use ($roleNamesByUser) {
+        return $users->map(function ($user) use ($roleNamesByUser) {
             $roles = collect();
 
-            if ($roleName = $this->displayRoleName($user->primary_role_name, $user->primary_permission_type)) {
+            if ($roleName = $this->displayRoleName(
+                $user->primary_role_name,
+                $user->primary_permission_type
+            )) {
                 $roles->push($roleName);
             }
 
@@ -177,10 +129,6 @@ class WorkingHourController extends Controller
         });
     }
 
-
-    /**
-     * Paginate the eligible users collection for the settings table.
-     */
     protected function paginateUsers($users, int $perPage = 10): LengthAwarePaginator
     {
         $page = LengthAwarePaginator::resolveCurrentPage();
@@ -197,9 +145,6 @@ class WorkingHourController extends Controller
         );
     }
 
-    /**
-     * Normalize Admin all-permission roles to a readable role label.
-     */
     protected function displayRoleName(?string $roleName, ?string $permissionType): ?string
     {
         if ($permissionType === 'all') {
@@ -209,9 +154,6 @@ class WorkingHourController extends Controller
         return $roleName;
     }
 
-    /**
-     * Store time in HH:MM:SS format.
-     */
     protected function normalizeTimeForDatabase(string $time): string
     {
         return strlen($time) === 5 ? $time.':00' : $time;

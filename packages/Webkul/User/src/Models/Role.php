@@ -41,6 +41,7 @@ class Role extends Model implements RoleContract
     public function assignedUsers(): BelongsToMany
     {
         return $this->belongsToMany(UserProxy::modelClass(), 'user_roles', 'role_id', 'user_id')
+            ->withPivot('is_tl')
             ->withTimestamps();
     }
 

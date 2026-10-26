@@ -40,6 +40,11 @@ export default {
             setup(_, { attrs, slots }) {
                 return () => h(Field, {
                     ...attrs,
+                    // VeeValidate normalizes field paths with name.split('.').
+                    // Dynamic edit-modal controls can briefly resolve their name to
+                    // null while async lead data is being hydrated. Always pass a
+                    // string so one transient/null field cannot crash the whole form.
+                    name: attrs.name ?? "",
                     rules: attrs.rules ?? undefined,
                 }, slots);
             },

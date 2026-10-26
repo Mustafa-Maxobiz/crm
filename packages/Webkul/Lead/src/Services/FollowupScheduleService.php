@@ -17,10 +17,9 @@ class FollowupScheduleService
         ['value' => 7, 'unit' => 'days', 'frequency' => 4],
     ];
 
-    public const DEFAULT_MAX_DAYS = 30;
-
     public function __construct(
-        protected StageRepository $stageRepository
+        protected StageRepository $stageRepository,
+        protected FollowupRuleService $followupRuleService,
     ) {}
 
     public function isEnabled(): bool
@@ -61,11 +60,40 @@ class FollowupScheduleService
         return $this->legacySteps();
     }
 
-    public function settings(): array
+    public function settings(?Lead $lead = null): array
     {
+        $rule = null;
+
+        if ($lead?->followup_rule_group_id) {
+            $rule = $this->followupRuleService->findActiveRule(
+                (int) $lead->followup_rule_group_id
+            );
+        }
+
+        if (! $rule) {
+            $rule = $lead
+                ? $this->followupRuleService->resolve($lead)
+                : $this->followupRuleService->defaultRule();
+        }
+
+        if ($rule && ! empty($rule['steps'])) {
+            return [
+                'rule_id'             => $rule['id'],
+                'rule_name'           => $rule['name'],
+                'steps'               => $rule['steps'],
+                'max_days'            => $rule['max_days'],
+                'exhaustion_behavior' => $rule['exhaustion_behavior'],
+            ];
+        }
+
+        $steps = $this->steps();
+
         return [
-            'steps'    => $this->steps(),
-            'max_days' => $this->configInt('max_days', self::DEFAULT_MAX_DAYS),
+            'rule_id'             => null,
+            'rule_name'           => 'Legacy Global Schedule',
+            'steps'               => $steps,
+            'max_days'            => $this->calculateMaxDays($steps),
+            'exhaustion_behavior' => 'stop',
         ];
     }
 
@@ -98,7 +126,7 @@ class FollowupScheduleService
             return null;
         }
 
-        $settings = $this->settings();
+        $settings = $this->settings($lead);
         $from = ($from ?: Carbon::now())->copy();
         $completedCount = $completedCount ?? (int) ($lead?->followup_count ?? 0);
         $createdAt = $lead?->created_at
@@ -109,7 +137,11 @@ class FollowupScheduleService
             return null;
         }
 
-        $step = $this->stepForCompletedCount($completedCount, $settings['steps']);
+        $step = $this->stepForCompletedCount(
+            $completedCount,
+            $settings['steps'],
+            $settings['exhaustion_behavior'] ?? 'stop'
+        );
 
         if (! $step) {
             return null;
@@ -124,7 +156,7 @@ class FollowupScheduleService
             return 'Auto follow-up is disabled.';
         }
 
-        $settings = $this->settings();
+        $settings = $this->settings($lead);
         $completedCount = $completedCount ?? (int) ($lead?->followup_count ?? 0);
         $createdAt = $lead?->created_at ? Carbon::parse($lead->created_at) : Carbon::now();
 
@@ -132,14 +164,19 @@ class FollowupScheduleService
             return 'Schedule ended — lead will be marked dead.';
         }
 
-        $resolved = $this->resolveStepPosition($completedCount, $settings['steps']);
+        $resolved = $this->resolveStepPosition(
+            $completedCount,
+            $settings['steps'],
+            $settings['exhaustion_behavior'] ?? 'stop'
+        );
 
         if (! $resolved) {
             return 'Schedule ended — all follow-up steps completed.';
         }
 
         return sprintf(
-            'Auto: step %d (%d of %d) — every %d %s',
+            'Auto%s: step %d (%d of %d) — every %d %s',
+            ! empty($settings['rule_name']) ? ' ['.$settings['rule_name'].']' : '',
             $resolved['index'] + 1,
             $resolved['occurrence'],
             $resolved['step']['frequency'],
@@ -165,6 +202,14 @@ class FollowupScheduleService
         $next = $this->calculateNext($lead, Carbon::now(), (int) ($lead->followup_count ?? 0));
 
         if ($next) {
+            $settings = $this->settings($lead);
+
+            $lead->newQuery()
+                ->whereKey($lead->getKey())
+                ->update([
+                    'followup_rule_group_id' => $settings['rule_id'] ?? null,
+                ]);
+
             $this->persistNextFollowup($lead, $next);
 
             return $lead->refresh();
@@ -188,7 +233,7 @@ class FollowupScheduleService
 
     public function markLeadDead(Lead $lead, ?string $reason = null): void
     {
-        $maxDays = $this->settings()['max_days'];
+        $maxDays = $this->settings($lead)['max_days'];
         $reason = $reason ?: "Follow-up schedule ended after {$maxDays} days without conversion.";
 
         $lostStage = $this->stageRepository
@@ -253,17 +298,60 @@ class FollowupScheduleService
             ->all();
     }
 
-    protected function stepForCompletedCount(int $completedCount, array $steps): ?array
+    public function calculateMaxDays(array $steps): int
     {
-        $resolved = $this->resolveStepPosition($completedCount, $steps);
+        $minutes = collect($this->normalizeSteps($steps))->sum(function (array $step) {
+            $factor = match ($step['unit']) {
+                'minutes' => 1,
+                'hours'   => 60,
+                'days'    => 1440,
+                'weeks'   => 10080,
+                'months'  => 43200,
+                default   => 60,
+            };
+
+            return $step['value'] * $step['frequency'] * $factor;
+        });
+
+        return max(1, (int) ceil($minutes / 1440));
+    }
+
+    protected function stepForCompletedCount(int $completedCount, array $steps, string $behavior = 'stop'): ?array
+    {
+        $resolved = $this->resolveStepPosition($completedCount, $steps, $behavior);
 
         return $resolved['step'] ?? null;
     }
 
-    protected function resolveStepPosition(int $completedCount, array $steps): ?array
+    protected function resolveStepPosition(int $completedCount, array $steps, string $behavior = 'stop'): ?array
     {
         if (empty($steps)) {
             $steps = self::DEFAULT_STEPS;
+        }
+
+        $totalOccurrences = collect($steps)->sum(
+            fn ($step) => max(1, (int) ($step['frequency'] ?? 1))
+        );
+
+        if ($totalOccurrences <= 0) {
+            return null;
+        }
+
+        if ($completedCount >= $totalOccurrences) {
+            if ($behavior === 'restart') {
+                $completedCount %= $totalOccurrences;
+            } elseif ($behavior === 'repeat_last') {
+                $index = array_key_last($steps);
+                $step = $steps[$index];
+
+                return [
+                    'index'      => $index,
+                    'occurrence' => max(1, (int) $step['frequency']),
+                    'step'       => $step,
+                ];
+            } else {
+                return null;
+            }
         }
 
         $cursor = 0;

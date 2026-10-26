@@ -21,6 +21,7 @@
                     finalized: {
                         lead: null,
                         stage: null,
+                        meetingAttended: false,
                         updating: false,
                     },
 
@@ -33,6 +34,10 @@
                     pendingFollowupStage: null,
 
                     followupMode: null,
+
+                    followupRuleOptions: @json($followupRuleOptions),
+
+                    selectedFollowupRuleId: '',
 
                     customFollowupDate: '',
 
@@ -58,6 +63,7 @@
                     currentUserId: @json($currentUserId),
                     isLgeLeadVariant: @json($isLgeLeadVariant),
                     isCallingRoleLeadVariant: @json($isCallingRoleLeadVariant),
+                    isBdeDemoUser: @json($isBdeDemoUser),
                     isOwnerRestrictedLeadVariant: @json($isOwnerRestrictedLeadVariant),
 
                     stages: @json($accessibleStages->all()),
@@ -416,6 +422,7 @@
                         this.pendingFollowupLead = event.added.element;
                         this.pendingFollowupStage = stage;
                         this.followupMode = null;
+                        this.selectedFollowupRuleId = '';
                         this.customFollowupDate = '';
                         this.loadSchedulingContext(event.added.element.id).then(() => {
                             this.$refs.followupStageModal.open();
@@ -481,6 +488,15 @@
                         return;
                     }
 
+                    if (mode === 'auto' && ! this.selectedFollowupRuleId) {
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: 'Please select a follow-up group.',
+                        });
+
+                        return;
+                    }
+
                     if (mode === 'custom' && ! this.customFollowupDate) {
                         this.$emitter.emit('add-flash', {
                             type: 'error',
@@ -495,6 +511,10 @@
                         followup_mode: mode,
                     };
 
+                    if (mode === 'auto') {
+                        payload.followup_rule_group_id = Number(this.selectedFollowupRuleId);
+                    }
+
                     if (mode === 'custom') {
                         payload.next_followup_date = this.customFollowupDate.replace('T', ' ') + ':00';
                     }
@@ -508,6 +528,7 @@
                             this.pendingFollowupLead = null;
                             this.pendingFollowupStage = null;
                             this.followupMode = null;
+                            this.selectedFollowupRuleId = '';
                             this.customFollowupDate = '';
                             this.refreshKanban();
                         })
@@ -565,7 +586,7 @@
                 },
 
                 canUseStage(stage) {
-                    if (! this.isCallingRoleLeadVariant || ! stage) {
+                    if (! this.isCallingRoleLeadVariant || this.isBdeDemoUser || ! stage) {
                         return true;
                     }
 
@@ -947,6 +968,7 @@
                     this.updateStage("{{ lead_route('stage.update', '__LEAD_ID__') }}".replace('__LEAD_ID__', this.finalized.lead.id), {
                         ...params,
                         lead_pipeline_stage_id: this.finalized.stage.id,
+                        meeting_attended: this.finalized.meetingAttended ? 1 : 0,
                     })
                         .then(response => {
                             this.toggleStageUpdateModal();
@@ -978,6 +1000,7 @@
                     this.finalized = {
                         lead: null,
                         stage: null,
+                        meetingAttended: false,
                         updating: false,
                     };
                 },

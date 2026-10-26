@@ -902,6 +902,7 @@ class ActivityController extends Controller
                 $sourceAccessService->isBdeUser()
                 || $sourceAccessService->isSdrUser()
                 || $sourceAccessService->isLgeUser()
+                || $sourceAccessService->isDeDataScraperUser()
             );
     }
 

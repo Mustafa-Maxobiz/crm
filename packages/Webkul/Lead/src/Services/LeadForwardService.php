@@ -137,14 +137,6 @@ class LeadForwardService
             }
         }
 
-        $submittedClassificationIds = array_values(array_intersect($tagIds, $classificationIds));
-
-        if (count(array_unique($submittedClassificationIds)) > 1 && ! $preferredTagId) {
-            throw ValidationException::withMessages([
-                'tags' => ['Select either Warm Lead or Cold Lead, not both.'],
-            ]);
-        }
-
         if ($preferredTagId && in_array($preferredTagId, $classificationIds, true)) {
             $selectedClassificationId = $preferredTagId;
         }

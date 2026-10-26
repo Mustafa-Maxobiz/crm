@@ -13,7 +13,7 @@
                         <!-- Header -->
                         <x-slot:header>
                             <h3 class="text-base font-semibold dark:text-white">
-                                @lang('admin::app.leads.index.kanban.stages.need-more-info')
+                                @lang('admin::app.leads.view.stages.need-more-info')
                             </h3>
                         </x-slot>
 
@@ -29,7 +29,7 @@
                             <template v-if="finalized.stage.code == 'won'">
                                 <x-admin::form.control-group>
                                     <x-admin::form.control-group.label>
-                                        @lang('admin::app.leads.index.kanban.stages.won-value')
+                                        @lang('admin::app.leads.view.stages.won-value')
                                     </x-admin::form.control-group.label>
 
                                     <x-admin::form.control-group.control
@@ -44,7 +44,7 @@
                             <template v-else>
                                 <x-admin::form.control-group>
                                     <x-admin::form.control-group.label>
-                                        @lang('admin::app.leads.index.kanban.stages.lost-reason')
+                                        @lang('admin::app.leads.view.stages.lost-reason')
                                     </x-admin::form.control-group.label>
 
                                     <x-admin::form.control-group.control
@@ -54,16 +54,40 @@
                                 </x-admin::form.control-group>
                             </template>
 
+                            <!-- Meeting Attendance -->
+                            <div
+                                v-if="finalized.lead && finalized.lead.has_meeting_activity"
+                                class="rounded-md border border-gray-200 p-3 dark:border-gray-800"
+                            >
+                                <label class="flex cursor-pointer items-start gap-3">
+                                    <input
+                                        type="checkbox"
+                                        v-model="finalized.meetingAttended"
+                                        class="mt-0.5 h-4 w-4 rounded border-gray-300 text-brandColor focus:ring-brandColor"
+                                    >
+
+                                    <span class="grid gap-1">
+                                        <span class="text-sm font-medium text-gray-800 dark:text-white">
+                                            Meeting Attended
+                                        </span>
+
+                                        <span class="text-xs text-gray-500 dark:text-gray-400">
+                                            If checked, completed meetings remain visible in weekly/monthly calendars in green. If unchecked, completed meetings are removed from calendar views.
+                                        </span>
+                                    </span>
+                                </label>
+                            </div>
+
                             <!-- Closed At -->
                             <x-admin::form.control-group>
                                 <x-admin::form.control-group.label>
-                                    @lang('admin::app.leads.index.kanban.stages.closed-at')
+                                    @lang('admin::app.leads.view.stages.closed-at')
                                 </x-admin::form.control-group.label>
 
                                 <x-admin::form.control-group.control
                                     type="datetime"
                                     name="closed_at"
-                                    :label="trans('admin::app.leads.index.kanban.stages.closed-at')"
+                                    :label="trans('admin::app.leads.view.stages.closed-at')"
                                 />
 
                                 <x-admin::form.control-group.error control-name="closed_at"/>
@@ -74,7 +98,7 @@
                         <x-slot:footer>
                             <x-admin::button
                                 class="primary-button"
-                                :title="trans('admin::app.leads.index.kanban.stages.save-btn')"
+                                :title="trans('admin::app.leads.view.stages.save-btn')"
                                 ::loading="finalized.updating"
                                 ::disabled="finalized.updating"
                             />

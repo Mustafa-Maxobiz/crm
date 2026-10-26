@@ -40,6 +40,7 @@ class Lead extends Model implements LeadContract
         'followup_count',
         'last_followup_date',
         'followup_notes',
+        'followup_rule_group_id',
         'lead_disqualification_reason',
         'lead_disqualification_comment',
         'lead_disqualified_at',

@@ -65,13 +65,40 @@
         ->values()
         ->all();
 
+    $allowedLeadTagNames = collect(\Webkul\Tag\StaticTags::names())
+        ->map(fn ($name) => strtolower($name))
+        ->all();
+
+    $editTagOptions = app(\Webkul\Tag\Repositories\TagRepository::class)
+        ->getModel()
+        ->newQuery()
+        ->whereIn(\Illuminate\Support\Facades\DB::raw('LOWER(TRIM(name))'), $allowedLeadTagNames)
+        ->orderBy('name')
+        ->get(['id', 'name']);
+
     $sourceAccessService = app(\Webkul\Lead\Services\SourceAccessService::class);
     $leadForwardService = app(\Webkul\Lead\Services\LeadForwardService::class);
+
+    $followupRuleOptions = \Illuminate\Support\Facades\DB::table('followup_rule_groups')
+        ->where('is_active', 1)
+        ->orderByDesc('is_default')
+        ->orderBy('name')
+        ->get(['id', 'name', 'is_default'])
+        ->map(fn ($rule) => [
+            'id'         => (int) $rule->id,
+            'name'       => $rule->name,
+            'is_default' => (bool) $rule->is_default,
+        ])
+        ->values()
+        ->all();
     $accessibleStages = in_array(lead_variant(), ['bde', 'sdr', 'lge', 'de_data_scraper'], true)
         ? $pipeline->stages->values()
         : $sourceAccessService->filterAccessibleStages($pipeline->stages);
 
-    if (in_array(lead_variant(), ['bde', 'sdr', 'lge', 'de_data_scraper'], true)) {
+    if (
+        in_array(lead_variant(), ['bde', 'sdr', 'lge', 'de_data_scraper'], true)
+        && ! $sourceAccessService->isBdeDemoUser()
+    ) {
         $meetingStage = $pipeline->stages->firstWhere('code', 'meeting');
 
         if ($meetingStage) {

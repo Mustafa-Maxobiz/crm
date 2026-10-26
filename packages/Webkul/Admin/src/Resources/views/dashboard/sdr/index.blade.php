@@ -795,7 +795,9 @@
                                             :key="event.id"
                                             type="button"
                                             class="sdr-dashboard-calendar-event"
-                                            :class="event.type === 'Meeting' ? 'meeting' : 'followup'"
+                                            :class="event.type === 'Meeting'
+                                                ? (event.is_done && event.meeting_attended ? 'meeting-attended' : 'meeting')
+                                                : 'followup'"
                                             v-tooltip="{
                                                 content: tooltipForEvent(event),
                                                 html: true,
@@ -809,7 +811,11 @@
                                                 @{{ event.time_label }} @{{ event.type }}
                                             </span>
 
-                                            <span class="event-title">
+                                            <span
+                                                class="event-title cursor-pointer hover:underline"
+                                                :title="event.lead_title || event.title"
+                                                @click.stop="openLeadEvent(event)"
+                                            >
                                                 @{{ event.lead_title || event.title }}
                                             </span>
                                         </button>
@@ -1302,6 +1308,12 @@
                     openEvent(event) {
                         if (event.url) {
                             window.location.href = event.url;
+                        }
+                    },
+
+                    openLeadEvent(event) {
+                        if (event.lead_url) {
+                            window.location.href = event.lead_url;
                         }
                     },
 
@@ -2265,6 +2277,12 @@
                 color: #1d4ed8;
             }
 
+            .sdr-dashboard-calendar-event.meeting-attended {
+                background: #dcfce7;
+                color: #15803d;
+                border: 1px solid #22c55e;
+            }
+
             .sdr-dashboard-calendar-event.followup {
                 background: #fee2e2;
                 color: #b91c1c;
@@ -2288,6 +2306,12 @@
             .dark .sdr-row-type-badge.meeting {
                 background: rgba(30, 64, 175, 0.35);
                 color: #bfdbfe;
+            }
+
+            .dark .sdr-dashboard-calendar-event.meeting-attended {
+                background: rgba(22, 163, 74, 0.28);
+                border-color: #22c55e;
+                color: #bbf7d0;
             }
 
             .dark .sdr-row-type-badge.warm-source {

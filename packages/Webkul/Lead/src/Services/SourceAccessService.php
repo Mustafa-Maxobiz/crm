@@ -27,6 +27,10 @@ class SourceAccessService
 
     protected array $handedOffStageIdsCache = [];
 
+    protected array $teamUserIdsCache = [];
+
+    protected array $isTeamLeadCache = [];
+
     /**
      * Source IDs assigned directly to the user/role. Null means all sources.
      *
@@ -241,7 +245,15 @@ class SourceAccessService
             'bde executive',
             'bde exective',
             'business development executive',
+            'bde demo',
         ], true);
+    }
+
+    public function isBdeDemoUser(?UserContract $user = null): bool
+    {
+        $user = $this->resolveUser($user);
+
+        return strtolower(trim((string) $this->activeRole($user)?->name)) === 'bde demo';
     }
 
     public function isLgeUser(?UserContract $user = null): bool
@@ -554,10 +566,11 @@ class SourceAccessService
         }
 
         $leadAttributes = $lead->getAttributes();
+        $visibleUserIds = $this->getActiveRoleTeamUserIds($user);
 
-        return (int) ($leadAttributes['user_id'] ?? 0) === (int) $user->id
-            || (int) ($leadAttributes['lead_owner_id'] ?? 0) === (int) $user->id
-            || $this->leadWasForwardedFromUser($lead, $user);
+        return in_array((int) ($leadAttributes['user_id'] ?? 0), $visibleUserIds, true)
+            || in_array((int) ($leadAttributes['lead_owner_id'] ?? 0), $visibleUserIds, true)
+            || $this->leadWasForwardedFromAnyUser($lead, $visibleUserIds);
     }
 
     /**
@@ -571,13 +584,13 @@ class SourceAccessService
             return $query;
         }
 
-        $userId = auth()->guard('user')->id();
+        $visibleUserIds = $this->getActiveRoleTeamUserIds();
 
-        return $query->where(function ($ownerQuery) use ($table, $userId) {
+        return $query->where(function ($ownerQuery) use ($table, $visibleUserIds) {
             $ownerQuery
-                ->where("{$table}.user_id", $userId)
-                ->orWhere("{$table}.lead_owner_id", $userId)
-                ->orWhereExists(fn ($forwardQuery) => $this->applyPreviousOwnerForwardExists($forwardQuery, $table, $userId));
+                ->whereIn("{$table}.user_id", $visibleUserIds)
+                ->orWhereIn("{$table}.lead_owner_id", $visibleUserIds)
+                ->orWhereExists(fn ($forwardQuery) => $this->applyPreviousOwnerForwardExistsForUsers($forwardQuery, $table, $visibleUserIds));
         });
     }
 
@@ -590,13 +603,13 @@ class SourceAccessService
             return $query;
         }
 
-        $userId = auth()->guard('user')->id();
+        $visibleUserIds = $this->getActiveRoleTeamUserIds();
 
-        return $query->where(function ($ownerQuery) use ($userId) {
+        return $query->where(function ($ownerQuery) use ($visibleUserIds) {
             $ownerQuery
-                ->where('leads.user_id', $userId)
-                ->orWhere('leads.lead_owner_id', $userId)
-                ->orWhereExists(fn ($forwardQuery) => $this->applyPreviousOwnerForwardExists($forwardQuery, 'leads', $userId));
+                ->whereIn('leads.user_id', $visibleUserIds)
+                ->orWhereIn('leads.lead_owner_id', $visibleUserIds)
+                ->orWhereExists(fn ($forwardQuery) => $this->applyPreviousOwnerForwardExistsForUsers($forwardQuery, 'leads', $visibleUserIds));
         });
     }
 
@@ -647,16 +660,18 @@ class SourceAccessService
             return $query->whereIn("{$table}.lead_pipeline_stage_id", $accessible);
         }
 
-        return $query->where(function ($stageQuery) use ($accessible, $userId, $table) {
+        $visibleUserIds = $this->getActiveRoleTeamUserIds();
+
+        return $query->where(function ($stageQuery) use ($accessible, $visibleUserIds, $table) {
             $stageQuery
                 ->whereIn("{$table}.lead_pipeline_stage_id", $accessible)
-                ->orWhere(function ($handoffQuery) use ($userId, $table) {
+                ->orWhere(function ($handoffQuery) use ($visibleUserIds, $table) {
                     $handoffQuery
-                        ->where("{$table}.lead_owner_id", $userId)
-                        ->where("{$table}.user_id", '!=', $userId)
+                        ->whereIn("{$table}.lead_owner_id", $visibleUserIds)
+                        ->whereNotIn("{$table}.user_id", $visibleUserIds)
                         ->whereNotNull("{$table}.user_id");
                 })
-                ->orWhereExists(fn ($forwardQuery) => $this->applyPreviousOwnerForwardExists($forwardQuery, $table, $userId));
+                ->orWhereExists(fn ($forwardQuery) => $this->applyPreviousOwnerForwardExistsForUsers($forwardQuery, $table, $visibleUserIds));
         });
     }
 
@@ -665,21 +680,23 @@ class SourceAccessService
      */
     public function applyOriginatingCallingOwnerTableScope(QueryBuilder $query, int $userId): QueryBuilder
     {
-        return $query->where(function ($ownerQuery) use ($userId) {
+        $visibleUserIds = $this->visibleUserIdsForExplicitUserId($userId);
+
+        return $query->where(function ($ownerQuery) use ($visibleUserIds) {
             $ownerQuery
-                ->where('leads.lead_owner_id', $userId)
-                ->orWhere(function ($legacyQuery) use ($userId) {
+                ->whereIn('leads.lead_owner_id', $visibleUserIds)
+                ->orWhere(function ($legacyQuery) use ($visibleUserIds) {
                     $legacyQuery
                         ->whereNull('leads.lead_owner_id')
-                        ->where('leads.user_id', $userId);
+                        ->whereIn('leads.user_id', $visibleUserIds);
                 })
-                ->orWhereExists(fn ($forwardQuery) => $this->applyPreviousOwnerForwardExists($forwardQuery, 'leads', $userId));
+                ->orWhereExists(fn ($forwardQuery) => $this->applyPreviousOwnerForwardExistsForUsers($forwardQuery, 'leads', $visibleUserIds));
         });
     }
 
     public function applyCurrentAssigneeTableScope(QueryBuilder $query, int $userId): QueryBuilder
     {
-        return $query->where('leads.user_id', $userId);
+        return $query->whereIn('leads.user_id', $this->visibleUserIdsForExplicitUserId($userId));
     }
 
     /**
@@ -698,12 +715,86 @@ class SourceAccessService
             return $query;
         }
 
-        return $query->where(function ($ownerQuery) use ($userId) {
+        $visibleUserIds = $this->getActiveRoleTeamUserIds();
+
+        return $query->where(function ($ownerQuery) use ($visibleUserIds) {
             $ownerQuery
-                ->where('leads.user_id', $userId)
-                ->orWhere('leads.lead_owner_id', $userId)
-                ->orWhereExists(fn ($forwardQuery) => $this->applyPreviousOwnerForwardExists($forwardQuery, 'leads', $userId));
+                ->whereIn('leads.user_id', $visibleUserIds)
+                ->orWhereIn('leads.lead_owner_id', $visibleUserIds)
+                ->orWhereExists(fn ($forwardQuery) => $this->applyPreviousOwnerForwardExistsForUsers($forwardQuery, 'leads', $visibleUserIds));
         });
+    }
+
+    public function isTeamLeadForActiveRole(?UserContract $user = null): bool
+    {
+        $user = $this->resolveUser($user);
+
+        if (! $user?->id) {
+            return false;
+        }
+
+        $roleId = app(ActiveRoleService::class)->getActiveRoleId($user);
+
+        if (! $roleId) {
+            return false;
+        }
+
+        $cacheKey = $user->id.':'.$roleId;
+
+        if (array_key_exists($cacheKey, $this->isTeamLeadCache)) {
+            return $this->isTeamLeadCache[$cacheKey];
+        }
+
+        return $this->isTeamLeadCache[$cacheKey] = DB::table('user_roles')
+            ->where('user_id', $user->id)
+            ->where('role_id', $roleId)
+            ->where('is_tl', 1)
+            ->exists();
+    }
+
+    /**
+     * User IDs visible under the active role. Normal users only get themselves;
+     * TL users get every user assigned to the same active role.
+     *
+     * @return array<int>
+     */
+    public function getActiveRoleTeamUserIds(?UserContract $user = null): array
+    {
+        $user = $this->resolveUser($user);
+
+        if (! $user?->id) {
+            return [];
+        }
+
+        $roleId = app(ActiveRoleService::class)->getActiveRoleId($user);
+
+        if (! $roleId || ! $this->isTeamLeadForActiveRole($user)) {
+            return [(int) $user->id];
+        }
+
+        $cacheKey = $user->id.':'.$roleId;
+
+        if (array_key_exists($cacheKey, $this->teamUserIdsCache)) {
+            return $this->teamUserIdsCache[$cacheKey];
+        }
+
+        $pivotIds = DB::table('user_roles')
+            ->where('role_id', $roleId)
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $legacyIds = DB::table('users')
+            ->where('role_id', $roleId)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        return $this->teamUserIdsCache[$cacheKey] = array_values(array_unique(array_merge(
+            [(int) $user->id],
+            $pivotIds,
+            $legacyIds,
+        )));
     }
 
     public function isCallingRoleUser(?UserContract $user = null): bool
@@ -806,15 +897,16 @@ class SourceAccessService
         }
 
         $leadAttributes = $lead->getAttributes();
-        $isCurrentSalesOwner = (int) ($leadAttributes['user_id'] ?? 0) === (int) $user->id;
-        $isLeadOwner = (int) ($leadAttributes['lead_owner_id'] ?? 0) === (int) $user->id;
-        $isPreviousSalesOwner = $this->leadWasForwardedFromUser($lead, $user);
+        $visibleUserIds = $this->getActiveRoleTeamUserIds($user);
+        $isCurrentSalesOwner = in_array((int) ($leadAttributes['user_id'] ?? 0), $visibleUserIds, true);
+        $isLeadOwner = in_array((int) ($leadAttributes['lead_owner_id'] ?? 0), $visibleUserIds, true);
+        $isPreviousSalesOwner = $this->leadWasForwardedFromAnyUser($lead, $visibleUserIds);
 
         if (! $isCurrentSalesOwner && ! $isLeadOwner && ! $isPreviousSalesOwner) {
             return false;
         }
 
-        if (! $isCurrentSalesOwner) {
+        if ((int) ($leadAttributes['user_id'] ?? 0) !== (int) $user->id) {
             return true;
         }
 
@@ -874,11 +966,55 @@ class SourceAccessService
 
     protected function applyPreviousOwnerForwardExists(QueryBuilder $query, string $table, int $userId): QueryBuilder
     {
+        return $this->applyPreviousOwnerForwardExistsForUsers($query, $table, [$userId]);
+    }
+
+    /**
+     * @param  array<int>  $userIds
+     */
+    protected function applyPreviousOwnerForwardExistsForUsers(QueryBuilder $query, string $table, array $userIds): QueryBuilder
+    {
         return $query
             ->selectRaw('1')
             ->from('lead_forwards')
             ->whereColumn('lead_forwards.lead_id', "{$table}.id")
-            ->where('lead_forwards.from_user_id', $userId);
+            ->whereIn('lead_forwards.from_user_id', $userIds);
+    }
+
+    /**
+     * @param  array<int>  $userIds
+     */
+    protected function leadWasForwardedFromAnyUser(LeadContract $lead, array $userIds): bool
+    {
+        if (empty($userIds)) {
+            return false;
+        }
+
+        if (! $lead instanceof \Illuminate\Database\Eloquent\Model || ! $lead->exists) {
+            return false;
+        }
+
+        return DB::table('lead_forwards')
+            ->where('lead_id', $lead->getKey())
+            ->whereIn('from_user_id', $userIds)
+            ->exists();
+    }
+
+    /**
+     * Preserve explicit-user helpers for non-current users while expanding the
+     * authenticated TL to the full team for its active role.
+     *
+     * @return array<int>
+     */
+    protected function visibleUserIdsForExplicitUserId(int $userId): array
+    {
+        $currentUserId = (int) (auth()->guard('user')->id() ?? 0);
+
+        if ($currentUserId === $userId) {
+            return $this->getActiveRoleTeamUserIds();
+        }
+
+        return [$userId];
     }
 
     public function applyLeadQueryScope(Builder $query): Builder

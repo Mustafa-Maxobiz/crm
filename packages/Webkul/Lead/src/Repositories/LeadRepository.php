@@ -320,12 +320,15 @@ class LeadRepository extends Repository
 
         $shouldScheduleFollowup = $this->shouldScheduleFollowupFromPayload($data)
             && $this->isFollowUpStageId($data['lead_pipeline_stage_id'] ?? null);
+        $hasManualNextFollowup = $shouldScheduleFollowup && ! empty($data['next_followup_date']);
 
         if (! $shouldScheduleFollowup) {
             $data['next_followup_date'] = null;
-        } elseif (empty($data['next_followup_date'])) {
-            $data['next_followup_date'] = $this->followupScheduleService
-                ->calculateNext(null, Carbon::now(), 0);
+        } elseif (! $hasManualNextFollowup) {
+            // Resolve automatic timing after the lead exists so targeted rules
+            // can match its owner, source, and tags instead of always using
+            // the Default Rule for the first follow-up.
+            $data['next_followup_date'] = null;
         }
 
         unset($data['schedule_followup']);
@@ -344,9 +347,25 @@ class LeadRepository extends Repository
             'lead_pipeline_stage_id' => 1,
         ], $data));
 
+        if ($shouldScheduleFollowup && ! $hasManualNextFollowup) {
+            $nextFollowup = $this->followupScheduleService
+                ->calculateNext($lead, Carbon::now(), 0);
+
+            if ($nextFollowup) {
+                $lead->newQuery()
+                    ->whereKey($lead->getKey())
+                    ->update([
+                        'next_followup_date'     => $nextFollowup,
+                        'followup_rule_group_id' => $this->followupScheduleService->settings($lead)['rule_id'] ?? null,
+                    ]);
+
+                $lead->refresh();
+            }
+        }
+
         $this->attributeValueRepository->save(array_merge($data, [
-            'entity_id'         => $lead->id,
-            'next_followup_date'=> $lead->next_followup_date,
+            'entity_id'          => $lead->id,
+            'next_followup_date' => $lead->next_followup_date,
         ]));
 
         if (isset($data['products'])) {
@@ -447,6 +466,7 @@ class LeadRepository extends Repository
 
             if ($stage->code !== 'follow-up') {
                 $data['next_followup_date'] = null;
+                $data['followup_rule_group_id'] = null;
 
                 if (
                     is_array($attributes)
@@ -465,20 +485,39 @@ class LeadRepository extends Repository
             $data['organization_id'] = null;
         }
 
+        $hasScheduleFollowup = array_key_exists('schedule_followup', $data);
+        $shouldScheduleFollowup = $this->shouldScheduleFollowupFromPayload($data);
+
         if (array_key_exists('next_followup_date', $data) && empty($data['next_followup_date'])) {
             $existingLead = $this->find($id);
             $targetStageId = $data['lead_pipeline_stage_id'] ?? $existingLead?->lead_pipeline_stage_id;
 
-            if ($this->isFollowUpStageId($targetStageId)) {
+            if ($hasScheduleFollowup && ! $shouldScheduleFollowup) {
+                $data['next_followup_date'] = null;
+            } elseif ($hasScheduleFollowup && $shouldScheduleFollowup) {
+                // An explicit Schedule follow-up request from create/edit should
+                // calculate the next date even when the lead is not already in
+                // the follow-up stage. This matches the form help text.
                 $data['next_followup_date'] = $this->followupScheduleService->calculateNext(
                     $existingLead,
                     Carbon::now(),
                     (int) ($existingLead->followup_count ?? 0)
                 );
+                $data['followup_rule_group_id'] = $this->followupScheduleService->settings($existingLead)['rule_id'] ?? null;
+            } elseif ($this->isFollowUpStageId($targetStageId)) {
+                // Preserve legacy behavior for callers that omit schedule_followup.
+                $data['next_followup_date'] = $this->followupScheduleService->calculateNext(
+                    $existingLead,
+                    Carbon::now(),
+                    (int) ($existingLead->followup_count ?? 0)
+                );
+                $data['followup_rule_group_id'] = $this->followupScheduleService->settings($existingLead)['rule_id'] ?? null;
             } else {
                 $data['next_followup_date'] = null;
             }
         }
+
+        unset($data['schedule_followup']);
 
         // Convert empty lead_sub_source_id to null
         if (isset($data['lead_sub_source_id']) && empty($data['lead_sub_source_id'])) {

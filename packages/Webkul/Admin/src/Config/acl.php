@@ -714,6 +714,10 @@ return [
             'admin.settings.services_offered.index',
             'admin.settings.deleted_leads.index',
             'admin.settings.followup_schedule.index',
+            'admin.settings.followup_schedule.update',
+            'admin.settings.followup_schedule.rules.store',
+            'admin.settings.followup_schedule.rules.update',
+            'admin.settings.followup_schedule.rules.delete',
         ],
         'sort'  => 2,
     ], [

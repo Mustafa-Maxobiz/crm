@@ -27,6 +27,8 @@
                     editLead: {},
                     editPerson: { name: '' },
                     editTags: [],
+                    editTagIds: [],
+                    editScheduleFollowup: false,
                     editStages: [],
                     leadTypeOptions: @json($leadTypeOptions),
                     salesOwnerOptions: @json($salesOwnerOptions),
@@ -73,6 +75,8 @@
                     pendingHandoffSdrUserId: '',
                     isHandoffSaving: false,
                     followupMode: null,
+                    followupRuleOptions: @json($followupRuleOptions),
+                    selectedFollowupRuleId: '',
                     customFollowupDate: '',
                     isFollowupSaving: false,
                     pendingColdForwardRecord: null,
@@ -646,6 +650,7 @@
                             this.pendingStageLeadId = leadId;
                             this.pendingStageId = value;
                             this.followupMode = null;
+                            this.selectedFollowupRuleId = '';
                             this.customFollowupDate = '';
                             this.loadSchedulingContext(leadId).then(() => {
                                 this.$refs.followupStageModal.open();
@@ -1035,6 +1040,8 @@
                     this.editLead = { id: record.id };
                     this.editPerson = { name: '' };
                     this.editTags = [];
+                    this.editTagIds = [];
+                    this.editScheduleFollowup = false;
                     this.editStages = [];
 
                     this.$refs.editLeadModal.open();
@@ -1046,6 +1053,8 @@
                             this.editLead = data;
                             this.editPerson = data.person || { name: '' };
                             this.editTags = data.tags || [];
+                            this.editTagIds = (data.tags || []).map(id => Number(id)).filter(id => ! Number.isNaN(id));
+                            this.editScheduleFollowup = Boolean(data.schedule_followup ?? data.next_followup_date);
                             this.editStages = data.stages || [];
                             this.salesOwnerOptions = data.sales_owner_options || this.salesOwnerOptions;
                             this.isEditLoading = false;
@@ -1103,13 +1112,20 @@
                         organizationPayload.organization_id = personPayload.organization_id || null;
                     }
 
-                    this.$axios.put(`{{ lead_url() . '/edit' }}/${this.editLeadId}`, {
+                    const editPayload = {
                         ...params,
                         ...organizationPayload,
                         person: personPayload,
+                        tags: [...this.editTagIds],
+                        schedule_followup: this.editScheduleFollowup ? 1 : 0,
+                        next_followup_date: this.editScheduleFollowup
+                            ? (params.next_followup_date || null)
+                            : null,
                         entity_type: 'leads',
                         quick_add: 1,
-                    }, {
+                    };
+
+                    this.$axios.put(`{{ lead_url() . '/edit' }}/${this.editLeadId}`, editPayload, {
                         headers: {
                             Accept: 'application/json',
                             'X-Requested-With': 'XMLHttpRequest',
@@ -1617,6 +1633,15 @@
                 },
 
                 applyFollowupStage(mode) {
+                    if (mode === 'auto' && ! this.selectedFollowupRuleId) {
+                        this.$emitter.emit('add-flash', {
+                            type: 'error',
+                            message: 'Please select a follow-up group.',
+                        });
+
+                        return;
+                    }
+
                     if (mode === 'custom') {
                         if (! this.customFollowupDate) {
                             this.$emitter.emit('add-flash', {
@@ -1634,6 +1659,10 @@
                         followup_mode: mode,
                     };
 
+                    if (mode === 'auto') {
+                        payload.followup_rule_group_id = Number(this.selectedFollowupRuleId);
+                    }
+
                     if (mode === 'custom') {
                         // datetime-local -> Y-m-d H:i:s
                         payload.next_followup_date = this.customFollowupDate.replace('T', ' ') + ':00';
@@ -1646,6 +1675,7 @@
                             this.pendingStageLeadId = null;
                             this.pendingStageId = null;
                             this.followupMode = null;
+                            this.selectedFollowupRuleId = '';
                             this.customFollowupDate = '';
                             this.setSchedulingContext();
                             this.$refs.datagrid.get();

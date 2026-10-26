@@ -403,10 +403,9 @@
             id="v-calendar-template"
         >
             <v-vue-cal
-                hide-view-selector
                 :watchRealTime="true"
                 :twelveHour="true"
-                :disable-views="['years', 'year', 'month', 'day']"
+                :disable-views="['years', 'year', 'day']"
                 style="height: calc(100vh - 240px);"
                 :class="{'vuecal--dark': theme === 'dark'}"
                 :events="events"

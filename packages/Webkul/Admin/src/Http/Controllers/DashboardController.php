@@ -269,6 +269,8 @@ class DashboardController extends Controller
         int $userId,
         SourceAccessService $sourceAccessService,
     ): array {
+        $visibleUserIds = $sourceAccessService->getActiveRoleTeamUserIds();
+
         $callQuery = DB::table('activities')
             ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
             ->leftJoin('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
@@ -297,14 +299,14 @@ class DashboardController extends Controller
             ->join('leads', 'lead_activities.lead_id', '=', 'leads.id')
             ->where('activities.type', 'meeting')
             ->whereNull('leads.deleted_at')
-            ->where('activities.user_id', $userId)
+            ->whereIn('activities.user_id', $visibleUserIds)
             ->whereBetween('activities.schedule_from', [$startDate, $endDate]);
 
         $sourceAccessService->applyLeadTableScope($meetingQuery);
 
         $meetingStats = $meetingQuery
             ->selectRaw('COUNT(DISTINCT activities.id) as booked_meetings')
-            ->selectRaw("COUNT(DISTINCT CASE WHEN activities.call_status = 'done' OR activities.is_done = 1 THEN activities.id END) as attended_meetings")
+            ->selectRaw("COUNT(DISTINCT CASE WHEN activities.meeting_attended = 1 THEN activities.id END) as attended_meetings")
             ->first();
 
         $bookedMeetings = (int) ($meetingStats->booked_meetings ?? 0);
@@ -365,6 +367,8 @@ class DashboardController extends Controller
         int $userId,
         SourceAccessService $sourceAccessService,
     ): array {
+        $visibleUserIds = $sourceAccessService->getActiveRoleTeamUserIds();
+
         $meetingQuery = DB::table('activities')
             ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
             ->leftJoin('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
@@ -381,7 +385,7 @@ class DashboardController extends Controller
 
         $meetingStats = $meetingQuery
             ->selectRaw('COUNT(DISTINCT activities.id) as booked_meetings')
-            ->selectRaw("COUNT(DISTINCT CASE WHEN activities.call_status = 'done' OR activities.is_done = 1 THEN activities.id END) as attended_meetings")
+            ->selectRaw("COUNT(DISTINCT CASE WHEN activities.meeting_attended = 1 THEN activities.id END) as attended_meetings")
             ->first();
 
         $bookedMeetings = (int) ($meetingStats->booked_meetings ?? 0);
@@ -437,6 +441,8 @@ class DashboardController extends Controller
      */
     protected function bdeDashboardSummary(Carbon $startDate, Carbon $endDate, int $userId): array
     {
+        $visibleUserIds = app(SourceAccessService::class)->getActiveRoleTeamUserIds();
+
         $totalCreated = (int) $this->applyBdeCreatedLeadScope(
             DB::table('leads')->whereNull('leads.deleted_at'),
             $userId
@@ -455,7 +461,7 @@ class DashboardController extends Controller
 
         $followups = (int) DB::table('leads')
             ->whereNull('deleted_at')
-            ->where('user_id', $userId)
+            ->whereIn('user_id', $visibleUserIds)
             ->whereNotNull('next_followup_date')
             ->whereBetween('next_followup_date', [$startDate, $endDate])
             ->distinct('id')
@@ -528,16 +534,18 @@ class DashboardController extends Controller
      */
     protected function dataScraperDashboardSummary(Carbon $startDate, Carbon $endDate, int $userId): array
     {
+        $visibleUserIds = app(SourceAccessService::class)->getActiveRoleTeamUserIds();
+
         $created = (int) DB::table('leads')
             ->whereNull('deleted_at')
-            ->where('lead_owner_id', $userId)
+            ->whereIn('lead_owner_id', $visibleUserIds)
             ->whereBetween('created_at', [$startDate, $endDate])
             ->distinct('id')
             ->count('id');
 
         $forwarded = Schema::hasTable('lead_forwards')
             ? (int) DB::table('lead_forwards')
-                ->where('from_user_id', $userId)
+                ->whereIn('from_user_id', $visibleUserIds)
                 ->where('forward_type', SalesOwnerTransferService::TYPE_SALES_OWNER_TRANSFER)
                 ->whereBetween('forwarded_at', [$startDate, $endDate])
                 ->distinct('lead_id')
@@ -613,9 +621,10 @@ class DashboardController extends Controller
     {
         $userId = auth()->guard('user')->id();
         $sourceAccessService = app(SourceAccessService::class);
+        $visibleUserIds = $sourceAccessService->getActiveRoleTeamUserIds();
 
         $requestStats = DB::table('linkedin_entry')
-            ->where('user_id', $userId)
+            ->whereIn('user_id', $visibleUserIds)
             ->whereBetween('created_at', [$startDate, $endDate])
             ->selectRaw('COUNT(*) as total_requests')
             ->selectRaw("SUM(CASE WHEN status IN ('accepted', 'response') THEN 1 ELSE 0 END) as accepted_requests")
@@ -625,7 +634,7 @@ class DashboardController extends Controller
         $acceptedRequests = (int) ($requestStats->accepted_requests ?? 0);
         $forwardedColdLeads = Schema::hasTable('lead_forwards')
             ? (int) DB::table('lead_forwards')
-                ->where('from_user_id', $userId)
+                ->whereIn('from_user_id', $visibleUserIds)
                 ->where('forward_type', LeadForwardService::TYPE_COLD_LEAD)
                 ->whereBetween('forwarded_at', [$startDate, $endDate])
                 ->count()
@@ -639,11 +648,11 @@ class DashboardController extends Controller
 
         $leadBase
             ->whereBetween('leads.created_at', [$startDate, $endDate])
-            ->whereExists(function ($query) use ($userId) {
+            ->whereExists(function ($query) use ($visibleUserIds) {
                 $query
                     ->selectRaw('1')
                     ->from('linkedin_entry')
-                    ->where('linkedin_entry.user_id', $userId)
+                    ->whereIn('linkedin_entry.user_id', $visibleUserIds)
                     ->whereRaw(
                         "TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(linkedin_entry.url), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', '')) = TRIM(TRAILING '/' FROM REPLACE(REPLACE(REPLACE(REPLACE(LOWER(leads.source_link), 'https://www.', ''), 'http://www.', ''), 'https://', ''), 'http://', ''))"
                     );
@@ -733,6 +742,7 @@ class DashboardController extends Controller
         $todayStart = $calendarDate->copy()->startOfDay();
         $todayEnd = $calendarDate->copy()->endOfDay();
         $sourceAccessService = app(SourceAccessService::class);
+        $visibleUserIds = $sourceAccessService->getActiveRoleTeamUserIds();
         $variant = request()->query('variant', 'sdr');
 
         $this->abortUnlessDashboardRole($variant);
@@ -761,11 +771,12 @@ class DashboardController extends Controller
                 ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
                 ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
                 ->where('activities.type', 'meeting')
+                ->where('activities.is_done', 0)
                 ->whereBetween('activities.schedule_from', [$todayStart, $todayEnd])
-                ->where(function ($query) use ($userId) {
+                ->where(function ($query) use ($visibleUserIds) {
                     $query
-                        ->where('activities.user_id', $userId)
-                        ->orWhere('activity_participants.user_id', $userId);
+                        ->whereIn('activities.user_id', $visibleUserIds)
+                        ->orWhereIn('activity_participants.user_id', $visibleUserIds);
                 });
 
             $this->applyVisibleLeadJoinScope($meetingsBase);
@@ -957,6 +968,8 @@ class DashboardController extends Controller
 
     protected function bdeLeadSections(int $userId, Carbon $todayStart, Carbon $todayEnd): array
     {
+        $visibleUserIds = app(SourceAccessService::class)->getActiveRoleTeamUserIds();
+
         $followupsBase = DB::table('leads')
             ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
             ->leftJoin('organizations', 'persons.organization_id', '=', 'organizations.id')
@@ -1043,6 +1056,8 @@ class DashboardController extends Controller
         Carbon $endDate,
         bool $showUsFeatures,
     ) {
+        $visibleUserIds = app(SourceAccessService::class)->getActiveRoleTeamUserIds();
+
         $query = DB::table('activities')
             ->leftJoin('activity_participants', 'activities.id', '=', 'activity_participants.activity_id')
             ->leftJoin('lead_activities', 'activities.id', '=', 'lead_activities.activity_id')
@@ -1050,6 +1065,15 @@ class DashboardController extends Controller
             ->leftJoin('lead_sources', 'leads.lead_source_id', '=', 'lead_sources.id')
             ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
             ->where('activities.type', 'meeting')
+            ->where(function ($query) {
+                $query
+                    ->where('activities.is_done', 0)
+                    ->orWhere(function ($attendedQuery) {
+                        $attendedQuery
+                            ->where('activities.is_done', 1)
+                            ->where('activities.meeting_attended', 1);
+                    });
+            })
             ->where(function ($query) use ($startDate, $endDate) {
                 $query
                     ->whereBetween('activities.schedule_from', [$startDate, $endDate])
@@ -1076,6 +1100,8 @@ class DashboardController extends Controller
                 'activities.schedule_from',
                 'activities.schedule_to',
                 'activities.location',
+                'activities.is_done',
+                'activities.meeting_attended',
                 'leads.id as lead_id',
                 'leads.title as lead_title',
                 'persons.name as person_name',
@@ -1113,14 +1139,16 @@ class DashboardController extends Controller
                 ], $showUsFeatures);
 
                 return array_merge($item, [
-                    'activity_id'   => $activity->id,
-                    'lead_id'       => $activity->lead_id,
-                    'lead_title'    => $activity->lead_title,
-                    'description'   => str($activity->comment ?: $activity->location ?: '')->limit(120)->toString(),
-                    'schedule_from' => $startsAt->timezone(config('app.timezone'))->toIso8601String(),
-                    'schedule_to'   => $endsAt->timezone(config('app.timezone'))->toIso8601String(),
-                    'date'          => $startsAt->timezone(config('app.timezone'))->toDateString(),
-                    'time_label'    => $startsAt->timezone(config('app.timezone'))->format('g:i A'),
+                    'activity_id'       => $activity->id,
+                    'lead_id'           => $activity->lead_id,
+                    'lead_title'        => $activity->lead_title,
+                    'description'       => str($activity->comment ?: $activity->location ?: '')->limit(120)->toString(),
+                    'schedule_from'     => $startsAt->timezone(config('app.timezone'))->toIso8601String(),
+                    'schedule_to'       => $endsAt->timezone(config('app.timezone'))->toIso8601String(),
+                    'date'              => $startsAt->timezone(config('app.timezone'))->toDateString(),
+                    'time_label'        => $startsAt->timezone(config('app.timezone'))->format('g:i A'),
+                    'is_done'           => (bool) $activity->is_done,
+                    'meeting_attended'  => (bool) $activity->meeting_attended,
                 ]);
             });
     }
@@ -1132,6 +1160,7 @@ class DashboardController extends Controller
         bool $showUsFeatures,
     ) {
         $sourceAccessService = app(SourceAccessService::class);
+        $visibleUserIds = $sourceAccessService->getActiveRoleTeamUserIds();
 
         $query = DB::table('leads')
             ->leftJoin('persons', 'leads.person_id', '=', 'persons.id')
@@ -1345,18 +1374,20 @@ class DashboardController extends Controller
 
     protected function applyBdeWorkLeadScope($query, int $userId)
     {
-        return $query->where(function ($query) use ($userId) {
-            $query->where('leads.user_id', $userId);
+        $visibleUserIds = app(SourceAccessService::class)->getActiveRoleTeamUserIds();
 
-            $this->applyBdeCreatedLeadOrScope($query, $userId);
+        return $query->where(function ($query) use ($visibleUserIds) {
+            $query->whereIn('leads.user_id', $visibleUserIds);
+
+            $this->applyBdeCreatedLeadOrScope($query, $visibleUserIds);
 
             if (Schema::hasTable('lead_forwards')) {
-                $query->orWhereExists(function ($query) use ($userId) {
+                $query->orWhereExists(function ($query) use ($visibleUserIds) {
                     $query
                         ->selectRaw('1')
                         ->from('lead_forwards')
                         ->whereColumn('lead_forwards.lead_id', 'leads.id')
-                        ->where('lead_forwards.from_user_id', $userId);
+                        ->whereIn('lead_forwards.from_user_id', $visibleUserIds);
                 });
             }
         });
@@ -1364,28 +1395,33 @@ class DashboardController extends Controller
 
     protected function applyBdeCreatedLeadScope($query, int $userId)
     {
-        return $query->where(function ($query) use ($userId) {
+        $visibleUserIds = app(SourceAccessService::class)->getActiveRoleTeamUserIds();
+
+        return $query->where(function ($query) use ($visibleUserIds) {
             if (Schema::hasColumn('leads', 'created_by')) {
-                $query->where('leads.created_by', $userId);
+                $query->whereIn('leads.created_by', $visibleUserIds);
 
                 return;
             }
 
-            $query->where('leads.user_id', $userId);
+            $query->whereIn('leads.user_id', $visibleUserIds);
 
-            $this->applyBdeCreatedLeadOrScope($query, $userId);
+            $this->applyBdeCreatedLeadOrScope($query, $visibleUserIds);
         });
     }
 
-    protected function applyBdeCreatedLeadOrScope($query, int $userId): void
+    /**
+     * @param  array<int>  $visibleUserIds
+     */
+    protected function applyBdeCreatedLeadOrScope($query, array $visibleUserIds): void
     {
         if (Schema::hasColumn('leads', 'created_by')) {
-            $query->orWhere('leads.created_by', $userId);
+            $query->orWhereIn('leads.created_by', $visibleUserIds);
 
             return;
         }
 
-        $query->orWhereExists(function ($query) use ($userId) {
+        $query->orWhereExists(function ($query) use ($visibleUserIds) {
             $query
                 ->selectRaw('1')
                 ->from('lead_activities')
@@ -1393,22 +1429,24 @@ class DashboardController extends Controller
                 ->whereColumn('lead_activities.lead_id', 'leads.id')
                 ->where('activities.type', 'system')
                 ->where('activities.title', trans('admin::app.activities.created'))
-                ->where('activities.user_id', $userId);
+                ->whereIn('activities.user_id', $visibleUserIds);
         });
     }
 
     protected function applyDataScraperWorkLeadScope($query, int $userId)
     {
-        return $query->where(function ($query) use ($userId) {
-            $query->where('leads.lead_owner_id', $userId);
+        $visibleUserIds = app(SourceAccessService::class)->getActiveRoleTeamUserIds();
+
+        return $query->where(function ($query) use ($visibleUserIds) {
+            $query->whereIn('leads.lead_owner_id', $visibleUserIds);
 
             if (Schema::hasTable('lead_forwards')) {
-                $query->orWhereExists(function ($query) use ($userId) {
+                $query->orWhereExists(function ($query) use ($visibleUserIds) {
                     $query
                         ->selectRaw('1')
                         ->from('lead_forwards')
                         ->whereColumn('lead_forwards.lead_id', 'leads.id')
-                        ->where('lead_forwards.from_user_id', $userId);
+                        ->whereIn('lead_forwards.from_user_id', $visibleUserIds);
                 });
             }
         });

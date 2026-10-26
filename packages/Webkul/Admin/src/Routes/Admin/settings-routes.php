@@ -120,6 +120,12 @@ Route::prefix('settings')->group(function () {
         Route::get('', 'index')->name('admin.settings.followup_schedule.index');
 
         Route::put('', 'update')->name('admin.settings.followup_schedule.update');
+
+        Route::post('rules', 'storeRule')->name('admin.settings.followup_schedule.rules.store');
+
+        Route::put('rules/{id}', 'updateRule')->name('admin.settings.followup_schedule.rules.update');
+
+        Route::delete('rules/{id}', 'destroyRule')->name('admin.settings.followup_schedule.rules.delete');
     });
 
     /**
